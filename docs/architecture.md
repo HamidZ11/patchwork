@@ -102,6 +102,24 @@ designed in detail; see the per-concern docs
 [patch-generation.md](patch-generation.md),
 [verification.md](verification.md)) for what's actually decided versus open.
 
+Patchwork is sequenced as **an evidence-producing impact engine first** —
+detect, locate, and explain with calibrated confidence — with deterministic
+fixes and PR automation layered on only once that's trustworthy. See
+[impact-analysis.md](impact-analysis.md#product-positioning-proposed--correction)
+for the full reasoning and the corrected data shapes this implies
+(`RepositorySnapshot`/`AnalysisRun`, version applicability as evidence
+rather than one repository field, and the structured `ProviderChange`
+breakdown) in [data-model.md](data-model.md#candidate-domain-concepts-proposed--not-implemented).
+
+External research (August 2026) reviewed this repository's existing
+architecture — modular monolith, GitHub App installation-token boundary,
+Postgres-backed worker, no queue/cache/microservices — and did not find a
+reason to change any of it. The one new infrastructure boundary that
+research argues is genuinely justified, once verification exists, is
+**untrusted sandbox execution** (buy, e.g. E2B or Vercel Sandbox, rather
+than self-host) — a security boundary, not a scaling one. See
+[verification.md](verification.md) and [security.md](security.md).
+
 ## Open questions
 
 - How the worker will pick up jobs (polling a table vs. a queue) once

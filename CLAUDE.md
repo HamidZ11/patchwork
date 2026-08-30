@@ -143,33 +143,52 @@ check.
 
 ## Impact analysis principles
 
-Impact analysis is evidence-driven, not a single model call. Likely
-pipeline (see [docs/impact-analysis.md](docs/impact-analysis.md) for detail):
+Patchwork is sequenced as **an evidence-producing impact engine first**,
+not primarily an automatic API-fixing agent — deterministic fixes and PR
+automation come later, once impact assessment is trustworthy. Impact
+analysis is evidence-driven, not a single model call. Likely pipeline (see
+[docs/impact-analysis.md](docs/impact-analysis.md) for full detail):
 
 ```
 ProviderChange
-  → ChangeRule
-  → dependency/version filtering
+  → ApplicabilityConstraint match (version applicability is evidence per
+     usage context, never one repository-level version field — see
+     docs/data-model.md)
   → repository inventory
-  → candidate discovery
-  → TypeScript semantic/static analysis
-  → deterministic rule matching
+  → candidate discovery (lexical only, never decisive)
+  → TypeScript semantic analysis (compiler-resolved; escalate through
+     aliases/re-exports → local data flow → interprocedural only as
+     benchmark evidence demands — see docs/impact-analysis.md)
+  → ImpactPredicate matching
   → relevant context extraction
   → AI reasoning only where needed
   → evidence aggregation
   → AFFECTED / NOT_AFFECTED / UNCERTAIN
 ```
 
+**Safety invariant: failure to prove `AFFECTED` is not evidence of
+`NOT_AFFECTED`.** `NOT_AFFECTED` requires explicit negative evidence;
+unresolved imports, unknown versions, dynamic construction, or analysis
+failure must produce `UNCERTAIN`, never a confident guess in either
+direction.
+
 - Do not send entire repositories to an LLM when targeted context is
   sufficient.
-- Do not use regex as the primary mechanism for semantic code understanding.
+- Regex is for candidate discovery only, never the final semantic proof of
+  a match.
 - For TypeScript, semantic analysis is expected to use the TypeScript
-  compiler ecosystem (possibly `ts-morph`) — **not yet an implemented
-  architectural decision**.
+  Compiler API (`Program`/`TypeChecker`) directly behind a thin
+  Patchwork-owned abstraction, not `ts-morph` as a core domain dependency
+  — **not yet an implemented architectural decision**.
 - Confidence should primarily come from evidence the system collected, not
   an arbitrary model-generated confidence number.
 - False positives and false negatives are primary quality metrics for this
-  system, not just test pass/fail.
+  system, not just test pass/fail. The "unsafe-clear rate" (false
+  `NOT_AFFECTED`) is the single most safety-sensitive metric.
+- An `ImpactAssessment` is not timeless truth about a commit SHA — it's
+  truth about a specific `(RepositorySnapshot, AnalysisRun)` pair, since
+  re-analysis with a newer analyzer/ruleset can legitimately change the
+  answer. See docs/data-model.md.
 
 ## Security principles
 
