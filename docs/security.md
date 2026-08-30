@@ -1,0 +1,142 @@
+# Security
+
+Patchwork's core function — reading customer source code, understanding
+third-party API surfaces, and proposing code changes — makes it a
+security-sensitive system by design. This document is an initial threat
+model plus what's actually implemented today.
+
+## Implemented controls (CURRENT)
+
+- Secrets are never committed. `.env` is gitignored; `.env.example`
+  documents required variables without values.
+- Environment configuration is validated and parsed centrally — shared
+  config in `packages/config`, `apps/api`-only config (GitHub App
+  credentials, session cookie domain) in `apps/api/src/config.ts` — failing
+  fast on startup if invalid, instead of reading `process.env` ad hoc.
+- Structured logging (pino) never logs full environment/config objects,
+  only specific fields, and never logs GitHub credentials (user access
+  tokens, installation tokens, the App private key) — see "Credential
+  handling" below.
+- Dependencies are pinned via `pnpm-lock.yaml`.
+- `GET /health` and `GET /ready` return no sensitive information.
+
+### Authentication & sessions
+
+- Sessions are DB-backed and opaque: a random 256-bit token
+  (`crypto.randomBytes(32)`) is sent to the browser in an `HttpOnly`,
+  `SameSite=Lax`, `Secure`-in-production cookie; only its SHA-256 hash is
+  persisted (`sessions.token_hash`), so a database read alone can never
+  yield a usable session. See ADR-002 for why DB-backed over a stateless
+  signed cookie (revocable, no new signing dependency).
+- GitHub identity (`GET /auth/github/login` → callback) and GitHub App
+  installation (`GET /github/install` → callback) are both protected by a
+  `state` value: `crypto.randomBytes(32)`, stored server-side via a
+  short-lived (~10 min) HttpOnly cookie, compared with
+  `crypto.timingSafeEqual`, and **cleared on first successful use** —
+  single-use, not just time-boxed.
+  - **Documented limitation**: clearing relies on the browser honoring the
+    `Set-Cookie` response and not resending the old cookie value. A client
+    that deliberately resends the exact same (still-valid-length) cookie
+    bypasses this. The primary protection against state leakage (via
+    URL/Referer/browser history) is that an attacker who only has the
+    leaked `state` value — not the HttpOnly cookie, which never left the
+    legitimate browser — cannot complete the callback at all, since
+    validation requires both to match.
+- `installation_id` returned from a GitHub installation callback is never
+  trusted directly — always independently re-verified via
+  `GET /app/installations/{id}` before any database write.
+- Auth/authorization enforcement lives in `apps/api/src/plugins/session.ts`
+  (resolves `request.user` for every request) and a `requireAuth`
+  preHandler applied per-route (`/auth/me`, `/github/install`,
+  `/github/install/callback`, `/repositories`) — matching this document's
+  earlier intent: middleware applied per-route, not globally bypassed.
+
+### GitHub credentials
+
+- Least privilege: the GitHub App requests **Metadata: Read-only** and
+  nothing else (see [docs/github-integration.md](github-integration.md)
+  for the full permission rationale).
+- **Generate, use, discard** — no GitHub credential is ever persisted:
+  - The user's OAuth access token is used once (to fetch their GitHub
+    profile) and discarded — never written to the database.
+  - Installation access tokens and App JWTs are generated on demand via
+    `@octokit/auth-app` (`apps/api/src/github/auth.ts`), used immediately,
+    and discarded. Only the `github_installation_id` is persisted.
+  - The App private key, OAuth client secret, and client ID are read only
+    from validated env config, never logged, never returned in any API
+    response.
+- No GitHub credential of any kind ever reaches `apps/web` or browser
+  JavaScript. `apps/web` only ever holds the opaque Patchwork session
+  cookie.
+
+### No CORS (server-to-server cookie forwarding)
+
+`apps/api` exposes no CORS policy. `apps/web`'s Server Components forward
+the session cookie manually on server-to-server requests to `apps/api`
+(never subject to browser CORS); the browser only ever navigates directly
+to `apps/api` for the GitHub OAuth/install redirects, which aren't CORS
+requests either. See [ADR-003](adr/0003-server-to-server-cookie-forwarding.md).
+
+## Threat model (initial)
+
+**Private source code.** Customer repositories are sensitive, untrusted
+input. Required future control: minimize what's persisted (prefer
+analyzing over storing full source; if snapshots are stored, scope and
+retention need explicit limits) — see the `RepositorySnapshot` concept in
+[data-model.md](data-model.md). Not yet relevant: this slice never reads
+repository contents, only metadata (name/owner/visibility/default branch).
+
+**GitHub credentials.** Addressed above (generate/use/discard,
+least-privilege permissions, never logged).
+
+**Webhook spoofing/replay.** No webhooks are implemented in this slice (see
+github-integration.md). When they are, signatures must be verified before
+being trusted, and processing must be idempotent.
+
+**Tenant/repository isolation.** Once multiple customers exist,
+authorization must enforce that one customer's data (repositories, patches,
+assessments) is never visible or actionable by another. Partially addressed
+today: `/repositories` only ever returns rows for installations the current
+session's user connected. Full multi-tenant isolation (e.g. team access to
+a shared installation) remains an open question — see data-model.md.
+
+**Untrusted repository execution.** Anything that runs customer code —
+including `npm install` / `pnpm install`, which can execute arbitrary
+install scripts — is code execution on untrusted input, not a safe setup
+step. Required future control: this must happen in an isolated sandbox,
+never directly inside the `apps/api` or `apps/worker` process/environment.
+Not yet relevant: this slice never executes repository code.
+
+**Prompt injection.** Customer source code and external API documentation
+are both untrusted input to any future LLM step. Content from either must
+not be able to change what actions the system takes — see "AI system
+principles" in [CLAUDE.md](../CLAUDE.md#ai-system-principles). Not yet
+relevant: no AI/LLM usage exists in this slice.
+
+**Malicious external documentation.** Changelogs, release notes, and API
+docs ingested for change detection are external, untrusted input and should
+be treated the same as any other untrusted content. Not yet relevant.
+
+**Sensitive logging.** Secrets, credentials, and full customer source code
+must never be written to logs. Addressed above for GitHub credentials.
+
+**Dependency/supply-chain risk.** Lockfile is committed and CI installs
+with `--frozen-lockfile`. No automated vulnerability scanning exists yet.
+
+## Open questions
+
+- Secret storage for customer GitHub credentials at rest (currently nothing
+  is stored beyond the installation ID, so this is moot until a credential
+  actually needs persisting).
+- Exact sandbox design for untrusted repository execution (see
+  [verification.md](verification.md)) is undecided.
+- Multi-tenant/team access model beyond "first connector wins" (see
+  data-model.md).
+
+## Deferred
+
+- Rate limiting, audit logging, and automated dependency vulnerability
+  scanning in CI.
+- The sandbox for untrusted repository/package-install execution.
+- Session cleanup for expired rows (harmless bloat, not a security issue —
+  see data-model.md).
