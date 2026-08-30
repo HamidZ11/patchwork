@@ -53,7 +53,8 @@ docs/       Architecture, product, and ADR documentation
 
 ## Prerequisites
 
-- Node.js 20 LTS or newer
+- Node.js 22.13 or newer (required by `pnpm@11.24.0`, pinned in
+  `package.json`'s `packageManager` field)
 - pnpm (via [Corepack](https://nodejs.org/api/corepack.html): `corepack enable`)
 - Docker (for local PostgreSQL via Docker Compose)
 - A GitHub account, to create a GitHub App for local testing of the
