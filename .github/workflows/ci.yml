@@ -1,0 +1,62 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+env:
+  DATABASE_URL: postgresql://patchwork:patchwork@localhost:5432/patchwork
+  API_PORT: 3001
+  LOG_LEVEL: silent
+  NODE_ENV: test
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: patchwork
+          POSTGRES_PASSWORD: patchwork
+          POSTGRES_DB: patchwork
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U patchwork -d patchwork"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Format check
+        run: pnpm format:check
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Run migrations
+        run: pnpm db:migrate
+
+      - name: Test
+        run: pnpm test
+
+      - name: Build
+        run: pnpm build
