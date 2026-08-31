@@ -83,17 +83,43 @@ requests either. See [ADR-003](adr/0003-server-to-server-cookie-forwarding.md).
 ## Threat model (initial)
 
 **Private source code.** Customer repositories are sensitive, untrusted
-input. Required future control: minimize what's persisted (prefer
-analyzing over storing full source; if snapshots are stored, scope and
-retention need explicit limits) — see the `RepositorySnapshot` concept in
-[data-model.md](data-model.md). **Partially relevant now**: the GitHub App
-was granted Contents: Read-only in this slice, but only a commit SHA (a
-hash identifying a version, not source content) crosses the boundary —
-`GET /repos/{owner}/{repo}/commits/{branch}` returns commit metadata, not
-file contents. No repository file content is read, downloaded, or
-persisted anywhere yet, and no archive/clone of any kind is acquired. That
-remains deferred to the slice that actually performs analysis, where
-"download → use → delete" can be verified end-to-end.
+input. **Now genuinely relevant**: `POST /repositories/:id/analyses`
+downloads the exact-SHA repository tarball (`GitHubClient
+.downloadRepositoryArchive`, `apps/api/src/github/client.ts`), extracts a
+narrow allowlist of files (manifests, lockfiles, `.ts`/`.tsx`/`.js`/`.jsx`
+/`.mjs`/`.cjs` source, excluding `node_modules`/`.git`/build output — see
+`apps/api/src/analysis/archive.ts`), and reads their text content to
+produce evidence. Controls in place:
+
+- **No permanent storage**: the archive and every extracted file live only
+  in a per-request OS temp directory
+  (`fs.mkdtemp(os.tmpdir(), 'patchwork-archive-')`), removed in a `finally`
+  block on both success and failure — verified by automated tests
+  (`analysis/__tests__/archive.test.ts`) that assert the temp directory no
+  longer exists afterward, including when the caller's handler throws.
+  **Only structured evidence** (package names, version strings, an
+  `apiVersion` value and its source file/line) is persisted to PostgreSQL
+  (`analysis_evidence.evidence`) — never raw file content.
+- **Untrusted archive treated as untrusted**: extraction uses the `tar`
+  library, which rejects/strips absolute paths and `..` traversal entries
+  by default (`preservePaths` is never set) — Zip Slip protection from the
+  library, verified by automated tests using a hand-crafted malicious tar
+  entry. Extraction is additionally selective (an allowlist `filter`, not
+  "extract everything"), with per-entry and total-file-count size caps.
+  The raw archive download itself is also capped (200 MB, enforced by
+  streaming byte-counting, not trusting `Content-Length`).
+- **No content ever logged**: only file _paths_ appear in log output on
+  failure (`request.log.error({ err })`), never file contents or archive
+  bytes.
+- **No repository code execution**: reading/parsing is the only operation
+  performed on extracted files — no `npm install`/`pnpm install`, no
+  scripts, no TypeScript compilation against installed dependencies
+  (`node_modules` is never extracted in the first place). Parsing uses
+  `ts.createSourceFile` (syntax only), never `ts.createProgram`.
+
+Retention/scope beyond "delete immediately after one request" remains an
+open question if a future slice needs to keep source around longer (e.g.
+for caching across repeated analyses) — not needed by this slice.
 
 **GitHub credentials.** Addressed above (generate/use/discard,
 least-privilege permissions, never logged).
@@ -141,6 +167,9 @@ with `--frozen-lockfile`. No automated vulnerability scanning exists yet.
   [verification.md](verification.md)) is undecided.
 - Multi-tenant/team access model beyond "first connector wins" (see
   data-model.md).
+- Whether a future slice needs to cache/retain extracted repository
+  content across repeated analyses (currently: none, every trigger
+  re-downloads and deletes immediately).
 
 ## Deferred
 

@@ -165,6 +165,45 @@ slice. See [docs/data-model.md](data-model.md) for the resulting
 `RepositorySnapshot`/`AnalysisRun` rows and their fail-closed,
 no-partial-write behavior on any GitHub-boundary failure.
 
+## Repository archive acquisition (CURRENT)
+
+`POST /repositories/:id/analyses` also calls the new
+`downloadRepositoryArchive` method on `GitHubClient`
+(`apps/api/src/github/client.ts`):
+`GET /repos/{owner}/{repo}/tarball/{commitSha}`, using the **exact commit
+SHA** resolved above (never a branch/ref pointer, so the archive
+corresponds exactly to the recorded `RepositorySnapshot`). **No new GitHub
+App permission was needed** — the tarball/zipball archive-download
+endpoints are governed by the same `Contents: Read-only` permission
+already granted for commit-SHA resolution, so existing installations don't
+need to re-approve anything for this slice. GitHub's tarball endpoint
+redirects to a signed, time-limited `codeload.github.com` URL; the
+redirect is followed automatically and needs no additional credential —
+the signed URL itself authorizes the download. A fresh installation access
+token is generated for the initial request, used once, and discarded —
+same generate/use/discard convention as every other GitHub call. See
+[docs/security.md](security.md) for how the downloaded archive is handled
+(temp-directory-only, selective extraction, guaranteed cleanup, no
+execution).
+
+## RepositorySnapshot commit SHA resolution (CURRENT)
+
+`POST /repositories/:id/analyses` calls the `getBranchCommitSha`
+method on `GitHubClient` (`apps/api/src/github/client.ts`):
+`GET /repos/{owner}/{repo}/commits/{branch}`, using the repository's
+already-stored `default_branch` rather than re-fetching repository
+metadata first (one GitHub API call, not two). A fresh installation access
+token is generated, used once, and discarded — same convention as the
+install flow. **Accepted limitation**: if the default branch was renamed on
+GitHub after the repository was connected, this call fails (surfaced as a
+clean `502`) rather than silently resolving against the wrong branch, until
+the repository is re-synced through the connect flow — not handled by this
+slice. See [docs/data-model.md](data-model.md) for the resulting
+`RepositorySnapshot`/`AnalysisRun` rows and their fail-closed,
+no-partial-write behavior on a SHA-resolution failure (archive-acquisition
+failures are handled differently — see data-model.md's "Analysis-run
+lifecycle").
+
 ## Open questions
 
 - Whether/when `installation`/`installation_repositories` webhooks are
@@ -177,7 +216,4 @@ no-partial-write behavior on any GitHub-boundary failure.
 
 Branch/PR creation and CI status checks on generated PRs require
 permissions not yet requested (Pull requests, Actions/Workflows) and are
-out of scope until the slices that need them. Downloading/reading actual
-repository file content (beyond a commit SHA) is also deferred — Contents:
-Read-only is granted, but nothing in this slice exercises content reading
-yet, only commit metadata.
+out of scope until the slices that need them.

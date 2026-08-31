@@ -2,9 +2,16 @@ import { redirect } from 'next/navigation';
 import { ErrorBanner } from '@/components/error-banner';
 import { apiFetch, API_URL } from '@/lib/api';
 
+interface LatestAnalysisStripeSummary {
+  resolvedVersion: string | null;
+  declaredRange: string;
+  workspacePath: string;
+}
+
 interface LatestAnalysis {
   commitSha: string;
   status: string;
+  stripe: LatestAnalysisStripeSummary | null;
 }
 
 interface Repository {
@@ -83,6 +90,12 @@ export default async function RepositoriesPage({
               {repo.latestAnalysis && (
                 <span className="text-xs text-zinc-500 dark:text-zinc-400">
                   Commit {repo.latestAnalysis.commitSha.slice(0, 7)} · {repo.latestAnalysis.status}
+                </span>
+              )}
+              {repo.latestAnalysis?.stripe && (
+                <span className="text-xs text-zinc-500 dark:text-zinc-400">
+                  Stripe: {repo.latestAnalysis.stripe.resolvedVersion ?? 'unresolved'} (declared{' '}
+                  {repo.latestAnalysis.stripe.declaredRange})
                 </span>
               )}
             </div>

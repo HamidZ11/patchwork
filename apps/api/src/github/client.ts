@@ -1,3 +1,8 @@
+import { createWriteStream } from 'node:fs';
+import { rm } from 'node:fs/promises';
+import { Readable, Transform } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
+
 export class GitHubApiError extends Error {
   constructor(
     public readonly code: string,
@@ -7,6 +12,20 @@ export class GitHubApiError extends Error {
     this.name = 'GitHubApiError';
   }
 }
+
+/**
+ * Raised when a repository archive download exceeds MAX_ARCHIVE_BYTES.
+ * Distinct from GitHubApiError -- not an HTTP failure, a protective abort
+ * of an otherwise-successful response.
+ */
+export class ArchiveTooLargeError extends Error {
+  constructor() {
+    super('repository archive exceeded the maximum allowed download size');
+    this.name = 'ArchiveTooLargeError';
+  }
+}
+
+const MAX_ARCHIVE_BYTES = 200 * 1024 * 1024; // 200 MB
 
 export interface GitHubUserProfile {
   id: number;
@@ -45,6 +64,13 @@ export interface GitHubClient {
     branch: string,
     installationToken: string,
   ) => Promise<string>;
+  downloadRepositoryArchive: (
+    owner: string,
+    name: string,
+    commitSha: string,
+    installationToken: string,
+    destinationPath: string,
+  ) => Promise<void>;
 }
 
 const MAX_REPOSITORY_PAGES = 50;
@@ -181,11 +207,61 @@ export function createGitHubClient(fetchImpl: typeof fetch = fetch): GitHubClien
     return data.sha;
   }
 
+  /**
+   * Downloads the tarball archive of a repository at an exact commit SHA
+   * (never a branch/ref pointer) to destinationPath, streaming to disk
+   * rather than buffering in memory. GitHub's tarball endpoint redirects
+   * to a signed codeload.github.com URL; fetch follows this automatically,
+   * and the redirect target needs no Authorization header (the signed URL
+   * itself is the credential). Aborts and removes the partial file if the
+   * download exceeds MAX_ARCHIVE_BYTES, regardless of what (or whether)
+   * Content-Length claims.
+   */
+  async function downloadRepositoryArchive(
+    owner: string,
+    name: string,
+    commitSha: string,
+    installationToken: string,
+    destinationPath: string,
+  ): Promise<void> {
+    const response = await fetchImpl(
+      `https://api.github.com/repos/${owner}/${name}/tarball/${encodeURIComponent(commitSha)}`,
+      { headers: authHeaders(installationToken) },
+    );
+    if (!response.ok || !response.body) {
+      throw new GitHubApiError('download_repository_archive_failed', response.status);
+    }
+
+    let bytesRead = 0;
+    const limiter = new Transform({
+      transform(chunk: Buffer, _encoding, callback) {
+        bytesRead += chunk.length;
+        if (bytesRead > MAX_ARCHIVE_BYTES) {
+          callback(new ArchiveTooLargeError());
+          return;
+        }
+        callback(null, chunk);
+      },
+    });
+
+    try {
+      await pipeline(
+        Readable.fromWeb(response.body as import('node:stream/web').ReadableStream<Uint8Array>),
+        limiter,
+        createWriteStream(destinationPath),
+      );
+    } catch (error) {
+      await rm(destinationPath, { force: true });
+      throw error;
+    }
+  }
+
   return {
     exchangeOAuthCode,
     getAuthenticatedUser,
     getInstallation,
     listInstallationRepositories,
     getBranchCommitSha,
+    downloadRepositoryArchive,
   };
 }

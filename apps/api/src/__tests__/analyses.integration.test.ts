@@ -7,7 +7,12 @@ import { createSession } from '../auth/sessions.js';
 import { findOrCreateUserByGitHubProfile } from '../auth/users.js';
 import type { GitHubInstallationInfo, GitHubRepository } from '../github/client.js';
 import { upsertInstallationAndRepositories } from '../github/persistence.js';
-import { fakeGitHubAppAuth, fakeGitHubClient, testAppDeps } from './fixtures.js';
+import {
+  fakeGitHubAppAuth,
+  fakeGitHubClient,
+  fakeGitHubClientWithArchive,
+  testAppDeps,
+} from './fixtures.js';
 
 let idCounter = 0;
 function uniqueGithubId(): number {
@@ -144,9 +149,10 @@ describe('repository analyses (real database)', () => {
   });
 
   it('resolves the commit SHA and creates a snapshot + run for a valid, owned repository', async () => {
-    const githubClient = fakeGitHubClient({
-      getBranchCommitSha: async () => 'a'.repeat(40),
-    });
+    const githubClient = fakeGitHubClientWithArchive(
+      { 'package.json': JSON.stringify({ dependencies: { express: '^5.0.0' } }) },
+      { getBranchCommitSha: async () => 'a'.repeat(40) },
+    );
     const app = buildApp(testAppDeps({ db, githubClient, githubAppAuth: fakeGitHubAppAuth() }));
     const { cookie, userId } = await createAuthenticatedUser();
     const { repositoryId } = await connectRepository(userId);
@@ -161,11 +167,13 @@ describe('repository analyses (real database)', () => {
     const body = response.json() as {
       snapshot: { id: string; commitSha: string; ref: string };
       analysisRun: { id: string; status: string; analyzerVersion: string };
+      evidence: { installedSdks: unknown[] } | null;
     };
     expect(body.snapshot.commitSha).toBe('a'.repeat(40));
     expect(body.snapshot.ref).toBe('main');
     expect(body.analysisRun.status).toBe('completed');
-    expect(body.analysisRun.analyzerVersion).toBe('v0');
+    expect(body.analysisRun.analyzerVersion).toBe('v1');
+    expect(body.evidence?.installedSdks).toEqual([]); // no stripe dependency in the fixture
 
     const snapshots = await db.db
       .select()
@@ -179,6 +187,101 @@ describe('repository analyses (real database)', () => {
       .where(eq(schema.analysisRuns.repositorySnapshotId, snapshots[0]!.id));
     expect(runs).toHaveLength(1);
     expect(runs[0]!.triggeredByUserId).toBe(userId);
+
+    const evidenceRows = await db.db
+      .select()
+      .from(schema.analysisEvidence)
+      .where(eq(schema.analysisEvidence.analysisRunId, runs[0]!.id));
+    expect(evidenceRows).toHaveLength(1);
+
+    await cleanupUser(userId);
+  });
+
+  it('persists Stripe evidence when the fixture archive declares a stripe dependency', async () => {
+    const githubClient = fakeGitHubClientWithArchive(
+      {
+        'package.json': JSON.stringify({ dependencies: { stripe: '^17.0.0' } }),
+        'package-lock.json': JSON.stringify({
+          packages: { '': {}, 'node_modules/stripe': { version: '17.4.0' } },
+        }),
+        'src/stripe.ts': [
+          "import Stripe from 'stripe';",
+          'const stripe = new Stripe(secretKey, { apiVersion: "2025-01-27.acacia" });',
+        ].join('\n'),
+      },
+      { getBranchCommitSha: async () => 'e'.repeat(40) },
+    );
+    const app = buildApp(testAppDeps({ db, githubClient, githubAppAuth: fakeGitHubAppAuth() }));
+    const { cookie, userId } = await createAuthenticatedUser();
+    const { repositoryId } = await connectRepository(userId);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: `/repositories/${repositoryId}/analyses`,
+      headers: { cookie },
+    });
+
+    expect(response.statusCode).toBe(201);
+    const body = response.json() as {
+      analysisRun: { id: string };
+      evidence: {
+        installedSdks: { resolvedVersion: string; resolutionStatus: string }[];
+        clientVersions: { apiVersion: string; valueKind: string }[];
+      };
+    };
+    expect(body.evidence.installedSdks).toEqual([
+      expect.objectContaining({ resolvedVersion: '17.4.0', resolutionStatus: 'EXACT' }),
+    ]);
+    expect(body.evidence.clientVersions).toEqual([
+      expect.objectContaining({ apiVersion: '2025-01-27.acacia', valueKind: 'LITERAL' }),
+    ]);
+
+    const evidenceRows = await db.db
+      .select()
+      .from(schema.analysisEvidence)
+      .where(eq(schema.analysisEvidence.analysisRunId, body.analysisRun.id));
+    expect(evidenceRows).toHaveLength(1);
+    expect(evidenceRows[0]!.schemaVersion).toBe(1);
+
+    await cleanupUser(userId);
+  });
+
+  it('records a failed AnalysisRun with no evidence row when archive acquisition fails, without discarding the already-recorded snapshot', async () => {
+    const githubClient = fakeGitHubClient({
+      getBranchCommitSha: async () => 'f'.repeat(40),
+      downloadRepositoryArchive: async () => {
+        throw new Error('archive download failed');
+      },
+    });
+    const app = buildApp(testAppDeps({ db, githubClient, githubAppAuth: fakeGitHubAppAuth() }));
+    const { cookie, userId } = await createAuthenticatedUser();
+    const { repositoryId } = await connectRepository(userId);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: `/repositories/${repositoryId}/analyses`,
+      headers: { cookie },
+    });
+
+    expect(response.statusCode).toBe(201);
+    const body = response.json() as {
+      analysisRun: { id: string; status: string };
+      evidence: unknown;
+    };
+    expect(body.analysisRun.status).toBe('failed');
+    expect(body.evidence).toBeNull();
+
+    const snapshots = await db.db
+      .select()
+      .from(schema.repositorySnapshots)
+      .where(eq(schema.repositorySnapshots.repositoryId, repositoryId));
+    expect(snapshots).toHaveLength(1); // the snapshot itself is still valid and recorded
+
+    const evidenceRows = await db.db
+      .select()
+      .from(schema.analysisEvidence)
+      .where(eq(schema.analysisEvidence.analysisRunId, body.analysisRun.id));
+    expect(evidenceRows).toHaveLength(0);
 
     await cleanupUser(userId);
   });
@@ -210,10 +313,11 @@ describe('repository analyses (real database)', () => {
     await cleanupUser(userId);
   });
 
-  it('is idempotent on the snapshot: two triggers against an unchanged commit converge to one snapshot but two runs', async () => {
-    const githubClient = fakeGitHubClient({
-      getBranchCommitSha: async () => 'b'.repeat(40),
-    });
+  it('is idempotent on the snapshot: two triggers against an unchanged commit converge to one snapshot but two runs, each with its own evidence row', async () => {
+    const githubClient = fakeGitHubClientWithArchive(
+      { 'package.json': '{}' },
+      { getBranchCommitSha: async () => 'b'.repeat(40) },
+    );
     const app = buildApp(testAppDeps({ db, githubClient, githubAppAuth: fakeGitHubAppAuth() }));
     const { cookie, userId } = await createAuthenticatedUser();
     const { repositoryId } = await connectRepository(userId);
@@ -239,13 +343,22 @@ describe('repository analyses (real database)', () => {
       .where(eq(schema.analysisRuns.repositorySnapshotId, snapshots[0]!.id));
     expect(runs).toHaveLength(2);
 
+    for (const run of runs) {
+      const evidenceRows = await db.db
+        .select()
+        .from(schema.analysisEvidence)
+        .where(eq(schema.analysisEvidence.analysisRunId, run.id));
+      expect(evidenceRows).toHaveLength(1);
+    }
+
     await cleanupUser(userId);
   });
 
-  it('reports the latest analysis on GET /repositories after triggering one', async () => {
-    const githubClient = fakeGitHubClient({
-      getBranchCommitSha: async () => 'c'.repeat(40),
-    });
+  it('reports the latest analysis (including a condensed stripe summary) on GET /repositories after triggering one', async () => {
+    const githubClient = fakeGitHubClientWithArchive(
+      { 'package.json': JSON.stringify({ dependencies: { stripe: '^17.0.0' } }) },
+      { getBranchCommitSha: async () => 'c'.repeat(40) },
+    );
     const app = buildApp(testAppDeps({ db, githubClient, githubAppAuth: fakeGitHubAppAuth() }));
     const { cookie, userId } = await createAuthenticatedUser();
     const { repositoryId } = await connectRepository(userId);
@@ -258,7 +371,14 @@ describe('repository analyses (real database)', () => {
 
     const list = await app.inject({ method: 'GET', url: '/repositories', headers: { cookie } });
     const body = list.json() as {
-      repositories: { id: string; latestAnalysis: { commitSha: string; status: string } | null }[];
+      repositories: {
+        id: string;
+        latestAnalysis: {
+          commitSha: string;
+          status: string;
+          stripe: { resolvedVersion: string | null; declaredRange: string } | null;
+        } | null;
+      }[];
     };
     const repo = body.repositories.find((r) => r.id === repositoryId);
     expect(repo?.latestAnalysis).toEqual({
@@ -266,6 +386,7 @@ describe('repository analyses (real database)', () => {
       status: 'completed',
       startedAt: expect.any(String),
       completedAt: expect.any(String),
+      stripe: { resolvedVersion: null, declaredRange: '^17.0.0', workspacePath: '' },
     });
 
     await cleanupUser(userId);

@@ -77,6 +77,7 @@ github_installations 1--N repositories (repositories.installation_id)
 repositories 1--N repository_snapshots (repository_snapshots.repository_id)
 repository_snapshots 1--N analysis_runs (analysis_runs.repository_snapshot_id)
 users 1--N analysis_runs        (analysis_runs.triggered_by_user_id)
+analysis_runs 1--0..1 analysis_evidence (analysis_evidence.analysis_run_id, unique)
 ```
 
 No join table for user↔repository access exists yet — access is entirely
@@ -104,11 +105,10 @@ no multi-user-per-installation sharing model in this slice.
   the run first, matching the fail-closed convention used elsewhere).
   `triggered_by_user_id` references `users.id`, **`ON DELETE RESTRICT`**
   for the same reason. `analyzer_version` is the hardcoded constant from
-  `apps/api/src/analysis/version.ts` (currently `'v0'`) — see "Analyzer
-  version" below. `status` is app-validated text; today only `'completed'`
-  is ever written (see below). `started_at`/`completed_at` bound the
-  execution; there is no separate `created_at` on this table since
-  `started_at` already serves that purpose.
+  `apps/api/src/analysis/version.ts` (currently `'v1'`) — see "Analyzer
+  version" below. `status` is app-validated text. `started_at`/`completed_at`
+  bound the execution; there is no separate `created_at` on this table
+  since `started_at` already serves that purpose.
 
   **`AnalysisRun` is a separate table from `RepositorySnapshot`, and always
   will be**, even though this slice always creates one of each together:
@@ -119,18 +119,36 @@ no multi-user-per-installation sharing model in this slice.
   **Deliberately deferred fields** (do not exist as columns, because the
   systems they'd describe don't exist yet): `ruleset_version`,
   `provider_catalog_version`, `analysis_configuration`,
-  `typescript_version_used`, `coverage_report`. Adding them now would be
-  fake data — see the PROPOSED section below for what they were expected to
-  eventually cover.
+  `typescript_version_used`. Adding them now would be fake data — see the
+  PROPOSED section below for what they were expected to eventually cover.
 
   **Status model**: only `'pending' | 'running' | 'completed' | 'failed'`
   exist in the type, matching the general run lifecycle — not a
   Patchwork-wide status enum, and no patch/verification/PR states live
-  here. In this slice's actual code paths, `status` is only ever observed
-  as `'completed'`: GitHub-boundary failures during SHA resolution fail
-  closed (see below) before any row is written, so `'pending'`/`'running'`/
-  `'failed'` aren't reachable yet — they stay in the type for the lifecycle
-  future async/partial-failure work will need, not implemented today.
+  here. `'failed'` became genuinely reachable in this slice: if resolving
+  the commit SHA fails, the request still fails closed with no snapshot and
+  no run row (see Idempotency below, unchanged from the prior slice); but
+  once the snapshot is recorded, a subsequent archive-acquisition or
+  evidence-collection failure produces a real `'failed'` run (no
+  `analysis_evidence` row) rather than discarding that a trigger happened.
+  `'pending'`/`'running'` remain unreached — the whole operation is
+  computed synchronously, then written once with its final status, so no
+  interim write ever occurs (see "Analysis-run lifecycle" below).
+
+- **`analysis_evidence`** — deterministic Stripe/TypeScript applicability
+  evidence collected for one `AnalysisRun` — never a decision about
+  whether any change affects the repository (that's a future
+  `ImpactAssessment`'s job). `analysis_run_id` references
+  `analysis_runs.id`, **unique**, **`ON DELETE CASCADE`** (evidence without
+  its run is meaningless) — at most one row per run. `schema_version`
+  (currently `1`) lets the JSON shape evolve without a destructive
+  migration; `evidence` is a zod-validated JSON blob (see
+  `apps/api/src/analysis/evidence/types.ts`) rather than a normalized
+  `Dependency`/`ApiUsage` relational model — deliberately deferred per the
+  research correction below as premature schema commitment. A row is only
+  ever written together with its run inside the same transaction when
+  `status = 'completed'`; a `'failed'` run never has one — no partially
+  written state is ever observable.
 
 ### Analyzer version
 
@@ -138,9 +156,21 @@ no multi-user-per-installation sharing model in this slice.
 manually-bumped string constant — not our own git commit SHA (changes on
 every unrelated change, e.g. a docs edit, so doesn't track "did the
 analyzer change") and not `package.json`'s version (pinned at `0.0.0`, no
-release process bumps it). Today it only versions the snapshot/run-creation
-step itself, since no real code analysis exists yet — it exists so future
-`AnalysisRun`s are versioned from day one rather than retrofitted later.
+release process bumps it). `v0`: snapshot/run creation only, no repository
+content read. `v1` (current): adds archive acquisition and Stripe/
+TypeScript applicability evidence collection — a real behavior change.
+
+### Analysis-run lifecycle
+
+`POST /repositories/:id/analyses` computes the full outcome synchronously
+before writing anything about the run: resolve SHA (fail closed, unchanged
+from the prior slice) → upsert snapshot → attempt archive download +
+evidence collection → insert exactly one `analysis_runs` row with its
+**final** status, plus an `analysis_evidence` row if and only if that
+status is `'completed'`, all in one transaction. There is deliberately no
+interim `'running'` database write — the "no misleading partial state"
+property holds trivially because no partial state is ever written, not
+because of extra bookkeeping.
 
 ### RepositorySnapshot/AnalysisRun idempotency
 
@@ -154,12 +184,20 @@ step itself, since no real code analysis exists yet — it exists so future
 - `analysis_runs` is **not** deduplicated — every successful trigger
   inserts a new row. It represents one execution/audit event ("I attempted
   to analyze this snapshot"), not an idempotent resource; multiple runs can
-  legitimately point at the same snapshot.
-- **GitHub-boundary failures fail closed**: if resolving the commit SHA
-  fails (GitHub API error, repository no longer accessible, malformed
-  response), **no snapshot and no run row is written** — same
+  legitimately point at the same snapshot, each with its own
+  `analysis_evidence` row.
+- **SHA-resolution failures still fail closed**: if resolving the commit
+  SHA fails (GitHub API error, repository no longer accessible, malformed
+  response), **no snapshot and no run row is written at all** — same
   no-partial-write convention as the install callback (see
   [docs/github-integration.md](github-integration.md)).
+- **Archive/evidence-collection failures record a `'failed'` run instead**:
+  once the snapshot is valid and recorded, a subsequent failure (archive
+  download error, extraction error) no longer discards the fact that a
+  trigger happened — it produces a `analysis_runs` row with
+  `status = 'failed'` and no `analysis_evidence` row. This is a
+  deliberate difference from SHA resolution: the snapshot is real and
+  worth keeping regardless of whether evidence collection succeeded.
 
 See `apps/api/src/analysis/persistence.ts` and
 `apps/api/src/routes/analyses.ts` (`POST /repositories/:id/analyses`) for
@@ -201,38 +239,64 @@ ProviderChange      1 ── * ImpactAssessment
 AnalysisRun         1 ── * ImpactAssessment
 ```
 
-### Version applicability is evidence, not one repository field (PROPOSED — correction)
+### Version applicability is evidence, not one repository field (CURRENT for InstalledSdkEvidence/ClientVersionEvidence; correction from the original candidate model)
 
 The original candidate model implied a single, repository-level Stripe API
-version. **That is wrong and must not be implemented.** "This repository
-uses `stripe-node` version X" does not fully determine which Stripe
-contract a given usage actually experiences — API version, account default
-version, and webhook version can all differ within a single repository
-(and can differ per package in a monorepo, or per configured client).
-`stripe-node`'s TypeScript definitions represent the SDK's _current_
-supported API shape; Stripe explicitly warns that older API versions are
-not accurately represented by those definitions.
+version. **That was wrong and was not implemented.** "This repository uses
+`stripe-node` version X" does not fully determine which Stripe contract a
+given usage actually experiences — API version, account default version,
+and webhook version can all differ within a single repository (and can
+differ per package in a monorepo, or per configured client). `stripe-node`'s
+TypeScript definitions represent the SDK's _current_ supported API shape;
+Stripe explicitly warns that older API versions are not accurately
+represented by those definitions. No repository-level `stripe_version` or
+`stripe_api_version` field exists anywhere in this schema.
 
-Applicability evidence should instead be collected per snapshot/usage
-context, roughly:
+Applicability evidence is collected per snapshot/usage context, as a
+`StripeEvidence` JSON blob (`apps/api/src/analysis/evidence/types.ts`,
+persisted in `analysis_evidence.evidence`, zod-validated on write):
 
-- `InstalledSdkEvidence` — package, exact lockfile version, owning
-  workspace/package
-- `SdkApiVersionEvidence` — pinned SDK API version, where recoverable
-- `ClientVersionEvidence[]` — explicit `apiVersion` client configuration,
-  source location, and whether it resolved to a constant, a resolvable
-  expression, or is unknown
-- `AccountVersionEvidence` — known / unknown, with source
-- `WebhookVersionEvidence` — out-of-scope / known / unknown
+- **`InstalledSdkEvidence[]` (CURRENT)** — one entry per workspace/package
+  that directly declares a `stripe` dependency: `packageName`,
+  `workspacePath`, `manifestPath`, `dependencyField`, `declaredRange`,
+  `resolvedVersion`, `resolutionStatus`
+  (`EXACT | DECLARED_ONLY | CONFLICTING | UNKNOWN`), `evidenceSources`.
+  Never collapsed to one repository-wide value — a monorepo with Stripe in
+  multiple packages, or at different versions, produces multiple entries.
+  Resolved against `package-lock.json` and `pnpm-lock.yaml` only (see
+  `docs/github-integration.md`); `yarn.lock` is recognized but not parsed,
+  falling back to `DECLARED_ONLY`. Transitive (non-direct) `stripe`
+  installs are not evidenced.
+- **`ClientVersionEvidence[]` (CURRENT, narrower than `SdkApiVersionEvidence`
+  above implied)** — one entry per `new Stripe(secret, { apiVersion })`
+  construction found via AST parsing (`ts.createSourceFile`, not a
+  type-checked `Program`): `workspacePath`, `sourceFile`, `line`,
+  `apiVersion`, `valueKind` (`LITERAL | LOCAL_CONSTANT | DYNAMIC_UNKNOWN`).
+  Only a same-file `const` with a string-literal initializer is resolved
+  as `LOCAL_CONSTANT`; anything else (env vars, imported constants,
+  function calls, ternaries) is `DYNAMIC_UNKNOWN` with `apiVersion: null`
+  — never guessed.
+- **`AccountVersionEvidence` (CURRENT, but a static stub)** — always
+  `{ status: 'UNKNOWN', reason: '...' }`. No Stripe API is ever called.
+- **`WebhookVersionEvidence` (CURRENT, but a static stub)** — always
+  `{ status: 'OUT_OF_SCOPE', reason: '...' }`. No webhook configuration is
+  analyzed.
+- **`AnalysisCoverage` (CURRENT)** — `archiveAcquired`,
+  `manifestsDiscovered`, `workspaceConfigDiscovered`,
+  `lockfilesDiscovered/Parsed/Unsupported`, `sourceFilesScanned`,
+  `sourceFilesTruncated`, `parseFailures` — distinguishes "we looked and
+  found nothing" from "we couldn't fully look."
 
-**`UNKNOWN` must be a valid, expected outcome for every one of these**, not
-an error state. A repository can legitimately have unresolvable version
-evidence, and that has to flow into the tri-state assessment (see
-[impact-analysis.md](impact-analysis.md)) rather than being silently
-assumed away.
+**`UNKNOWN` (and `DECLARED_ONLY`/`CONFLICTING`) is a valid, expected
+outcome for every one of these**, not an error state. A repository can
+legitimately have unresolvable version evidence, and that has to flow into
+the tri-state assessment (see [impact-analysis.md](impact-analysis.md))
+rather than being silently assumed away.
 
 This may eventually become a `VersionContext` abstraction attached to a
-specific usage rather than a snapshot-wide value — not designed yet.
+specific usage rather than a snapshot-wide value (**PROPOSED, not
+implemented**) — the current `StripeEvidence` JSON blob is not that
+abstraction, just the discoverable evidence it would eventually draw from.
 
 ### Splitting what `ChangeRule` was implied to be (PROPOSED — correction)
 
@@ -286,15 +350,19 @@ metered-billing migration's transition state) should stay behind a
 provider-specific escape hatch rather than being forced into a generic
 shape prematurely.
 
-### Do not persist a large `ApiUsage` table yet (PROPOSED — correction)
+### Do not persist a large `ApiUsage` table yet (dependency/version evidence now CURRENT via `analysis_evidence`; the rest still PROPOSED — correction)
 
-This is premature schema commitment today. For the initial product, prefer
-persisting:
+This was premature schema commitment when originally written. For the
+initial product, persist:
 
-- snapshot identity (`RepositorySnapshot`)
-- dependency/version evidence (see above)
-- analysis coverage (`AnalysisRun.coverage_report`)
-- `ImpactAssessment`s
+- snapshot identity (`RepositorySnapshot`) — **CURRENT**
+- dependency/version evidence (see above) — **CURRENT**, as the
+  `analysis_evidence.evidence` JSON blob, not a normalized relational
+  model — the correction below still applies to this evidence: it stays a
+  schema-validated JSON document, not a `Dependency`/`ApiUsage` table.
+- analysis coverage (`AnalysisCoverage`, part of `StripeEvidence` above) —
+  **CURRENT**
+- `ImpactAssessment`s — **PROPOSED**
 - findings/evidence spans (`AffectedLocation` / "Finding" — the specific
   file/line/usage an assessment points to)
 - analyzer/rule versions
@@ -336,9 +404,11 @@ produces an `ImpactAssessment`.
 ## Deferred
 
 `ProviderChange` through `AuditEvent` (the remainder of the candidate list
-above, now that `RepositorySnapshot` and `AnalysisRun` are implemented)
-require their own design pass once the impact-analysis vertical slice is
-scoped. Archive/source acquisition for actual analysis (downloading the
-exact-SHA repository contents) is also deferred — this slice resolves and
-records the exact commit SHA but does not fetch repository content; nothing
-yet consumes it.
+above, now that `RepositorySnapshot`, `AnalysisRun`, and the evidence
+subset above are implemented) require their own design pass once the
+impact-analysis vertical slice is scoped. Full repository-content
+persistence remains deferred: an exact-SHA archive is downloaded and
+extracted per analysis, but only ever to an OS temp directory deleted
+immediately after evidence collection (`apps/api/src/analysis/archive.ts`)
+— no source file content is ever persisted to PostgreSQL, only the
+structured evidence derived from it.

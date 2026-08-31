@@ -43,7 +43,9 @@ apps/api/src/
                       packages/config since apps/worker needs none of it
   github/
     client.ts         raw fetch wrappers over GitHub's OAuth/REST HTTP
-                       boundary, injectable for tests
+                       boundary, injectable for tests; also owns
+                       downloadRepositoryArchive (streams the exact-SHA
+                       tarball to a caller-given path, size-capped)
     auth.ts            wraps @octokit/auth-app: generates a short-lived App
                        JWT or installation access token on demand, never
                        cached/persisted
@@ -58,9 +60,24 @@ apps/api/src/
     version.ts        ANALYZER_VERSION constant (hardcoded, manually bumped)
     snapshots.ts       orchestration only: resolves the exact current commit
                        SHA for a repository's default branch via github/
-    persistence.ts     idempotent upsert of RepositorySnapshot + insert of
-                       AnalysisRun (Postgres unique constraint, not
-                       check-then-insert); repository ownership lookup;
+    archive.ts          generic (no GitHub knowledge) safe extraction of a
+                       downloaded .tar.gz into a temp dir -- selective
+                       allowlist filter, guaranteed cleanup
+    evidence.ts         orchestration: download (github/) -> extract
+                       (archive.ts) -> evidence extractors (evidence/) ->
+                       StripeEvidence, with guaranteed cleanup
+    evidence/
+      types.ts          zod-validated StripeEvidence shape (see
+                        docs/data-model.md)
+      manifests.ts       discovers package.json files + stripe dependency
+                        declarations (no glob-matching of workspace config)
+      lockfiles.ts       resolves declared ranges against package-lock.json
+                        / pnpm-lock.yaml (yarn.lock recognized, not parsed)
+      api-version.ts     AST-only (ts.createSourceFile, no type-checked
+                        Program) scan for `new Stripe(..., { apiVersion })`
+    persistence.ts     idempotent upsert of RepositorySnapshot; insert of
+                       AnalysisRun (+ AnalysisEvidence, together, only when
+                       status is 'completed'); repository ownership lookup;
                        latest-analysis-per-repository lookup
   plugins/
     session.ts        resolves request.user for every request; a
@@ -86,19 +103,26 @@ handler. Full design and rationale:
 [docs/security.md](security.md),
 [docs/data-model.md](data-model.md#repository_snapshots).
 
-### apps/api's snapshot/analysis-run flow (CURRENT)
+### apps/api's snapshot/analysis-run + evidence flow (CURRENT)
 
 `POST /repositories/:id/analyses` resolves a connected repository's exact
-current commit SHA and records it as an immutable `RepositorySnapshot`,
-plus a separate `AnalysisRun` referencing it. This is the reproducibility
-foundation for future impact analysis — it does not itself analyze
-anything (no repository content is read, downloaded, or executed). Runs
-synchronously in the request handler (one GitHub API call + one DB
-transaction); no queue or background worker involved. `analysis/`
-mirrors `github/`'s existing split: orchestration (`snapshots.ts`, no DB
-access) separate from persistence (`persistence.ts`, no HTTP). See
-[docs/data-model.md](data-model.md) for the schema and idempotency
-guarantees.
+current commit SHA and records it as an immutable `RepositorySnapshot`
+(reproducibility foundation, unchanged from the prior slice), then
+downloads the exact-SHA archive and collects deterministic Stripe/
+TypeScript applicability evidence from it — never a decision about whether
+any provider change affects the repository, only what's discoverable from
+source (installed SDK versions, explicit `apiVersion` configuration). No
+repository code is ever executed; only text is read (see
+[docs/security.md](security.md)). Runs synchronously in the request
+handler (one GitHub API call for the SHA + one archive download/extract +
+one DB transaction); no queue or background worker — the workload is
+bounded (small selective extraction, no `node_modules`) and comparable in
+cost to the GitHub call this route already made before evidence
+collection existed. `analysis/` mirrors `github/`'s existing split:
+orchestration (`snapshots.ts`, `evidence.ts`, `archive.ts` — no DB access)
+separate from persistence (`persistence.ts`, no HTTP/filesystem access).
+See [docs/data-model.md](data-model.md) for the schema, evidence shape,
+and idempotency guarantees.
 
 ## Dependency direction
 

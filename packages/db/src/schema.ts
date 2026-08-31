@@ -1,6 +1,8 @@
 import {
   bigint,
   boolean,
+  integer,
+  jsonb,
   pgTable,
   serial,
   text,
@@ -174,4 +176,30 @@ export const analysisRuns = pgTable('analysis_runs', {
   status: text('status').notNull(),
   startedAt: timestamp('started_at', { withTimezone: true }).notNull().defaultNow(),
   completedAt: timestamp('completed_at', { withTimezone: true }),
+});
+
+/**
+ * Deterministic Stripe/TypeScript applicability evidence collected for one
+ * AnalysisRun -- not a decision about whether any change affects the
+ * repository (that's a future ImpactAssessment's job). One optional row per
+ * run: a run can legitimately have none (status='failed', or a
+ * pre-evidence-slice historical row). ON DELETE CASCADE from analysis_runs
+ * -- evidence without its run is meaningless. `evidence` is a
+ * zod-validated JSON blob (see analysis/evidence/types.ts) rather than a
+ * normalized Dependency/ApiUsage relational model -- deliberately deferred
+ * per docs/data-model.md's research correction as premature schema
+ * commitment. `schema_version` lets the shape evolve without a destructive
+ * migration.
+ */
+export const analysisEvidence = pgTable('analysis_evidence', {
+  id: uuid('id')
+    .primaryKey()
+    .$defaultFn(() => crypto.randomUUID()),
+  analysisRunId: uuid('analysis_run_id')
+    .notNull()
+    .unique()
+    .references(() => analysisRuns.id, { onDelete: 'cascade' }),
+  schemaVersion: integer('schema_version').notNull(),
+  evidence: jsonb('evidence').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });

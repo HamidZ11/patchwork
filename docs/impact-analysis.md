@@ -218,32 +218,40 @@ method references, and negative near-matches (an unrelated object that
 happens to share the method name) — a stronger first test of the escalation
 ladder than a single-property rename would be.
 
-## Next engineering sequence (first step CURRENT, rest PROPOSED)
+## Next engineering sequence (first two steps CURRENT, rest PROPOSED)
 
 The highest-leverage next slice is not automated Stripe changelog ingestion
 and not AI:
 
 ```
-RepositorySnapshot (exact SHA)          <- CURRENT (this slice)
-  → AnalysisRun                          <- CURRENT (this slice)
-  → Stripe/TypeScript version-applicability evidence
+RepositorySnapshot (exact SHA)          <- CURRENT
+  → AnalysisRun                          <- CURRENT
+  → Stripe/TypeScript version-applicability evidence   <- CURRENT
   → one manually encoded real Stripe ProviderChange
   → TypeScript semantic impact engine (compiler-resolved direct usage
      + basic alias/re-export resolution)
   → tri-state evaluation harness/benchmark corpus
 ```
 
-**Only the first step is implemented**, and it implements the
-reproducibility boundary only — resolving and recording an exact commit
-SHA (`RepositorySnapshot`) plus one execution record referencing it
-(`AnalysisRun`). It does not read, download, or analyze any repository
-content, does not touch Stripe in any way, and produces no findings or
-assessments. See [docs/data-model.md](data-model.md) for what was actually
-built and [docs/github-integration.md](github-integration.md) for the
-GitHub-boundary details. Everything after the first arrow remains
-unimplemented, and none of it should be started without a separate
-planning/approval pass — this document exists so that pass starts from a
-corrected model, not to authorize starting it.
+**Only the first two steps are implemented.** The first implements the
+reproducibility boundary — resolving and recording an exact commit SHA
+(`RepositorySnapshot`) plus one execution record referencing it
+(`AnalysisRun`). The second acquires the exact-SHA archive and collects
+deterministic evidence from it: which workspaces/packages declare a
+`stripe` dependency and what version they resolve to
+(`InstalledSdkEvidence`), and any statically-resolvable `apiVersion`
+passed to `new Stripe(...)` (`ClientVersionEvidence`) — never a decision
+about whether any Stripe API change affects the repository, and never a
+single repository-level version field (see
+[docs/data-model.md](data-model.md#version-applicability-is-evidence-not-one-repository-field-current-for-installedsdkevidenceclientversionevidence-correction-from-the-original-candidate-model)).
+No `ProviderChange` exists yet, so nothing in this evidence is matched
+against anything — it is collected and stored, not evaluated. See
+[docs/data-model.md](data-model.md) for what was actually built and
+[docs/github-integration.md](github-integration.md) for the GitHub-boundary
+details. Everything after the third arrow remains unimplemented, and none
+of it should be started without a separate planning/approval pass — this
+document exists so that pass starts from a corrected model, not to
+authorize starting it.
 
 ## Open questions
 

@@ -25,25 +25,51 @@ Vitest is the test runner across every package and app.
   `apps/api/src/__tests__/github.integration.test.ts`,
   `apps/api/src/__tests__/analyses.integration.test.ts`) run against a real
   PostgreSQL instance, exercising real
-  user/session/installation/repository/snapshot/analysis-run persistence
-  and uniqueness/idempotency (duplicate upserts converge to one row).
-  `analyses.integration.test.ts` additionally covers: authorization (404,
-  not 403, for a repository connected by a different user — no existence
-  leak), the fail-closed/no-partial-write behavior when the faked GitHub
-  boundary errors, that repeated triggers against an unchanged commit
-  converge to one `RepositorySnapshot` but create a new `AnalysisRun` each
-  time, and FK/cascade behavior when a repository is deleted. They require
-  `DATABASE_URL` to point at a reachable, migrated PostgreSQL database —
-  either `docker compose up -d postgres` + `pnpm db:migrate` locally, or the
-  `postgres` service container plus the migrate step in CI (migrations run
-  once as a separate CI step, not inside every test file).
+  user/session/installation/repository/snapshot/analysis-run/evidence
+  persistence and uniqueness/idempotency (duplicate upserts converge to one
+  row). `analyses.integration.test.ts` additionally covers: authorization
+  (404, not 403, for a repository connected by a different user — no
+  existence leak); the fail-closed/no-partial-write behavior when SHA
+  resolution fails; that a `'failed'` `AnalysisRun` (no `analysis_evidence`
+  row) is recorded — without discarding the already-valid snapshot — when
+  archive acquisition fails; real Stripe evidence persisted and correctly
+  linked to its `analysis_run_id` when a fixture archive declares a
+  dependency; that repeated triggers against an unchanged commit converge
+  to one `RepositorySnapshot` but create a new `AnalysisRun` (and its own
+  evidence row) each time; and FK/cascade behavior when a repository is
+  deleted. They require `DATABASE_URL` to point at a reachable, migrated
+  PostgreSQL database — either `docker compose up -d postgres` +
+  `pnpm db:migrate` locally, or the `postgres` service container plus the
+  migrate step in CI (migrations run once as a separate CI step, not
+  inside every test file).
 - **The GitHub HTTP boundary is fakeable, never real.** `apps/api/src/github/client.ts`
   and `github/auth.ts` accept an injectable `fetch`/auth implementation
   (`apps/api/src/__tests__/fixtures.ts` provides `fakeGitHubClient` and
-  `fakeGitHubAppAuth`). Tests never make real network calls to GitHub, and
-  never mock Patchwork's own logic (`installations.ts`, routes, persistence
-  all run for real against the fakes) — only the external HTTP boundary is
-  faked.
+  `fakeGitHubAppAuth`, plus `fakeGitHubClientWithArchive` for
+  archive-acquiring tests). Tests never make real network calls to GitHub,
+  and never mock Patchwork's own logic (`installations.ts`, routes,
+  persistence, archive extraction, evidence extraction all run for real
+  against the fakes) — only the external HTTP boundary is faked.
+- **Fixture archives are built in-memory, not checked in.**
+  `apps/api/src/__tests__/build-fixture-archive.ts`'s `buildFixtureArchive`
+  packs a flat path→content map into a real `.tar.gz` (via the `tar`
+  library, wrapped in a synthetic `<owner>-<repo>-<sha>/` root matching
+  GitHub's real layout) so tests exercise genuine extraction, not a mock of
+  it. `buildMaliciousTarGz` hand-crafts a single raw tar entry with an
+  attacker-controlled path (traversal or absolute) to prove `tar.x`'s Zip
+  Slip protection actually rejects it on extraction
+  (`apps/api/src/analysis/__tests__/archive.test.ts`) — deliberately
+  bypassing the normal packer, which wouldn't produce such a path from a
+  real file.
+- **Evidence extraction is unit-tested independent of the DB/HTTP boundary**
+  (`apps/api/src/analysis/evidence/__tests__/{manifests,lockfiles,
+api-version}.test.ts`): manifest/workspace discovery, declared-range vs.
+  lockfile-resolved (`package-lock.json` and `pnpm-lock.yaml`) version
+  resolution including `CONFLICTING`/`UNKNOWN`, `yarn.lock` recognized but
+  not parsed, multiple Stripe contexts in a monorepo never collapsed,
+  literal/local-constant/dynamic `apiVersion` classification, an unrelated
+  `apiVersion`-named property outside a Stripe construction producing no
+  evidence, and malformed source/manifests handled without crashing.
 
 ### Test isolation
 

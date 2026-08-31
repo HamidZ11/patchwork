@@ -1,7 +1,9 @@
+import { writeFile } from 'node:fs/promises';
 import type { Database, DbClient } from '@patchwork/db';
 import type { AppDeps } from '../app.js';
 import type { GitHubAppAuth } from '../github/auth.js';
 import type { GitHubClient } from '../github/client.js';
+import { buildFixtureArchive } from './build-fixture-archive.js';
 
 export function fakeDbClient(overrides: Partial<DbClient> = {}): DbClient {
   return {
@@ -29,8 +31,31 @@ export function fakeGitHubClient(overrides: Partial<GitHubClient> = {}): GitHubC
     getBranchCommitSha: async () => {
       throw new Error('getBranchCommitSha not stubbed for this test');
     },
+    downloadRepositoryArchive: async () => {
+      throw new Error('downloadRepositoryArchive not stubbed for this test');
+    },
     ...overrides,
   };
+}
+
+/**
+ * A fakeGitHubClient whose downloadRepositoryArchive writes a real
+ * .tar.gz built from `files` (see buildFixtureArchive) to whatever
+ * destination path is requested -- exercises the real extraction/parsing
+ * code in analysis/archive.ts and analysis/evidence/*, only the GitHub
+ * HTTP boundary itself is faked.
+ */
+export function fakeGitHubClientWithArchive(
+  files: Record<string, string>,
+  overrides: Partial<GitHubClient> = {},
+): GitHubClient {
+  return fakeGitHubClient({
+    downloadRepositoryArchive: async (_owner, _name, _commitSha, _token, destinationPath) => {
+      const archive = await buildFixtureArchive(files);
+      await writeFile(destinationPath, archive);
+    },
+    ...overrides,
+  });
 }
 
 export function fakeGitHubAppAuth(overrides: Partial<GitHubAppAuth> = {}): GitHubAppAuth {
