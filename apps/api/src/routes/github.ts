@@ -7,6 +7,7 @@ import {
   getRepositoriesForUser,
   upsertInstallationAndRepositories,
 } from '../github/persistence.js';
+import { getLatestAnalysisForRepositories } from '../analysis/persistence.js';
 import type { CookiePolicy } from '../plugins/cookies.js';
 import { generateAndSetState, validateAndConsumeState } from '../plugins/oauth-state.js';
 import { requireAuth } from '../plugins/session.js';
@@ -79,7 +80,17 @@ export function registerGitHubRoutes(app: FastifyInstance, deps: GitHubRoutesDep
 
   app.get('/repositories', { preHandler: requireAuth }, async (request) => {
     const repositories = await getRepositoriesForUser(deps.db, request.user!.id);
-    return { repositories };
+    const latestAnalysisByRepo = await getLatestAnalysisForRepositories(
+      deps.db,
+      repositories.map((repo) => repo.id),
+    );
+
+    return {
+      repositories: repositories.map((repo) => ({
+        ...repo,
+        latestAnalysis: latestAnalysisByRepo.get(repo.id) ?? null,
+      })),
+    };
   });
 }
 

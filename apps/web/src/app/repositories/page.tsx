@@ -2,6 +2,11 @@ import { redirect } from 'next/navigation';
 import { ErrorBanner } from '@/components/error-banner';
 import { apiFetch, API_URL } from '@/lib/api';
 
+interface LatestAnalysis {
+  commitSha: string;
+  status: string;
+}
+
 interface Repository {
   id: string;
   owner: string;
@@ -9,6 +14,13 @@ interface Repository {
   fullName: string;
   isPrivate: boolean;
   defaultBranch: string;
+  latestAnalysis: LatestAnalysis | null;
+}
+
+async function analyseRepository(repositoryId: string) {
+  'use server';
+  await apiFetch(`/repositories/${repositoryId}/analyses`, { method: 'POST' });
+  redirect('/repositories');
 }
 
 export default async function RepositoriesPage({
@@ -68,11 +80,26 @@ export default async function RepositoriesPage({
               <span className="text-xs text-zinc-500 dark:text-zinc-400">
                 {repo.isPrivate ? 'Private' : 'Public'} · default branch {repo.defaultBranch}
               </span>
+              {repo.latestAnalysis && (
+                <span className="text-xs text-zinc-500 dark:text-zinc-400">
+                  Commit {repo.latestAnalysis.commitSha.slice(0, 7)} · {repo.latestAnalysis.status}
+                </span>
+              )}
             </div>
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400">
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-              Connected
-            </span>
+            <div className="flex items-center gap-3">
+              <form action={analyseRepository.bind(null, repo.id)}>
+                <button
+                  type="submit"
+                  className="rounded-md border border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-700 transition-colors hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-900"
+                >
+                  Analyse repository
+                </button>
+              </form>
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                Connected
+              </span>
+            </div>
           </li>
         ))}
       </ul>

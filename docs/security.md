@@ -54,8 +54,11 @@ model plus what's actually implemented today.
 ### GitHub credentials
 
 - Least privilege: the GitHub App requests **Metadata: Read-only** and
-  nothing else (see [docs/github-integration.md](github-integration.md)
-  for the full permission rationale).
+  **Contents: Read-only** (added for exact-commit-SHA resolution — see
+  below), and nothing else (see
+  [docs/github-integration.md](github-integration.md) for the full
+  permission rationale, including the manual approval step existing
+  installations must complete).
 - **Generate, use, discard** — no GitHub credential is ever persisted:
   - The user's OAuth access token is used once (to fetch their GitHub
     profile) and discarded — never written to the database.
@@ -83,8 +86,14 @@ requests either. See [ADR-003](adr/0003-server-to-server-cookie-forwarding.md).
 input. Required future control: minimize what's persisted (prefer
 analyzing over storing full source; if snapshots are stored, scope and
 retention need explicit limits) — see the `RepositorySnapshot` concept in
-[data-model.md](data-model.md). Not yet relevant: this slice never reads
-repository contents, only metadata (name/owner/visibility/default branch).
+[data-model.md](data-model.md). **Partially relevant now**: the GitHub App
+was granted Contents: Read-only in this slice, but only a commit SHA (a
+hash identifying a version, not source content) crosses the boundary —
+`GET /repos/{owner}/{repo}/commits/{branch}` returns commit metadata, not
+file contents. No repository file content is read, downloaded, or
+persisted anywhere yet, and no archive/clone of any kind is acquired. That
+remains deferred to the slice that actually performs analysis, where
+"download → use → delete" can be verified end-to-end.
 
 **GitHub credentials.** Addressed above (generate/use/discard,
 least-privilege permissions, never logged).

@@ -26,6 +26,9 @@ export function fakeGitHubClient(overrides: Partial<GitHubClient> = {}): GitHubC
     listInstallationRepositories: async () => {
       throw new Error('listInstallationRepositories not stubbed for this test');
     },
+    getBranchCommitSha: async () => {
+      throw new Error('getBranchCommitSha not stubbed for this test');
+    },
     ...overrides,
   };
 }

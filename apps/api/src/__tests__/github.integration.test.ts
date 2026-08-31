@@ -262,6 +262,7 @@ describe('github install flow (real database)', () => {
       fullName: 'octocat/hello-world',
       isPrivate: false,
       defaultBranch: 'main',
+      latestAnalysis: null,
     });
 
     await cleanupUser(userId);

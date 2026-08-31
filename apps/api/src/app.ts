@@ -5,6 +5,7 @@ import type { GitHubAppAuth } from './github/auth.js';
 import type { GitHubClient } from './github/client.js';
 import type { CookiePolicy } from './plugins/cookies.js';
 import { registerSessionPlugin } from './plugins/session.js';
+import { registerAnalysesRoutes } from './routes/analyses.js';
 import { registerAuthRoutes } from './routes/auth.js';
 import { registerGitHubRoutes } from './routes/github.js';
 import { registerHealthRoutes } from './routes/health.js';
@@ -66,6 +67,11 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     githubAppSlug: deps.githubAppSlug,
     cookiePolicy: deps.cookiePolicy,
     webAppUrl: deps.webAppUrl,
+  });
+  registerAnalysesRoutes(app, {
+    db: deps.db.db,
+    githubClient: deps.githubClient,
+    githubAppAuth: deps.githubAppAuth,
   });
 
   return app;

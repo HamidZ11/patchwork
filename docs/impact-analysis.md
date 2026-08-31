@@ -218,14 +218,14 @@ method references, and negative near-matches (an unrelated object that
 happens to share the method name) — a stronger first test of the escalation
 ladder than a single-property rename would be.
 
-## Next engineering sequence (PROPOSED)
+## Next engineering sequence (first step CURRENT, rest PROPOSED)
 
 The highest-leverage next slice is not automated Stripe changelog ingestion
 and not AI:
 
 ```
-RepositorySnapshot (exact SHA)
-  → AnalysisRun
+RepositorySnapshot (exact SHA)          <- CURRENT (this slice)
+  → AnalysisRun                          <- CURRENT (this slice)
   → Stripe/TypeScript version-applicability evidence
   → one manually encoded real Stripe ProviderChange
   → TypeScript semantic impact engine (compiler-resolved direct usage
@@ -233,9 +233,17 @@ RepositorySnapshot (exact SHA)
   → tri-state evaluation harness/benchmark corpus
 ```
 
-Nothing in this sequence is implemented yet, and none of it should be
-started without a separate planning/approval pass — this document exists so
-that pass starts from a corrected model, not to authorize starting it.
+**Only the first step is implemented**, and it implements the
+reproducibility boundary only — resolving and recording an exact commit
+SHA (`RepositorySnapshot`) plus one execution record referencing it
+(`AnalysisRun`). It does not read, download, or analyze any repository
+content, does not touch Stripe in any way, and produces no findings or
+assessments. See [docs/data-model.md](data-model.md) for what was actually
+built and [docs/github-integration.md](github-integration.md) for the
+GitHub-boundary details. Everything after the first arrow remains
+unimplemented, and none of it should be started without a separate
+planning/approval pass — this document exists so that pass starts from a
+corrected model, not to authorize starting it.
 
 ## Open questions
 

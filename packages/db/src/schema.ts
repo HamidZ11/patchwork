@@ -117,3 +117,61 @@ export const repositories = pgTable(
   },
   (table) => [uniqueIndex('repositories_github_repository_id_idx').on(table.githubRepositoryId)],
 );
+
+/**
+ * An immutable snapshot of a repository's source identity at one exact
+ * commit — never a mutable branch pointer. (repository_id, commit_sha) is
+ * unique (not commit_sha alone: two unrelated repositories can share a
+ * commit hash via fork/coincidence). Describes source identity only, not
+ * analysis results — see analysisRuns.
+ */
+export const repositorySnapshots = pgTable(
+  'repository_snapshots',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    repositoryId: uuid('repository_id')
+      .notNull()
+      .references(() => repositories.id, { onDelete: 'cascade' }),
+    commitSha: text('commit_sha').notNull(),
+    ref: text('ref').notNull(),
+    acquisitionMethod: text('acquisition_method').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex('repository_snapshots_repo_sha_idx').on(table.repositoryId, table.commitSha),
+  ],
+);
+
+/**
+ * One execution of Patchwork's analyzer against one RepositorySnapshot.
+ * Kept separate from RepositorySnapshot deliberately: the same commit SHA
+ * can legitimately be analyzed again later with a different
+ * analyzer/ruleset version and produce a different result — an
+ * ImpactAssessment (future) is truth about this pair, not about the SHA
+ * alone. Not deduplicated: each trigger is its own execution/audit record,
+ * not an idempotent resource, so multiple runs may point at the same
+ * snapshot.
+ *
+ * ruleset_version, provider_catalog_version, analysis_configuration,
+ * typescript_version_used, and coverage_report are deliberately omitted:
+ * none of those systems (rules, provider catalog, real TypeScript
+ * analysis) exist yet, so those fields would be fake. `created_at` is also
+ * omitted -- started_at already serves that purpose here.
+ */
+export const analysisRuns = pgTable('analysis_runs', {
+  id: uuid('id')
+    .primaryKey()
+    .$defaultFn(() => crypto.randomUUID()),
+  repositorySnapshotId: uuid('repository_snapshot_id')
+    .notNull()
+    .references(() => repositorySnapshots.id, { onDelete: 'restrict' }),
+  triggeredByUserId: uuid('triggered_by_user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'restrict' }),
+  analyzerVersion: text('analyzer_version').notNull(),
+  status: text('status').notNull(),
+  startedAt: timestamp('started_at', { withTimezone: true }).notNull().defaultNow(),
+  completedAt: timestamp('completed_at', { withTimezone: true }),
+});

@@ -39,6 +39,12 @@ export interface GitHubClient {
   getAuthenticatedUser: (userAccessToken: string) => Promise<GitHubUserProfile>;
   getInstallation: (installationId: number, appToken: string) => Promise<GitHubInstallationInfo>;
   listInstallationRepositories: (installationToken: string) => Promise<GitHubRepository[]>;
+  getBranchCommitSha: (
+    owner: string,
+    name: string,
+    branch: string,
+    installationToken: string,
+  ) => Promise<string>;
 }
 
 const MAX_REPOSITORY_PAGES = 50;
@@ -158,5 +164,28 @@ export function createGitHubClient(fetchImpl: typeof fetch = fetch): GitHubClien
     return repositories;
   }
 
-  return { exchangeOAuthCode, getAuthenticatedUser, getInstallation, listInstallationRepositories };
+  async function getBranchCommitSha(
+    owner: string,
+    name: string,
+    branch: string,
+    installationToken: string,
+  ): Promise<string> {
+    const response = await fetchImpl(
+      `https://api.github.com/repos/${owner}/${name}/commits/${encodeURIComponent(branch)}`,
+      { headers: authHeaders(installationToken) },
+    );
+    if (!response.ok) throw new GitHubApiError('get_branch_commit_sha_failed', response.status);
+
+    const data = (await response.json()) as { sha?: string };
+    if (!data.sha) throw new GitHubApiError('branch_commit_sha_missing', response.status);
+    return data.sha;
+  }
+
+  return {
+    exchangeOAuthCode,
+    getAuthenticatedUser,
+    getInstallation,
+    listInstallationRepositories,
+    getBranchCommitSha,
+  };
 }

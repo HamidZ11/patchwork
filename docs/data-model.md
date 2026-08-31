@@ -74,11 +74,96 @@ users 1--N sessions            (sessions.user_id)
 users 1--N github_installations (github_installations.connected_by_user_id,
                                   "connector", not full ownership)
 github_installations 1--N repositories (repositories.installation_id)
+repositories 1--N repository_snapshots (repository_snapshots.repository_id)
+repository_snapshots 1--N analysis_runs (analysis_runs.repository_snapshot_id)
+users 1--N analysis_runs        (analysis_runs.triggered_by_user_id)
 ```
 
 No join table for user↔repository access exists yet — access is entirely
 mediated through "which installation did this user connect," and there is
 no multi-user-per-installation sharing model in this slice.
+
+- **`repository_snapshots`** — an immutable source identity: one exact
+  commit SHA of one repository, never mutated once created. `repository_id`
+  references `repositories.id`, **`ON DELETE CASCADE`** (a snapshot without
+  its repository is meaningless). `commit_sha` is the exact SHA resolved
+  from GitHub — **not** the mutable default-branch pointer. `ref` records
+  which branch name it was resolved from (currently always the repository's
+  stored default branch). `acquisition_method` is an app-validated string
+  (currently only `'github_default_branch'`) describing how the SHA was
+  obtained, left as text rather than a DB enum for the same low-friction
+  reason as `account_type` above.
+
+  **`(repository_id, commit_sha)` is unique** — see Idempotency below.
+
+- **`analysis_runs`** — one execution attempt of Patchwork's
+  snapshot/analysis logic against one `RepositorySnapshot`.
+  `repository_snapshot_id` references `repository_snapshots.id`,
+  **`ON DELETE RESTRICT`** (a run is a historical execution record; it
+  should never silently disappear because its snapshot was deleted — delete
+  the run first, matching the fail-closed convention used elsewhere).
+  `triggered_by_user_id` references `users.id`, **`ON DELETE RESTRICT`**
+  for the same reason. `analyzer_version` is the hardcoded constant from
+  `apps/api/src/analysis/version.ts` (currently `'v0'`) — see "Analyzer
+  version" below. `status` is app-validated text; today only `'completed'`
+  is ever written (see below). `started_at`/`completed_at` bound the
+  execution; there is no separate `created_at` on this table since
+  `started_at` already serves that purpose.
+
+  **`AnalysisRun` is a separate table from `RepositorySnapshot`, and always
+  will be**, even though this slice always creates one of each together:
+  the same snapshot can legitimately be re-analyzed later by a different
+  analyzer version and produce a different `analysis_runs` row pointing at
+  the same, unchanged snapshot.
+
+  **Deliberately deferred fields** (do not exist as columns, because the
+  systems they'd describe don't exist yet): `ruleset_version`,
+  `provider_catalog_version`, `analysis_configuration`,
+  `typescript_version_used`, `coverage_report`. Adding them now would be
+  fake data — see the PROPOSED section below for what they were expected to
+  eventually cover.
+
+  **Status model**: only `'pending' | 'running' | 'completed' | 'failed'`
+  exist in the type, matching the general run lifecycle — not a
+  Patchwork-wide status enum, and no patch/verification/PR states live
+  here. In this slice's actual code paths, `status` is only ever observed
+  as `'completed'`: GitHub-boundary failures during SHA resolution fail
+  closed (see below) before any row is written, so `'pending'`/`'running'`/
+  `'failed'` aren't reachable yet — they stay in the type for the lifecycle
+  future async/partial-failure work will need, not implemented today.
+
+### Analyzer version
+
+`ANALYZER_VERSION` (`apps/api/src/analysis/version.ts`) is a hardcoded,
+manually-bumped string constant — not our own git commit SHA (changes on
+every unrelated change, e.g. a docs edit, so doesn't track "did the
+analyzer change") and not `package.json`'s version (pinned at `0.0.0`, no
+release process bumps it). Today it only versions the snapshot/run-creation
+step itself, since no real code analysis exists yet — it exists so future
+`AnalysisRun`s are versioned from day one rather than retrofitted later.
+
+### RepositorySnapshot/AnalysisRun idempotency
+
+- `repository_snapshots` is upserted via the `(repository_id, commit_sha)`
+  unique index + Drizzle `.onConflictDoUpdate` — scanning the same
+  repository at the same commit SHA any number of times converges to one
+  row (`ref`/`acquisition_method` refreshed on conflict). This is a
+  **per-repository** unique constraint, not a global unique on `commit_sha`
+  alone — two unrelated repositories can coincidentally (or via a fork)
+  share a commit SHA.
+- `analysis_runs` is **not** deduplicated — every successful trigger
+  inserts a new row. It represents one execution/audit event ("I attempted
+  to analyze this snapshot"), not an idempotent resource; multiple runs can
+  legitimately point at the same snapshot.
+- **GitHub-boundary failures fail closed**: if resolving the commit SHA
+  fails (GitHub API error, repository no longer accessible, malformed
+  response), **no snapshot and no run row is written** — same
+  no-partial-write convention as the install callback (see
+  [docs/github-integration.md](github-integration.md)).
+
+See `apps/api/src/analysis/persistence.ts` and
+`apps/api/src/routes/analyses.ts` (`POST /repositories/:id/analyses`) for
+the implementation.
 
 ## Candidate domain concepts (PROPOSED — not implemented)
 
@@ -88,26 +173,22 @@ external technical/product research (see
 corrected two structural assumptions in the original candidate list — those
 corrections are called out explicitly below rather than silently applied.
 
-### RepositorySnapshot + AnalysisRun (PROPOSED)
+### RepositorySnapshot + AnalysisRun: remaining fields (PROPOSED)
 
-**`RepositorySnapshot`** is tied to an exact commit SHA — an immutable
-source boundary, acquired via GitHub's commit-specific archive endpoint
-(Contents read access), not a mutable "latest" pointer.
+The core of this model — `repository_snapshots` and `analysis_runs`, tied
+to an exact commit SHA rather than a mutable "latest" pointer — is now
+**CURRENT** (see above). What follows is the part still not implemented:
+`AnalysisRun` eventually referencing
 
-A commit SHA alone does **not** make an assessment reproducible, though.
-Two Patchwork versions can legitimately reach different conclusions on the
-same SHA after a rule or analyser bug is fixed. That reproducibility
-concern is a **separate concept**, `AnalysisRun`, referencing:
-
-- `repository_snapshot_id`
-- `analyzer_version`
 - `ruleset_version`
 - `provider_catalog_version`
 - `analysis_configuration`
 - `typescript_version_used`
-- `status`
 - `coverage_report` (programs loaded, unresolved modules, type errors,
   dynamic construction encountered — see "Analysis coverage" below)
+
+none of which exist as columns today, since the systems they'd describe
+(rules, a provider catalog, real TypeScript analysis) don't exist yet.
 
 **Do not treat an `ImpactAssessment` as timeless truth about a commit
 SHA.** It is truth about `(RepositorySnapshot, AnalysisRun)` — re-running
@@ -227,11 +308,12 @@ normalized, cross-snapshot business entity.
 
 ### Full candidate list
 
-`User`, `GitHubInstallation`, `Repository` (all now CURRENT, as `users`,
-`github_installations`, `repositories` above), `RepositorySnapshot`,
-`AnalysisRun`, `ProviderChange`, `ChangeRule` (structured as above),
-`Dependency`, `ImpactAssessment`, `AffectedLocation`/Finding,
-`PatchAttempt`, `VerificationRun`, `PullRequest`, `AuditEvent`. See
+`User`, `GitHubInstallation`, `Repository`, `RepositorySnapshot`,
+`AnalysisRun` (all now CURRENT, as `users`, `github_installations`,
+`repositories`, `repository_snapshots`, `analysis_runs` above),
+`ProviderChange`, `ChangeRule` (structured as above), `Dependency`,
+`ImpactAssessment`, `AffectedLocation`/Finding, `PatchAttempt`,
+`VerificationRun`, `PullRequest`, `AuditEvent`. See
 [CLAUDE.md](../CLAUDE.md#product) for the core workflow these will support,
 and [docs/impact-analysis.md](impact-analysis.md) for the pipeline that
 produces an `ImpactAssessment`.
@@ -253,6 +335,10 @@ produces an `ImpactAssessment`.
 
 ## Deferred
 
-`RepositorySnapshot` through `AuditEvent` (the full candidate list above)
+`ProviderChange` through `AuditEvent` (the remainder of the candidate list
+above, now that `RepositorySnapshot` and `AnalysisRun` are implemented)
 require their own design pass once the impact-analysis vertical slice is
-scoped. Nothing in this document is implemented.
+scoped. Archive/source acquisition for actual analysis (downloading the
+exact-SHA repository contents) is also deferred — this slice resolves and
+records the exact commit SHA but does not fetch repository content; nothing
+yet consumes it.

@@ -22,14 +22,21 @@ Vitest is the test runner across every package and app.
   (`packages/db/src/__tests__/client.test.ts`,
   `apps/api/src/__tests__/ready.integration.test.ts`,
   `apps/api/src/__tests__/auth.integration.test.ts`,
-  `apps/api/src/__tests__/github.integration.test.ts`) run against a real
-  PostgreSQL instance, exercising real user/session/installation/repository
-  persistence and uniqueness/idempotency (duplicate upserts converge to one
-  row). They require `DATABASE_URL` to point at a reachable, migrated
-  PostgreSQL database — either `docker compose up -d postgres` +
-  `pnpm db:migrate` locally, or the `postgres` service container plus the
-  migrate step in CI (migrations run once as a separate CI step, not inside
-  every test file).
+  `apps/api/src/__tests__/github.integration.test.ts`,
+  `apps/api/src/__tests__/analyses.integration.test.ts`) run against a real
+  PostgreSQL instance, exercising real
+  user/session/installation/repository/snapshot/analysis-run persistence
+  and uniqueness/idempotency (duplicate upserts converge to one row).
+  `analyses.integration.test.ts` additionally covers: authorization (404,
+  not 403, for a repository connected by a different user — no existence
+  leak), the fail-closed/no-partial-write behavior when the faked GitHub
+  boundary errors, that repeated triggers against an unchanged commit
+  converge to one `RepositorySnapshot` but create a new `AnalysisRun` each
+  time, and FK/cascade behavior when a repository is deleted. They require
+  `DATABASE_URL` to point at a reachable, migrated PostgreSQL database —
+  either `docker compose up -d postgres` + `pnpm db:migrate` locally, or the
+  `postgres` service container plus the migrate step in CI (migrations run
+  once as a separate CI step, not inside every test file).
 - **The GitHub HTTP boundary is fakeable, never real.** `apps/api/src/github/client.ts`
   and `github/auth.ts` accept an injectable `fetch`/auth implementation
   (`apps/api/src/__tests__/fixtures.ts` provides `fakeGitHubClient` and

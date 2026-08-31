@@ -54,6 +54,14 @@ apps/api/src/
   auth/
     users.ts          upserts a User keyed on github_user_id
     sessions.ts       creates/looks up/deletes DB-backed sessions
+  analysis/
+    version.ts        ANALYZER_VERSION constant (hardcoded, manually bumped)
+    snapshots.ts       orchestration only: resolves the exact current commit
+                       SHA for a repository's default branch via github/
+    persistence.ts     idempotent upsert of RepositorySnapshot + insert of
+                       AnalysisRun (Postgres unique constraint, not
+                       check-then-insert); repository ownership lookup;
+                       latest-analysis-per-repository lookup
   plugins/
     session.ts        resolves request.user for every request; a
                        requireAuth preHandler enforces it per-route
@@ -68,12 +76,29 @@ apps/api/src/
                        GET /auth/me, POST /auth/logout
     github.ts          GET /github/install, GET /github/install/callback,
                        GET /repositories
+    analyses.ts         POST /repositories/:id/analyses
 ```
 
-Routes stay thin (parse/validate → call `github/`/`auth/` → shape response);
-GitHub-specific HTTP/JWT logic never appears in a route handler. Full design
-and rationale: [docs/github-integration.md](github-integration.md),
-[docs/security.md](security.md).
+Routes stay thin (parse/validate → call `github/`/`auth/`/`analysis/` →
+shape response); GitHub-specific HTTP/JWT logic never appears in a route
+handler. Full design and rationale:
+[docs/github-integration.md](github-integration.md),
+[docs/security.md](security.md),
+[docs/data-model.md](data-model.md#repository_snapshots).
+
+### apps/api's snapshot/analysis-run flow (CURRENT)
+
+`POST /repositories/:id/analyses` resolves a connected repository's exact
+current commit SHA and records it as an immutable `RepositorySnapshot`,
+plus a separate `AnalysisRun` referencing it. This is the reproducibility
+foundation for future impact analysis — it does not itself analyze
+anything (no repository content is read, downloaded, or executed). Runs
+synchronously in the request handler (one GitHub API call + one DB
+transaction); no queue or background worker involved. `analysis/`
+mirrors `github/`'s existing split: orchestration (`snapshots.ts`, no DB
+access) separate from persistence (`persistence.ts`, no HTTP). See
+[docs/data-model.md](data-model.md) for the schema and idempotency
+guarantees.
 
 ## Dependency direction
 

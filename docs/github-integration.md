@@ -29,16 +29,37 @@ been redundant complexity.
 
 ### Permissions (least privilege)
 
-- **Repository permissions: Metadata → Read-only. Nothing else.** This is
-  the mandatory baseline for any App that lists/sees repositories at all,
-  and is sufficient for repository name/owner/visibility/default branch.
-  No Contents, Pull requests, Actions, Workflows, Administration, Issues,
-  Secrets, or Deployments — those will be requested by future slices only
-  when they actually implement functionality that needs them (e.g. opening
-  a PR needs Contents + Pull requests, not requested yet).
+- **Repository permissions: Metadata → Read-only, Contents → Read-only.
+  Nothing else.** Metadata is the mandatory baseline for any App that
+  lists/sees repositories at all (repository name/owner/visibility/default
+  branch). **Contents: Read-only was added for the RepositorySnapshot
+  slice** — `GET /repos/{owner}/{repo}/commits/{branch}` (resolving the
+  exact current commit SHA of a repository's default branch, see
+  [docs/data-model.md](data-model.md)) is gated by the Contents permission
+  category on GitHub's side, not Metadata, even though only a commit SHA
+  (not file content) is read today. No Pull requests, Actions, Workflows,
+  Administration, Issues, Secrets, or Deployments — those will be requested
+  by future slices only when they actually implement functionality that
+  needs them (e.g. opening a PR needs Pull requests, not requested yet).
 - **Account permissions: none.** Basic identity (id, login, avatar_url) is
   available via `GET /user` with any valid user-to-server token — it's core
   OAuth identity, not a scoped capability.
+
+**Existing installations require manual approval of this permission
+change** — GitHub does not silently grant an App's newly-added permissions
+to installations that already exist. After adding Contents: Read-only to
+the App's settings (step 7 below):
+
+1. GitHub will show "N installation(s) will need to approve these changes."
+2. Visit `github.com/settings/installations` (or the organization
+   equivalent), find the Patchwork installation, and approve the pending
+   permission update — GitHub prompts for this the next time you view the
+   installation there, or via a "Review request" link/email GitHub sends.
+3. Until approved, `getBranchCommitSha` calls against that installation
+   will fail with a GitHub API error (surfaced as `502 Bad Gateway` by
+   `POST /repositories/:id/analyses`, per the fail-closed convention below)
+   — this is a real manual step, not something Patchwork can complete on
+   your behalf.
 
 ### Installation ↔ user authorization
 
@@ -104,9 +125,9 @@ To run the connection flow against real GitHub, create a GitHub App once:
    through Patchwork.
 6. **Webhook**: uncheck **Active** — this slice doesn't use webhooks (see
    above). Leave the webhook secret blank.
-7. **Permissions → Repository permissions → Metadata**: **Read-only**.
-   Leave every other repository/organization/account permission as **No
-   access**.
+7. **Permissions → Repository permissions**: set **Metadata** to
+   **Read-only** and **Contents** to **Read-only**. Leave every other
+   repository/organization/account permission as **No access**.
 8. **Where can this GitHub App be installed?**: "Only on this account" is
    fine for local testing.
 9. Click **Create GitHub App**.
@@ -128,16 +149,35 @@ You do **not** need to install the App on any repository yet — that happens
 through Patchwork's own "Install GitHub App" button once you're signed in,
 which exercises the real flow.
 
+## RepositorySnapshot commit SHA resolution (CURRENT)
+
+`POST /repositories/:id/analyses` calls the new `getBranchCommitSha`
+method on `GitHubClient` (`apps/api/src/github/client.ts`):
+`GET /repos/{owner}/{repo}/commits/{branch}`, using the repository's
+already-stored `default_branch` rather than re-fetching repository
+metadata first (one GitHub API call, not two). A fresh installation access
+token is generated, used once, and discarded — same convention as the
+install flow. **Accepted limitation**: if the default branch was renamed on
+GitHub after the repository was connected, this call fails (surfaced as a
+clean `502`) rather than silently resolving against the wrong branch, until
+the repository is re-synced through the connect flow — not handled by this
+slice. See [docs/data-model.md](data-model.md) for the resulting
+`RepositorySnapshot`/`AnalysisRun` rows and their fail-closed,
+no-partial-write behavior on any GitHub-boundary failure.
+
 ## Open questions
 
 - Whether/when `installation`/`installation_repositories` webhooks are
   added to keep repository data fresh without requiring the user to
   re-run the connect flow.
-- Exact permission additions for future slices (Contents, Pull requests,
-  etc.) — will be scoped to what those slices actually implement.
+- Exact permission additions for future slices (Pull requests, etc.) — will
+  be scoped to what those slices actually implement.
 
 ## Deferred
 
-Branch/PR creation, CI status checks on generated PRs, and any repository
-content access — all require permissions not yet requested and are out of
-scope until the slices that need them.
+Branch/PR creation and CI status checks on generated PRs require
+permissions not yet requested (Pull requests, Actions/Workflows) and are
+out of scope until the slices that need them. Downloading/reading actual
+repository file content (beyond a commit SHA) is also deferred — Contents:
+Read-only is granted, but nothing in this slice exercises content reading
+yet, only commit metadata.
