@@ -33,4 +33,19 @@ describe('impact engine benchmark (safety gate)', () => {
       expect(categoriesForRule.has('UNCERTAIN')).toBe(true);
     }
   });
+
+  /**
+   * Slice 5's realistic corpus exists specifically so a perfect
+   * control-corpus score can never silently stand in for real-world
+   * behavior -- assert it's a genuinely meaningful, present slice of the
+   * corpus (not zero cases, not a token handful), and that it's held to
+   * the exact same safety bar as the control corpus, not a relaxed one.
+   */
+  it('the realistic corpus is present and meaningfully sized, and meets the same safety bar', () => {
+    const report = runBenchmark();
+
+    expect(report.byCorpus.realistic.totalCases).toBeGreaterThanOrEqual(20);
+    expect(report.byCorpus.realistic.falseNotAffectedSafetyFailures).toBe(0);
+    expect(report.byCorpus.realistic.unsafeCertaintyCount).toBe(0);
+  });
 });

@@ -276,4 +276,92 @@ describe('scanForMemberAccess (retrieveUpcoming case)', () => {
     ]);
     expect([...results.values()].every((r) => r.sourceFilesScanned === 0)).toBe(true);
   });
+
+  // --- DESTRUCTURING (slice 5 realistic-validation fix) --------------------
+  // Confirmed real gap: destructuring never produces a
+  // PropertyAccessExpression at all, so it was invisible to this predicate
+  // before this fix -- found via slice 5's realistic validation, not
+  // hypothesized.
+
+  it('16. a same-file destructured property read matches', () => {
+    const results = scan([
+      file('package.json', '{}'),
+      file(
+        'src/billing.ts',
+        [
+          STRIPE_IMPORT,
+          "const stripe = new Stripe('sk_test');",
+          'const invoices = stripe.invoices;',
+          'const { retrieveUpcoming } = invoices;',
+          'retrieveUpcoming({ customer: "cus_1" });',
+        ].join('\n'),
+      ),
+    ]);
+    expect(allMatches(results)).toHaveLength(1);
+    expect(allAmbiguous(results)).toHaveLength(0);
+  });
+
+  it('17. a renamed destructured property read still matches', () => {
+    const results = scan([
+      file('package.json', '{}'),
+      file(
+        'src/billing.ts',
+        [
+          STRIPE_IMPORT,
+          "const stripe = new Stripe('sk_test');",
+          'const invoices = stripe.invoices;',
+          'const { retrieveUpcoming: legacyMethod } = invoices;',
+          'legacyMethod({ customer: "cus_1" });',
+        ].join('\n'),
+      ),
+    ]);
+    expect(allMatches(results)).toHaveLength(1);
+    expect(allAmbiguous(results)).toHaveLength(0);
+  });
+
+  it('18. destructuring an unrelated same-named property is a confirmed non-match, not ambiguous', () => {
+    const results = scan([
+      file('package.json', '{}'),
+      file(
+        'src/other.ts',
+        [
+          'const unrelated = { retrieveUpcoming: () => {} };',
+          'const { retrieveUpcoming } = unrelated;',
+        ].join('\n'),
+      ),
+    ]);
+    expect(allMatches(results)).toHaveLength(0);
+    expect(allAmbiguous(results)).toHaveLength(0);
+  });
+
+  it('19. destructuring from a dynamic/unresolvable source is ambiguous, never a silent negative', () => {
+    const results = scan([
+      file('package.json', '{}'),
+      file(
+        'src/dynamic.ts',
+        [
+          'function getCtor(): any { return null; }',
+          'const dynamicThing = getCtor();',
+          'const { retrieveUpcoming } = dynamicThing;',
+        ].join('\n'),
+      ),
+    ]);
+    expect(allMatches(results)).toHaveLength(0);
+    expect(allAmbiguous(results)).toHaveLength(1);
+  });
+
+  it('20. destructuring from an unresolved cross-file import is ambiguous', () => {
+    const results = scan([
+      file('package.json', '{}'),
+      file(
+        'src/wrapper.ts',
+        [
+          "import { invoice } from './invoice-source';",
+          'const { retrieveUpcoming } = invoice;',
+        ].join('\n'),
+      ),
+    ]);
+    expect(allMatches(results)).toHaveLength(0);
+    expect(allAmbiguous(results)).toHaveLength(1);
+  });
 });

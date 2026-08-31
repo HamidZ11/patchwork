@@ -5,9 +5,11 @@ import { IMPACT_RULES } from '../analysis/impact/registry.js';
 import type { ImpactStatus, RuleDefinition } from '../analysis/impact/types.js';
 import { ALL_BENCHMARK_CASES } from './cases/index.js';
 import type {
+  AggregateMetrics,
   BenchmarkCase,
   BenchmarkReport,
   CaseOutcome,
+  Corpus,
   OutcomeBucket,
   RuleReport,
 } from './types.js';
@@ -64,7 +66,20 @@ function runCase(benchmarkCase: BenchmarkCase, rule: RuleDefinition): CaseOutcom
   };
 }
 
-function emptyCounts() {
+interface MutableCounts {
+  totalCases: number;
+  truePositives: number;
+  trueNegatives: number;
+  correctAbstentions: number;
+  falseNotAffectedSafetyFailures: number;
+  overAbstentions: number;
+  falsePositives: number;
+  unsafeCertaintyCount: number;
+  locationCorrect: number;
+  locationTotal: number;
+}
+
+function emptyCounts(): MutableCounts {
   return {
     totalCases: 0,
     truePositives: 0,
@@ -74,10 +89,12 @@ function emptyCounts() {
     overAbstentions: 0,
     falsePositives: 0,
     unsafeCertaintyCount: 0,
+    locationCorrect: 0,
+    locationTotal: 0,
   };
 }
 
-function addOutcome(counts: ReturnType<typeof emptyCounts>, outcome: CaseOutcome): void {
+function addOutcome(counts: MutableCounts, outcome: CaseOutcome): void {
   counts.totalCases += 1;
   switch (outcome.bucket) {
     case 'TRUE_POSITIVE':
@@ -102,34 +119,32 @@ function addOutcome(counts: ReturnType<typeof emptyCounts>, outcome: CaseOutcome
       counts.unsafeCertaintyCount += 1;
       break;
   }
+  if (outcome.findingLocationsCorrect !== null) {
+    counts.locationTotal += 1;
+    if (outcome.findingLocationsCorrect) counts.locationCorrect += 1;
+  }
 }
 
-function precisionRecall(counts: ReturnType<typeof emptyCounts>): {
-  precisionAffected: number | null;
-  recallAffected: number | null;
-} {
+function toMetrics(counts: MutableCounts): AggregateMetrics {
   const precisionDenominator = counts.truePositives + counts.falsePositives;
   const recallDenominator =
     counts.truePositives + counts.falseNotAffectedSafetyFailures + counts.overAbstentions;
   return {
+    totalCases: counts.totalCases,
+    truePositives: counts.truePositives,
+    trueNegatives: counts.trueNegatives,
+    correctAbstentions: counts.correctAbstentions,
+    falseNotAffectedSafetyFailures: counts.falseNotAffectedSafetyFailures,
+    overAbstentions: counts.overAbstentions,
+    falsePositives: counts.falsePositives,
+    unsafeCertaintyCount: counts.unsafeCertaintyCount,
     precisionAffected:
       precisionDenominator === 0 ? null : counts.truePositives / precisionDenominator,
     recallAffected: recallDenominator === 0 ? null : counts.truePositives / recallDenominator,
-  };
-}
-
-function toRuleReport(
-  ruleExternalId: string,
-  title: string,
-  counts: ReturnType<typeof emptyCounts>,
-  findingLocationAccuracy: { correct: number; total: number } | null,
-): RuleReport {
-  return {
-    ruleExternalId,
-    title,
-    ...counts,
-    ...precisionRecall(counts),
-    findingLocationAccuracy,
+    findingLocationAccuracy:
+      counts.locationTotal === 0
+        ? null
+        : { correct: counts.locationCorrect, total: counts.locationTotal },
   };
 }
 
@@ -139,15 +154,20 @@ function toRuleReport(
  * real IMPACT_RULES registry) -- never a parallel/shortcut implementation,
  * so what's benchmarked can't drift from what's shipped. Archive
  * extraction itself is skipped deliberately (see docs/testing.md); that
- * safety property is covered by archive.test.ts.
+ * safety property is covered by archive.test.ts. Aggregates overall, per
+ * rule, and per corpus (control vs. realistic -- see types.ts) so a
+ * perfect control-corpus score can never silently hide weaker realistic
+ * behavior.
  */
 export function runBenchmark(cases: BenchmarkCase[] = ALL_BENCHMARK_CASES): BenchmarkReport {
   const rulesById = new Map(IMPACT_RULES.map((rule) => [rule.providerChange.externalId, rule]));
 
   const overallCounts = emptyCounts();
-  const overallLocationAccuracy = { correct: 0, total: 0 };
-  const perRuleCounts = new Map<string, ReturnType<typeof emptyCounts>>();
-  const perRuleLocationAccuracy = new Map<string, { correct: number; total: number }>();
+  const perRuleCounts = new Map<string, MutableCounts>();
+  const byCorpusCounts: Record<Corpus, MutableCounts> = {
+    control: emptyCounts(),
+    realistic: emptyCounts(),
+  };
   const caseOutcomes: CaseOutcome[] = [];
 
   for (const benchmarkCase of cases) {
@@ -162,43 +182,27 @@ export function runBenchmark(cases: BenchmarkCase[] = ALL_BENCHMARK_CASES): Benc
     caseOutcomes.push(outcome);
 
     addOutcome(overallCounts, outcome);
+    addOutcome(byCorpusCounts[benchmarkCase.corpus], outcome);
     const ruleCounts = perRuleCounts.get(rule.providerChange.externalId) ?? emptyCounts();
     addOutcome(ruleCounts, outcome);
     perRuleCounts.set(rule.providerChange.externalId, ruleCounts);
-
-    if (outcome.findingLocationsCorrect !== null) {
-      overallLocationAccuracy.total += 1;
-      const ruleAccuracy = perRuleLocationAccuracy.get(rule.providerChange.externalId) ?? {
-        correct: 0,
-        total: 0,
-      };
-      ruleAccuracy.total += 1;
-      if (outcome.findingLocationsCorrect) {
-        overallLocationAccuracy.correct += 1;
-        ruleAccuracy.correct += 1;
-      }
-      perRuleLocationAccuracy.set(rule.providerChange.externalId, ruleAccuracy);
-    }
   }
 
   const perRule: RuleReport[] = IMPACT_RULES.filter((rule) =>
     perRuleCounts.has(rule.providerChange.externalId),
-  ).map((rule) =>
-    toRuleReport(
-      rule.providerChange.externalId,
-      rule.providerChange.title,
-      perRuleCounts.get(rule.providerChange.externalId)!,
-      perRuleLocationAccuracy.get(rule.providerChange.externalId) ?? null,
-    ),
-  );
+  ).map((rule) => ({
+    ruleExternalId: rule.providerChange.externalId,
+    title: rule.providerChange.title,
+    ...toMetrics(perRuleCounts.get(rule.providerChange.externalId)!),
+  }));
 
   return {
     totalRules: perRule.length,
     totalCases: cases.length,
-    overall: {
-      ...overallCounts,
-      ...precisionRecall(overallCounts),
-      findingLocationAccuracy: overallLocationAccuracy.total > 0 ? overallLocationAccuracy : null,
+    overall: toMetrics(overallCounts),
+    byCorpus: {
+      control: toMetrics(byCorpusCounts.control),
+      realistic: toMetrics(byCorpusCounts.realistic),
     },
     perRule,
     caseOutcomes,

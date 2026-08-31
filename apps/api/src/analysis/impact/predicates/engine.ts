@@ -7,6 +7,16 @@ import type { Finding } from '../types.js';
 const SOURCE_EXTENSIONS = new Set(['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs']);
 const TSCONFIG_BASENAME_PATTERN = /^tsconfig(\.[\w-]+)?\.json$/;
 
+/**
+ * Type flags treated as "genuinely can't be resolved either way" by every
+ * predicate's type-based fallback checks: `any` (unresolved imports,
+ * dynamic construction) and `unknown` (an explicit annotation meaning
+ * "could be anything," semantically the same abstention signal as `any`
+ * for provenance purposes). Shared so all three predicates apply the same
+ * ambiguity contract.
+ */
+export const UNRESOLVABLE_TYPE_FLAGS = ts.TypeFlags.Any | ts.TypeFlags.Unknown;
+
 export interface AmbiguousReference {
   sourceFile: string;
   line: number;

@@ -9,6 +9,7 @@ export const ISSUING_AUTHORIZATION_STATUS_CASES: BenchmarkCase[] = [
     id: 'issuing-authorization-status-positive-direct-comparison',
     ruleExternalId: RULE_ID,
     category: 'POSITIVE',
+    corpus: 'control',
     files: {
       'package.json': packageJsonWithStripe('^18.0.0'),
       'package-lock.json': packageLockWithStripe('18.2.0'),
@@ -32,6 +33,7 @@ export const ISSUING_AUTHORIZATION_STATUS_CASES: BenchmarkCase[] = [
     id: 'issuing-authorization-status-positive-local-alias',
     ruleExternalId: RULE_ID,
     category: 'POSITIVE',
+    corpus: 'control',
     files: {
       'package.json': packageJsonWithStripe('^18.0.0'),
       'package-lock.json': packageLockWithStripe('18.2.0'),
@@ -52,6 +54,7 @@ export const ISSUING_AUTHORIZATION_STATUS_CASES: BenchmarkCase[] = [
     id: 'issuing-authorization-status-positive-multiple-usages',
     ruleExternalId: RULE_ID,
     category: 'POSITIVE',
+    corpus: 'control',
     files: {
       'package.json': packageJsonWithStripe('^18.0.0'),
       'package-lock.json': packageLockWithStripe('18.2.0'),
@@ -72,6 +75,7 @@ export const ISSUING_AUTHORIZATION_STATUS_CASES: BenchmarkCase[] = [
     id: 'issuing-authorization-status-positive-nested-workspace',
     ruleExternalId: RULE_ID,
     category: 'POSITIVE',
+    corpus: 'control',
     files: {
       'packages/billing/package.json': packageJsonWithStripe('^18.0.0'),
       'packages/billing/package-lock.json': packageLockWithStripe('18.2.0'),
@@ -95,6 +99,7 @@ export const ISSUING_AUTHORIZATION_STATUS_CASES: BenchmarkCase[] = [
     id: 'issuing-authorization-status-negative-unrelated-object',
     ruleExternalId: RULE_ID,
     category: 'NEGATIVE',
+    corpus: 'control',
     files: {
       'package.json': packageJsonWithStripe('^18.0.0'),
       'package-lock.json': packageLockWithStripe('18.2.0'),
@@ -110,6 +115,7 @@ export const ISSUING_AUTHORIZATION_STATUS_CASES: BenchmarkCase[] = [
     id: 'issuing-authorization-status-negative-comment-only',
     ruleExternalId: RULE_ID,
     category: 'NEGATIVE',
+    corpus: 'control',
     files: {
       'package.json': packageJsonWithStripe('^18.0.0'),
       'package-lock.json': packageLockWithStripe('18.2.0'),
@@ -127,6 +133,7 @@ export const ISSUING_AUTHORIZATION_STATUS_CASES: BenchmarkCase[] = [
     id: 'issuing-authorization-status-negative-feature-unused',
     ruleExternalId: RULE_ID,
     category: 'NEGATIVE',
+    corpus: 'control',
     files: {
       'package.json': packageJsonWithStripe('^18.0.0'),
       'package-lock.json': packageLockWithStripe('18.2.0'),
@@ -147,6 +154,7 @@ export const ISSUING_AUTHORIZATION_STATUS_CASES: BenchmarkCase[] = [
     id: 'issuing-authorization-status-negative-pre-boundary-api-version',
     ruleExternalId: RULE_ID,
     category: 'NEGATIVE',
+    corpus: 'control',
     files: {
       'package.json': packageJsonWithStripe('^17.0.0'),
       'package-lock.json': packageLockWithStripe('17.7.0'),
@@ -171,6 +179,7 @@ export const ISSUING_AUTHORIZATION_STATUS_CASES: BenchmarkCase[] = [
     id: 'issuing-authorization-status-uncertain-dynamic-construction',
     ruleExternalId: RULE_ID,
     category: 'UNCERTAIN',
+    corpus: 'control',
     files: {
       'package.json': packageJsonWithStripe('^18.0.0'),
       'package-lock.json': packageLockWithStripe('18.2.0'),
@@ -191,6 +200,7 @@ export const ISSUING_AUTHORIZATION_STATUS_CASES: BenchmarkCase[] = [
     id: 'issuing-authorization-status-uncertain-unresolved-import',
     ruleExternalId: RULE_ID,
     category: 'UNCERTAIN',
+    corpus: 'control',
     files: {
       'package.json': packageJsonWithStripe('^18.0.0'),
       'package-lock.json': packageLockWithStripe('18.2.0'),
@@ -209,6 +219,7 @@ export const ISSUING_AUTHORIZATION_STATUS_CASES: BenchmarkCase[] = [
     id: 'issuing-authorization-status-uncertain-unknown-version',
     ruleExternalId: RULE_ID,
     category: 'UNCERTAIN',
+    corpus: 'control',
     files: {
       'package.json': packageJsonWithStripe('^18.0.0'),
       'src/issuing.ts': [

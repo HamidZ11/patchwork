@@ -9,6 +9,7 @@ export const INVOICE_SUBSCRIPTION_CASES: BenchmarkCase[] = [
     id: 'invoice-subscription-positive-direct-access',
     ruleExternalId: RULE_ID,
     category: 'POSITIVE',
+    corpus: 'control',
     files: {
       'package.json': packageJsonWithStripe('^18.0.0'),
       'package-lock.json': packageLockWithStripe('18.2.0'),
@@ -34,6 +35,7 @@ export const INVOICE_SUBSCRIPTION_CASES: BenchmarkCase[] = [
     id: 'invoice-subscription-positive-local-alias',
     ruleExternalId: RULE_ID,
     category: 'POSITIVE',
+    corpus: 'control',
     files: {
       'package.json': packageJsonWithStripe('^18.0.0'),
       'package-lock.json': packageLockWithStripe('18.2.0'),
@@ -54,6 +56,7 @@ export const INVOICE_SUBSCRIPTION_CASES: BenchmarkCase[] = [
     id: 'invoice-subscription-positive-multiple-usages',
     ruleExternalId: RULE_ID,
     category: 'POSITIVE',
+    corpus: 'control',
     files: {
       'package.json': packageJsonWithStripe('^18.0.0'),
       'package-lock.json': packageLockWithStripe('18.2.0'),
@@ -74,6 +77,7 @@ export const INVOICE_SUBSCRIPTION_CASES: BenchmarkCase[] = [
     id: 'invoice-subscription-positive-nested-workspace',
     ruleExternalId: RULE_ID,
     category: 'POSITIVE',
+    corpus: 'control',
     files: {
       'packages/billing/package.json': packageJsonWithStripe('^18.0.0'),
       'packages/billing/package-lock.json': packageLockWithStripe('18.2.0'),
@@ -97,6 +101,7 @@ export const INVOICE_SUBSCRIPTION_CASES: BenchmarkCase[] = [
     id: 'invoice-subscription-negative-unrelated-object',
     ruleExternalId: RULE_ID,
     category: 'NEGATIVE',
+    corpus: 'control',
     files: {
       'package.json': packageJsonWithStripe('^18.0.0'),
       'package-lock.json': packageLockWithStripe('18.2.0'),
@@ -114,6 +119,7 @@ export const INVOICE_SUBSCRIPTION_CASES: BenchmarkCase[] = [
     id: 'invoice-subscription-negative-comment-only',
     ruleExternalId: RULE_ID,
     category: 'NEGATIVE',
+    corpus: 'control',
     files: {
       'package.json': packageJsonWithStripe('^18.0.0'),
       'package-lock.json': packageLockWithStripe('18.2.0'),
@@ -131,6 +137,7 @@ export const INVOICE_SUBSCRIPTION_CASES: BenchmarkCase[] = [
     id: 'invoice-subscription-negative-feature-unused',
     ruleExternalId: RULE_ID,
     category: 'NEGATIVE',
+    corpus: 'control',
     files: {
       'package.json': packageJsonWithStripe('^18.0.0'),
       'package-lock.json': packageLockWithStripe('18.2.0'),
@@ -152,6 +159,7 @@ export const INVOICE_SUBSCRIPTION_CASES: BenchmarkCase[] = [
     id: 'invoice-subscription-negative-pre-boundary-api-version',
     ruleExternalId: RULE_ID,
     category: 'NEGATIVE',
+    corpus: 'control',
     files: {
       'package.json': packageJsonWithStripe('^17.0.0'),
       'package-lock.json': packageLockWithStripe('17.7.0'),
@@ -175,6 +183,7 @@ export const INVOICE_SUBSCRIPTION_CASES: BenchmarkCase[] = [
     id: 'invoice-subscription-uncertain-dynamic-construction',
     ruleExternalId: RULE_ID,
     category: 'UNCERTAIN',
+    corpus: 'control',
     files: {
       'package.json': packageJsonWithStripe('^18.0.0'),
       'package-lock.json': packageLockWithStripe('18.2.0'),
@@ -195,6 +204,7 @@ export const INVOICE_SUBSCRIPTION_CASES: BenchmarkCase[] = [
     id: 'invoice-subscription-uncertain-unresolved-import',
     ruleExternalId: RULE_ID,
     category: 'UNCERTAIN',
+    corpus: 'control',
     files: {
       'package.json': packageJsonWithStripe('^18.0.0'),
       'package-lock.json': packageLockWithStripe('18.2.0'),
@@ -213,6 +223,7 @@ export const INVOICE_SUBSCRIPTION_CASES: BenchmarkCase[] = [
     id: 'invoice-subscription-uncertain-unknown-version',
     ruleExternalId: RULE_ID,
     category: 'UNCERTAIN',
+    corpus: 'control',
     files: {
       'package.json': packageJsonWithStripe('^18.0.0'),
       'src/billing.ts': [

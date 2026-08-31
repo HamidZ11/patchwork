@@ -9,6 +9,7 @@ export const SCHEDULE_ITERATIONS_CASES: BenchmarkCase[] = [
     id: 'schedule-iterations-positive-direct-create',
     ruleExternalId: RULE_ID,
     category: 'POSITIVE',
+    corpus: 'control',
     files: {
       'package.json': packageJsonWithStripe('^19.0.0'),
       'package-lock.json': packageLockWithStripe('19.1.0'),
@@ -29,6 +30,7 @@ export const SCHEDULE_ITERATIONS_CASES: BenchmarkCase[] = [
     id: 'schedule-iterations-positive-local-alias',
     ruleExternalId: RULE_ID,
     category: 'POSITIVE',
+    corpus: 'control',
     files: {
       'package.json': packageJsonWithStripe('^19.0.0'),
       'package-lock.json': packageLockWithStripe('19.1.0'),
@@ -46,6 +48,7 @@ export const SCHEDULE_ITERATIONS_CASES: BenchmarkCase[] = [
     id: 'schedule-iterations-positive-multiple-usages',
     ruleExternalId: RULE_ID,
     category: 'POSITIVE',
+    corpus: 'control',
     files: {
       'package.json': packageJsonWithStripe('^19.0.0'),
       'package-lock.json': packageLockWithStripe('19.1.0'),
@@ -63,6 +66,7 @@ export const SCHEDULE_ITERATIONS_CASES: BenchmarkCase[] = [
     id: 'schedule-iterations-positive-nested-workspace',
     ruleExternalId: RULE_ID,
     category: 'POSITIVE',
+    corpus: 'control',
     files: {
       'packages/billing/package.json': packageJsonWithStripe('^19.0.0'),
       'packages/billing/package-lock.json': packageLockWithStripe('19.1.0'),
@@ -83,6 +87,7 @@ export const SCHEDULE_ITERATIONS_CASES: BenchmarkCase[] = [
     id: 'schedule-iterations-negative-unrelated-object',
     ruleExternalId: RULE_ID,
     category: 'NEGATIVE',
+    corpus: 'control',
     files: {
       'package.json': packageJsonWithStripe('^19.0.0'),
       'package-lock.json': packageLockWithStripe('19.1.0'),
@@ -98,6 +103,7 @@ export const SCHEDULE_ITERATIONS_CASES: BenchmarkCase[] = [
     id: 'schedule-iterations-negative-comment-only',
     ruleExternalId: RULE_ID,
     category: 'NEGATIVE',
+    corpus: 'control',
     files: {
       'package.json': packageJsonWithStripe('^19.0.0'),
       'package-lock.json': packageLockWithStripe('19.1.0'),
@@ -115,6 +121,7 @@ export const SCHEDULE_ITERATIONS_CASES: BenchmarkCase[] = [
     id: 'schedule-iterations-negative-feature-unused',
     ruleExternalId: RULE_ID,
     category: 'NEGATIVE',
+    corpus: 'control',
     files: {
       'package.json': packageJsonWithStripe('^19.0.0'),
       'package-lock.json': packageLockWithStripe('19.1.0'),
@@ -132,6 +139,7 @@ export const SCHEDULE_ITERATIONS_CASES: BenchmarkCase[] = [
     id: 'schedule-iterations-negative-pre-boundary-api-version',
     ruleExternalId: RULE_ID,
     category: 'NEGATIVE',
+    corpus: 'control',
     files: {
       'package.json': packageJsonWithStripe('^18.5.0'),
       'package-lock.json': packageLockWithStripe('18.5.0'),
@@ -152,6 +160,7 @@ export const SCHEDULE_ITERATIONS_CASES: BenchmarkCase[] = [
     id: 'schedule-iterations-uncertain-dynamic-construction',
     ruleExternalId: RULE_ID,
     category: 'UNCERTAIN',
+    corpus: 'control',
     files: {
       'package.json': packageJsonWithStripe('^19.0.0'),
       'package-lock.json': packageLockWithStripe('19.1.0'),
@@ -169,6 +178,7 @@ export const SCHEDULE_ITERATIONS_CASES: BenchmarkCase[] = [
     id: 'schedule-iterations-uncertain-unresolved-import',
     ruleExternalId: RULE_ID,
     category: 'UNCERTAIN',
+    corpus: 'control',
     files: {
       'package.json': packageJsonWithStripe('^19.0.0'),
       'package-lock.json': packageLockWithStripe('19.1.0'),
@@ -184,6 +194,7 @@ export const SCHEDULE_ITERATIONS_CASES: BenchmarkCase[] = [
     id: 'schedule-iterations-uncertain-unknown-version',
     ruleExternalId: RULE_ID,
     category: 'UNCERTAIN',
+    corpus: 'control',
     files: {
       'package.json': packageJsonWithStripe('^19.0.0'),
       'src/schedules.ts': [

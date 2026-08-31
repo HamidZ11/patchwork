@@ -9,6 +9,7 @@ export const RETRIEVE_UPCOMING_CASES: BenchmarkCase[] = [
     id: 'retrieve-upcoming-positive-direct-call',
     ruleExternalId: RULE_ID,
     category: 'POSITIVE',
+    corpus: 'control',
     files: {
       'package.json': packageJsonWithStripe('^18.0.0'),
       'package-lock.json': packageLockWithStripe('18.2.0'),
@@ -29,6 +30,7 @@ export const RETRIEVE_UPCOMING_CASES: BenchmarkCase[] = [
     id: 'retrieve-upcoming-positive-local-alias',
     ruleExternalId: RULE_ID,
     category: 'POSITIVE',
+    corpus: 'control',
     files: {
       'package.json': packageJsonWithStripe('^18.0.0'),
       'package-lock.json': packageLockWithStripe('18.2.0'),
@@ -46,6 +48,7 @@ export const RETRIEVE_UPCOMING_CASES: BenchmarkCase[] = [
     id: 'retrieve-upcoming-positive-multiple-usages',
     ruleExternalId: RULE_ID,
     category: 'POSITIVE',
+    corpus: 'control',
     files: {
       'package.json': packageJsonWithStripe('^18.0.0'),
       'package-lock.json': packageLockWithStripe('18.2.0'),
@@ -63,6 +66,7 @@ export const RETRIEVE_UPCOMING_CASES: BenchmarkCase[] = [
     id: 'retrieve-upcoming-positive-nested-workspace',
     ruleExternalId: RULE_ID,
     category: 'POSITIVE',
+    corpus: 'control',
     files: {
       'packages/billing/package.json': packageJsonWithStripe('^18.0.0'),
       'packages/billing/package-lock.json': packageLockWithStripe('18.2.0'),
@@ -83,6 +87,7 @@ export const RETRIEVE_UPCOMING_CASES: BenchmarkCase[] = [
     id: 'retrieve-upcoming-negative-unrelated-object',
     ruleExternalId: RULE_ID,
     category: 'NEGATIVE',
+    corpus: 'control',
     files: {
       'package.json': packageJsonWithStripe('^18.0.0'),
       'package-lock.json': packageLockWithStripe('18.2.0'),
@@ -100,6 +105,7 @@ export const RETRIEVE_UPCOMING_CASES: BenchmarkCase[] = [
     id: 'retrieve-upcoming-negative-comment-only',
     ruleExternalId: RULE_ID,
     category: 'NEGATIVE',
+    corpus: 'control',
     files: {
       'package.json': packageJsonWithStripe('^18.0.0'),
       'package-lock.json': packageLockWithStripe('18.2.0'),
@@ -117,6 +123,7 @@ export const RETRIEVE_UPCOMING_CASES: BenchmarkCase[] = [
     id: 'retrieve-upcoming-negative-feature-unused',
     ruleExternalId: RULE_ID,
     category: 'NEGATIVE',
+    corpus: 'control',
     files: {
       'package.json': packageJsonWithStripe('^18.0.0'),
       'package-lock.json': packageLockWithStripe('18.2.0'),
@@ -133,6 +140,7 @@ export const RETRIEVE_UPCOMING_CASES: BenchmarkCase[] = [
     id: 'retrieve-upcoming-negative-pre-boundary-api-version',
     ruleExternalId: RULE_ID,
     category: 'NEGATIVE',
+    corpus: 'control',
     files: {
       'package.json': packageJsonWithStripe('^17.0.0'),
       'package-lock.json': packageLockWithStripe('17.7.0'),
@@ -153,6 +161,7 @@ export const RETRIEVE_UPCOMING_CASES: BenchmarkCase[] = [
     id: 'retrieve-upcoming-uncertain-dynamic-construction',
     ruleExternalId: RULE_ID,
     category: 'UNCERTAIN',
+    corpus: 'control',
     files: {
       'package.json': packageJsonWithStripe('^18.0.0'),
       'package-lock.json': packageLockWithStripe('18.2.0'),
@@ -170,6 +179,7 @@ export const RETRIEVE_UPCOMING_CASES: BenchmarkCase[] = [
     id: 'retrieve-upcoming-uncertain-unresolved-import',
     ruleExternalId: RULE_ID,
     category: 'UNCERTAIN',
+    corpus: 'control',
     files: {
       'package.json': packageJsonWithStripe('^18.0.0'),
       'package-lock.json': packageLockWithStripe('18.2.0'),
@@ -185,6 +195,7 @@ export const RETRIEVE_UPCOMING_CASES: BenchmarkCase[] = [
     id: 'retrieve-upcoming-uncertain-unknown-version',
     ruleExternalId: RULE_ID,
     category: 'UNCERTAIN',
+    corpus: 'control',
     files: {
       // No lockfile at all -- the SDK version can only be DECLARED_ONLY,
       // and there's no explicit apiVersion evidence either.

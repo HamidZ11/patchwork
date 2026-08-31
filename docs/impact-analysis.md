@@ -2,13 +2,15 @@
 
 This is the central engineering problem for Patchwork and the most important
 technical document in this repository. Four real rules are now implemented
-end-to-end against a shared engine, and a controlled benchmark corpus
-measures whether that generalizes (see "Rules implemented", "Analyzer
-escalation ladder", and "Evaluation approach" below); everything beyond
-that remains principles and a likely pipeline shape, not a finalized
-design. It was revised following external technical/product research;
-corrections that research introduced are marked explicitly rather than
-blended in silently.
+end-to-end against a shared engine, and a two-part benchmark corpus (a
+control corpus plus a realistic corpus of ordinary production TypeScript
+patterns) measures whether that generalizes (see "Rules implemented",
+"Analyzer escalation ladder", and "Evaluation approach" — including its
+"Realistic validation" subsection — below); everything beyond that
+remains principles and a likely pipeline shape, not a finalized design.
+It was revised following external technical/product research; corrections
+that research introduced are marked explicitly rather than blended in
+silently.
 
 ## Product positioning (PROPOSED — correction)
 
@@ -287,8 +289,14 @@ extraction itself (tar packing/unpacking) is deliberately skipped — that
 safety property is already covered by `archive.test.ts`; the benchmark
 measures evidence → applicability → predicate → assess accuracy.
 
-Fixture matrix, per rule (`apps/api/src/benchmark/cases/*.ts`, ~11 cases
-× 4 rules = 44 total):
+Two corpora, distinguished by each `BenchmarkCase`'s `corpus: 'control' |
+'realistic'` field and reported separately (see "Realistic validation"
+below) so a perfect control-corpus score can never silently stand in for
+weaker real-world behavior:
+
+**Control corpus** (slice 4, `apps/api/src/benchmark/cases/*.ts`, ~11
+cases × 4 rules = 44 total) — each fixture shaped closely around one
+predicate/applicability behavior:
 
 - **Positive** — direct usage, a same-file local alias, multiple usages in
   one file, a nested-workspace (monorepo) usage.
@@ -299,6 +307,10 @@ Fixture matrix, per rule (`apps/api/src/benchmark/cases/*.ts`, ~11 cases
 - **Uncertain** — dynamic/computed Stripe client construction, an
   unresolved cross-file import, no resolvable SDK version at all
   (`DECLARED_ONLY`, no lockfile).
+
+**Realistic corpus** (slice 5, `apps/api/src/benchmark/cases/realistic/
+*.ts`, 26 total) — ordinary production TypeScript patterns, not shaped
+around the analyser's own capabilities; see "Realistic validation" below.
 
 Each `BenchmarkCase` is `{ id, ruleExternalId, category, files, expected:
 { status, findingCount?, findingLocations? }, notes }` — ground truth is
@@ -343,9 +355,10 @@ gate, not a claim that production false negatives will be zero.
 Run it: `pnpm benchmark` (human-readable) or `pnpm --filter @patchwork/api
 benchmark -- --json` (machine-readable). At the time of writing, all four
 rules score AFFECTED precision 1.00 / recall 1.00, 0 false `NOT_AFFECTED`
-safety failures, 0 unsafe certainty, and 0 over-abstentions across 44
-cases — see "Analyser changes driven by benchmark evidence" below for why
-that wasn't true on the first run.
+safety failures, 0 unsafe certainty, and 0 over-abstentions across 70
+cases (44 control + 26 realistic) — see "Analyser changes driven by
+benchmark evidence" and "Realistic validation" below for why that wasn't
+true on the first run of each corpus.
 
 **Deferred, not attempted this slice**: real historical migration pairs (a
 commit before a real Stripe upgrade and the commit after the corresponding
@@ -407,6 +420,118 @@ manifests.ts`) and using it in `api-version.ts` too, instead of two
   to." A pre-existing test (`api-version.test.ts`) had encoded the buggy
   value as its expected result; it was corrected alongside the fix, and a
   dedicated nested-workspace regression test was added.
+
+### Realistic validation (CURRENT)
+
+The control corpus above answers "is the mechanism correct?" — every
+fixture in it was written by the same person who wrote the analyser, so a
+perfect score there is necessary but not sufficient evidence that the
+engine holds up on code nobody shaped around its capabilities. Slice 5
+added a second, **realistic** corpus (26 cases, `apps/api/src/benchmark/
+cases/realistic/`) specifically to test that: ordinary async
+service/controller layering, nested directories, destructuring,
+class-based services, partial migrations, and mixed version-evidence
+kinds across monorepo workspaces — prioritizing rules B
+(`Invoice.subscription`) and D (`Authorization.status`) since both depend
+on the awaited-property/literal analysis path that needed the `Promise<T>`
+fix above. Ground truth was written from the change semantics and source
+code, independently of running the analyser, exactly like the control
+corpus.
+
+**Three confirmed analyser bugs were found and fixed** — empirically
+probed against hand-written realistic patterns _before_ any benchmark
+fixture was written, then fixed with the smallest reusable change, then
+re-verified (the same benchmark-first workflow as the two slice-4 fixes
+above):
+
+- **Destructuring was invisible to `member-access.ts` and
+  `literal-comparison.ts`.** `const { subscription } = invoice;` and
+  `const { status } = authorization; status === 'reversed'` never produce
+  a `PropertyAccessExpression` at all — an everyday pattern, not an edge
+  case — so neither predicate ever visited it, silently reporting
+  `NOT_AFFECTED` if it was the only usage in a file. Fixed by resolving
+  the destructured binding's _source_ property via
+  `checker.getPropertyOfType` on the initializer's type (not
+  `getSymbolAtLocation` on the binding name, which resolves to the new
+  local variable, not the source property) — same three-way contract
+  (confirmed match / confirmed non-match / ambiguous when the source
+  type is unresolvable) as direct property access. Scoped to exactly the
+  confirmed shape: a top-level `const`/`let` destructuring with an inline
+  initializer in the same file; destructured function parameters and
+  nested patterns are left unhandled (not guessed at) rather than
+  speculatively supported.
+- **Same-file variable-built call arguments were invisible to
+  `call-argument-property.ts`.** `const phase = { iterations: 3 };
+stripe.subscriptionSchedules.create({ phases: [phase] });` — a
+  realistic, readable way to build a call's parameters — was treated as
+  "property not found inline, therefore genuinely unused," a confirmed
+  false negative. Fixed with one bounded hop: an identifier found while
+  searching a call's arguments is resolved to its same-file `const`
+  declaration's object/array-literal initializer (if any) and searched
+  there too; if it can't be resolved that way, its checker-resolved type
+  decides — a concrete, non-`any`/`unknown` type (e.g. a `string`
+  parameter) definitively isn't hiding the property (confirmed
+  non-match, not ambiguous — this is what keeps `create({ customer:
+customerId, phases: [...] })` from becoming noisy `UNCERTAIN` just
+  because `customerId` can't be inspected), while a genuinely
+  unresolvable (`any`/`unknown`) type is `UNCERTAIN`, never a silent
+  negative. (All three predicates now treat an explicit `unknown`
+  annotation the same as `any` for this purpose — semantically both mean
+  "could be anything," the same abstention signal.)
+
+**Known limitations found and deliberately left unfixed, documented
+instead** (each has its own realistic-corpus case, expected `UNCERTAIN`,
+scored correctly):
+
+- **A shared Stripe client singleton imported from its own module**
+  (`import { stripe } from '../clients/stripeClient';`) — extremely
+  common real structure, but each candidate file's analysis `Program` is
+  bounded to just that file plus the trusted stub, so the imported
+  `stripe` binding's real type can't be resolved. A more common variant
+  of the already-documented cross-file-wrapper limitation, worth its own
+  case since it's normal production structure, not an edge case.
+- **Explicit `Stripe.X` namespace-style type annotations**
+  (`function f(invoice: Stripe.Invoice)`) — a common real `stripe-node`
+  pattern. The trusted stub declares only a default-exported class, not
+  `stripe-node`'s real merged `Stripe` namespace, so the annotation is
+  unresolvable. A stub-_content_ gap, not a predicate-_logic_ bug;
+  correctly `UNCERTAIN`, not fixed this slice (expanding the stub's
+  public type surface is a real, separable improvement with no confirmed
+  false-negative behind it yet).
+- **`call-argument-property.ts`'s cheap lexical prefilter can hide a
+  cross-file, data-carried usage entirely.** Unlike the other two
+  predicates (whose target is a property/method _name_ that must appear
+  literally at the usage site even when the _object_ it's accessed on is
+  unresolvable), this predicate's target is _data_ passed as an argument
+  — if that data comes from another file and the property name never
+  appears lexically in the calling file's text at all, the file is
+  skipped by "Level A" candidate discovery before any `Program` is ever
+  built, and the result silently falls through to `NOT_AFFECTED` rather
+  than reaching the `UNCERTAIN` fallback above. Found while probing this
+  slice's fixes, not observed in the realistic corpus (every realistic
+  case ensures the property name is lexically present, matching how the
+  existing control-corpus negative fixtures already work around this for
+  other reasons). Documented as a known architectural characteristic of
+  lexical candidate discovery, not fixed — no realistic case confirmed a
+  need to broaden the prefilter, which would trade real precision for a
+  scenario not yet observed in practice.
+
+**Real-GitHub verification**: `HamidZ11/stripe-basil-fixture` was
+extended with two new realistic positive fixtures — `src/services/
+invoiceService.ts` (Rule B, await + destructuring) and `src/services/
+issuingService.ts` (Rule D, await + destructuring) — plus `src/models/
+internalRecords.ts` (an unrelated domain model sharing both a property
+name and a literal value). Verified end-to-end against the real GitHub
+archive at commit `abaa7d7` (via the real `POST /repositories/:id/
+analyses` → `POST /analysis-runs/:id/impact-assessments` flow, a locally
+running `apps/api` against the real database and the real GitHub API, no
+fakes): all four rules ran; rules A, B, and D correctly reported
+`AFFECTED` with exact `sourceFile`/`line` findings matching the pushed
+source (including both new destructuring fixtures); Rule C correctly
+reported `UNCERTAIN` (stripe@18.5.0 resolved, below its v19 boundary, no
+`apiVersion` evidence — genuinely unresolvable applicability, not a
+false result); the unrelated domain model produced no findings for any
+rule.
 
 ## Rules implemented (CURRENT)
 
@@ -589,9 +714,13 @@ should be started without a separate planning/approval pass.
 
 Additional rules beyond the four implemented, automated Stripe changelog
 ingestion, `TransformationRecipe`/`VerificationExpectation`, real
-historical migration-pair fixtures in the benchmark corpus, and all
-patching/verification/PR automation downstream of impact analysis. This
-document will be revised again as a fifth rule (or a materially different
-predicate shape) validates or further generalizes the pipeline shape
-above — treat it as a working hypothesis validated across four rules and
-two applicability boundaries, not a finished spec.
+historical migration-pair fixtures in the benchmark corpus, expanding the
+trusted stub's type surface to support `Stripe.X` namespace-style type
+annotations, broadening `call-argument-property.ts`'s lexical prefilter
+to catch cross-file data-carried usage (see "Realistic validation"
+above for both), and all patching/verification/PR automation downstream
+of impact analysis. This document will be revised again as a fifth rule
+(or a materially different predicate shape) validates or further
+generalizes the pipeline shape above — treat it as a working hypothesis
+validated across four rules, two applicability boundaries, and both a
+control and a realistic benchmark corpus, not a finished spec.

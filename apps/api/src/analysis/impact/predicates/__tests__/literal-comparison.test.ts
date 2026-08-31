@@ -257,4 +257,77 @@ describe('scanForLiteralComparison (issuing authorization status case)', () => {
     ]);
     expect([...results.values()].every((r) => r.sourceFilesScanned === 0)).toBe(true);
   });
+
+  // --- DESTRUCTURING (slice 5 realistic-validation fix) --------------------
+  // Confirmed real gap: a destructured comparison operand is a plain
+  // Identifier, never a PropertyAccessExpression, so it was invisible to
+  // this predicate before this fix -- found via slice 5's realistic
+  // validation, not hypothesized.
+
+  it('14. a same-file destructured comparison matches', () => {
+    const results = scan([
+      file('package.json', '{}'),
+      file(
+        'src/issuing.ts',
+        [
+          STRIPE_IMPORT,
+          "const stripe = new Stripe('sk_test');",
+          "const { status } = await stripe.issuing.authorizations.retrieve('iauth_1');",
+          "if (status === 'reversed') { /* handle it */ }",
+        ].join('\n'),
+      ),
+    ]);
+    expect(allMatches(results)).toHaveLength(1);
+    expect(allAmbiguous(results)).toHaveLength(0);
+  });
+
+  it('15. a renamed destructured comparison still matches', () => {
+    const results = scan([
+      file('package.json', '{}'),
+      file(
+        'src/issuing.ts',
+        [
+          STRIPE_IMPORT,
+          "const stripe = new Stripe('sk_test');",
+          "const { status: authStatus } = await stripe.issuing.authorizations.retrieve('iauth_1');",
+          "if (authStatus === 'reversed') { /* handle it */ }",
+        ].join('\n'),
+      ),
+    ]);
+    expect(allMatches(results)).toHaveLength(1);
+    expect(allAmbiguous(results)).toHaveLength(0);
+  });
+
+  it('16. a destructured comparison from an unrelated object is a confirmed non-match', () => {
+    const results = scan([
+      file('package.json', '{}'),
+      file(
+        'src/other.ts',
+        [
+          "const job = { status: 'reversed' as string };",
+          'const { status } = job;',
+          "const wasReversed = status === 'reversed';",
+        ].join('\n'),
+      ),
+    ]);
+    expect(allMatches(results)).toHaveLength(0);
+    expect(allAmbiguous(results)).toHaveLength(0);
+  });
+
+  it('17. a destructured comparison from a dynamic/unresolvable source is ambiguous', () => {
+    const results = scan([
+      file('package.json', '{}'),
+      file(
+        'src/dynamic.ts',
+        [
+          'function getCtor(): any { return null; }',
+          'const stripe = getCtor();',
+          "const { status } = await stripe.issuing.authorizations.retrieve('iauth_1');",
+          "if (status === 'reversed') { /* handle it */ }",
+        ].join('\n'),
+      ),
+    ]);
+    expect(allMatches(results)).toHaveLength(0);
+    expect(allAmbiguous(results)).toHaveLength(1);
+  });
 });

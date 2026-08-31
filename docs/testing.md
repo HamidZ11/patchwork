@@ -94,19 +94,32 @@ api-version}.test.ts`): manifest/workspace discovery, declared-range vs.
   2025-09-30 — proving the boundary is a genuine per-rule parameter, not a
   global constant). Each predicate primitive has its own fixture matrix
   under `apps/api/src/analysis/impact/predicates/__tests__/`:
-  `member-access.test.ts` (16 scenarios, real in-memory `ts.Program`s —
+  `member-access.test.ts` (21 scenarios, real in-memory `ts.Program`s —
   direct calls, same-file aliases, bare method references, different file
   layouts, and a monorepo workspace as positives; an unrelated same-named
   method, comment/string-only mentions, a user-defined type with the same
   property, an unused-but-present dependency, and a non-property-access
   identifier as negatives; dynamic construction, an unresolved import, and
   a cross-file wrapper as `UNCERTAIN`; a same-file wrapper function
-  resolving correctly, not falling to `UNCERTAIN`); `call-argument-
-property.test.ts` and `literal-comparison.test.ts` (14 scenarios each,
-  the same positive/negative/uncertain shape, adapted to their own
-  predicate contract — e.g. an unresolved callee with no matching argument
-  property is correctly "not interesting," not ambiguous, to avoid
-  `UNCERTAIN`-flooding on unrelated dynamic code). `assess.test.ts` (tri-
+  resolving correctly, not falling to `UNCERTAIN`; a same-file
+  destructured property read, with and without a rename, resolving via
+  the source expression's type rather than the local binding's symbol —
+  the slice 5 fix — plus destructuring from an unrelated object
+  (confirmed non-match) and from a dynamic/unresolved source
+  (`UNCERTAIN`)); `call-argument-property.test.ts` (19 scenarios) and
+  `literal-comparison.test.ts` (18 scenarios), the same
+  positive/negative/uncertain shape adapted to their own predicate
+  contract — e.g. an unresolved callee with no matching argument property
+  is correctly "not interesting," not ambiguous, to avoid
+  `UNCERTAIN`-flooding on unrelated dynamic code — plus each predicate's
+  own slice 5 fix: `call-argument-property.test.ts` covers a same-file
+  variable-built argument object (matches), the same object without the
+  property (confirmed non-match), an unrelated same-file typed argument
+  not causing false ambiguity, and an unresolvable/cross-file argument
+  identifier correctly reaching `UNCERTAIN` instead of a silent negative;
+  `literal-comparison.test.ts` covers the same destructured-comparison
+  shape as member-access.test.ts, adapted to a comparison operand.
+  `assess.test.ts` (tri-
   state aggregation, using the retrieveUpcoming rule as its subject: full
   coverage + no match + applicable → `NOT_AFFECTED`; incomplete coverage →
   `UNCERTAIN`; a confirmed match → `AFFECTED`; `UNKNOWN` applicability
@@ -118,13 +131,20 @@ property.test.ts` and `literal-comparison.test.ts` (14 scenarios each,
 rule)`, so one rule's fixture matrix is sufficient to cover it.
 - **The impact benchmark is a CI-enforced safety gate, not just a manual
   report** (CURRENT): `apps/api/src/benchmark/__tests__/safety-gate.test.ts`
-  runs the full hand-labelled corpus (`apps/api/src/benchmark/cases/`, ~11
-  cases × 4 rules) through the real production pipeline inside `pnpm test`
-  and asserts `falseNotAffectedSafetyFailures === 0` and
-  `unsafeCertaintyCount === 0` — see [impact-analysis.md](impact-analysis.md#evaluation-approach-current--controlled-benchmark-real-historical-pairs-still-proposed)
-  for the full design, classification table, and current results.
-  `pnpm benchmark` runs the same corpus as a standalone report (human-
-  readable, or `--json`), without needing a database.
+  runs the full hand-labelled corpus (`apps/api/src/benchmark/cases/` — 44
+  control cases plus, under `cases/realistic/`, 26 realistic cases shaped
+  like ordinary production TypeScript rather than around the analyser's
+  own capabilities, prioritizing the two rules whose predicates depend on
+  the awaited-property/literal analysis path) through the real production
+  pipeline inside `pnpm test`, asserting
+  `falseNotAffectedSafetyFailures === 0` and `unsafeCertaintyCount === 0`
+  across the combined corpus, plus a dedicated assertion that the
+  realistic corpus alone is present, meaningfully sized, and meets that
+  same bar — see [impact-analysis.md](impact-analysis.md#evaluation-approach-current--controlled-benchmark-real-historical-pairs-still-proposed)
+  for the full design, classification table, control-vs-realistic
+  distinction, and current results. `pnpm benchmark` runs the same corpus
+  as a standalone report (human-readable, or `--json`, with control and
+  realistic metrics broken out separately), without needing a database.
 
 ### Test isolation
 
@@ -165,11 +185,16 @@ validating once product features exist:
 - **Real-GitHub fixture repositories beyond `stripe-basil-fixture`** —
   small, real-shaped TypeScript repositories used as targets for impact
   analysis and (later) patch generation testing. A labelled, hand-written
-  benchmark corpus and CI-enforced safety gate now exist (see
+  benchmark corpus (both control and realistic) and CI-enforced safety
+  gate now exist (see
   [impact-analysis.md](impact-analysis.md#evaluation-approach-current--controlled-benchmark-real-historical-pairs-still-proposed));
-  additional purpose-built real-GitHub repositories for rules B/C/D remain
-  a candidate follow-up, proposed only if a materially different predicate
-  shape genuinely needs real-GitHub confidence beyond the controlled corpus.
+  `stripe-basil-fixture` itself was extended in slice 5 with realistic
+  await + destructuring fixtures for rules B and D (verified end-to-end
+  against the real archive — see impact-analysis.md's Realistic
+  validation section). A dedicated real-GitHub repository for rule C
+  remains a candidate follow-up, proposed only if a materially different
+  predicate shape genuinely needs real-GitHub confidence beyond the
+  controlled and realistic corpora.
 - **Real historical migration pairs** — a commit before a real Stripe
   upgrade and the commit after the corresponding developer migration, for
   realism the controlled benchmark corpus can't fully provide. Deferred;

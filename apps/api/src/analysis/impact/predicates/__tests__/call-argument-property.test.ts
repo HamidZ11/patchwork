@@ -255,4 +255,100 @@ describe('scanForCallArgumentProperty (schedule iterations case)', () => {
     ]);
     expect([...results.values()].every((r) => r.sourceFilesScanned === 0)).toBe(true);
   });
+
+  // --- SAME-FILE VARIABLE-BUILT ARGUMENTS (slice 5 realistic-validation fix) --
+  // Confirmed real gap: a phase object built as a separate same-file
+  // variable and referenced (not written inline) in the call's arguments
+  // was previously invisible to this predicate -- found via slice 5's
+  // realistic validation, not hypothesized.
+
+  it('14. a same-file variable-built argument object matches', () => {
+    const results = scan([
+      file('package.json', '{}'),
+      file(
+        'src/schedules.ts',
+        [
+          STRIPE_IMPORT,
+          "const stripe = new Stripe('sk_test');",
+          "const phase = { iterations: 3, plan: 'plan_1' };",
+          'stripe.subscriptionSchedules.create({ phases: [phase] });',
+        ].join('\n'),
+      ),
+    ]);
+    expect(allMatches(results)).toHaveLength(1);
+    expect(allAmbiguous(results)).toHaveLength(0);
+  });
+
+  it('15. a same-file variable-built argument object without the property is a confirmed non-match', () => {
+    const results = scan([
+      file('package.json', '{}'),
+      file(
+        'src/schedules.ts',
+        [
+          STRIPE_IMPORT,
+          "const stripe = new Stripe('sk_test');",
+          '// iterations was removed in favor of duration',
+          "const phase = { duration: 'month', plan: 'plan_1' };",
+          'stripe.subscriptionSchedules.create({ phases: [phase] });',
+        ].join('\n'),
+      ),
+    ]);
+    expect(allMatches(results)).toHaveLength(0);
+    expect(allAmbiguous(results)).toHaveLength(0);
+  });
+
+  it('16. an unrelated same-file typed argument (e.g. a plain string identifier) does not cause false ambiguity', () => {
+    const results = scan([
+      file('package.json', '{}'),
+      file(
+        'src/schedules.ts',
+        [
+          STRIPE_IMPORT,
+          "const stripe = new Stripe('sk_test');",
+          '// iterations mentioned only so the prefilter still scans this file',
+          "const customerId = 'cus_123';",
+          "stripe.subscriptionSchedules.create({ customer: customerId, phases: [{ duration: 'month' }] });",
+        ].join('\n'),
+      ),
+    ]);
+    expect(allMatches(results)).toHaveLength(0);
+    expect(allAmbiguous(results)).toHaveLength(0);
+  });
+
+  it('17. an unresolvable same-file argument identifier (untyped parameter) is ambiguous, not a silent negative', () => {
+    const results = scan([
+      file('package.json', '{}'),
+      file(
+        'src/schedules.ts',
+        [
+          STRIPE_IMPORT,
+          "const stripe = new Stripe('sk_test');",
+          '// phase may or may not include iterations, comes from a caller',
+          'function schedule(phase) {',
+          '  stripe.subscriptionSchedules.create({ phases: [phase] });',
+          '}',
+        ].join('\n'),
+      ),
+    ]);
+    expect(allMatches(results)).toHaveLength(0);
+    expect(allAmbiguous(results)).toHaveLength(1);
+  });
+
+  it('18. an unresolved cross-file argument identifier is ambiguous', () => {
+    const results = scan([
+      file('package.json', '{}'),
+      file(
+        'src/schedules.ts',
+        [
+          STRIPE_IMPORT,
+          "import { phase } from './phase-config';",
+          "const stripe = new Stripe('sk_test');",
+          '// iterations may be set in phase-config.ts',
+          'stripe.subscriptionSchedules.create({ phases: [phase] });',
+        ].join('\n'),
+      ),
+    ]);
+    expect(allMatches(results)).toHaveLength(0);
+    expect(allAmbiguous(results)).toHaveLength(1);
+  });
 });
