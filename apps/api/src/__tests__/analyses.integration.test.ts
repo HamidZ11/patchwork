@@ -382,11 +382,13 @@ describe('repository analyses (real database)', () => {
     };
     const repo = body.repositories.find((r) => r.id === repositoryId);
     expect(repo?.latestAnalysis).toEqual({
+      analysisRunId: expect.any(String),
       commitSha: 'c'.repeat(40),
       status: 'completed',
       startedAt: expect.any(String),
       completedAt: expect.any(String),
       stripe: { resolvedVersion: null, declaredRange: '^17.0.0', workspacePath: '' },
+      latestImpactAssessment: null,
     });
 
     await cleanupUser(userId);

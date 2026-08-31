@@ -79,6 +79,34 @@ apps/api/src/
                        AnalysisRun (+ AnalysisEvidence, together, only when
                        status is 'completed'); repository ownership lookup;
                        latest-analysis-per-repository lookup
+    impact.ts            orchestration: re-download archive (github/) ->
+                       extract (archive.ts) -> assess (impact/) for an
+                       existing AnalysisRun's evidence
+    impact-persistence.ts idempotent upsert of ProviderChange/RuleVersion;
+                       upsert of ImpactAssessment (+ Findings, replaced
+                       wholesale) on (analysis_run_id, rule_version_id);
+                       analysis-run ownership lookup
+    impact/
+      stripe-basil-invoice-preview.ts  the one hardcoded, manually-verified
+                       ProviderChange + RuleVersion definition (see
+                       docs/impact-analysis.md for provenance)
+      stripe-type-stub.ts  a small, Patchwork-owned, trusted `declare
+                       module 'stripe'` ambient type stub -- not
+                       downloaded, not customer-supplied -- letting the
+                       TypeChecker resolve real Stripe provenance without
+                       ever installing a real node_modules
+      applicability.ts   pure function: StripeEvidence -> per-workspace
+                       APPLICABLE / NOT_APPLICABLE / UNKNOWN, no new
+                       network calls
+      predicate.ts       real TypeScript Compiler API semantic proof: one
+                       bounded, in-memory Program per candidate source
+                       file (trusted stub + that file only), resolving
+                       whether a property access traces back to Stripe's
+                       affected API
+      assess.ts          combines applicability + predicate into one
+                       tri-state verdict per workspace, aggregated to one
+                       ImpactAssessment per AnalysisRun
+      types.ts           zod-validated ImpactCoverage/Finding shapes
   plugins/
     session.ts        resolves request.user for every request; a
                        requireAuth preHandler enforces it per-route
@@ -94,6 +122,7 @@ apps/api/src/
     github.ts          GET /github/install, GET /github/install/callback,
                        GET /repositories
     analyses.ts         POST /repositories/:id/analyses
+    impact-assessments.ts POST /analysis-runs/:id/impact-assessments
 ```
 
 Routes stay thin (parse/validate → call `github/`/`auth/`/`analysis/` →
@@ -123,6 +152,30 @@ orchestration (`snapshots.ts`, `evidence.ts`, `archive.ts` — no DB access)
 separate from persistence (`persistence.ts`, no HTTP/filesystem access).
 See [docs/data-model.md](data-model.md) for the schema, evidence shape,
 and idempotency guarantees.
+
+### apps/api's impact-assessment flow (CURRENT, for one Stripe rule)
+
+`POST /analysis-runs/:id/impact-assessments` evaluates every
+currently-known `RuleVersion` (today: exactly one, Stripe's Basil
+Upcoming Invoice API removal — see
+[docs/impact-analysis.md](impact-analysis.md)) against an existing,
+already-authorized `AnalysisRun`. It re-downloads and re-extracts the
+exact-SHA archive (the original extraction from evidence collection was
+already deleted — no permanent source storage, so a fresh acquisition is
+the same download-use-delete pattern, not a cache), combines it with the
+run's already-persisted `StripeEvidence` for applicability, and produces
+an evidence-backed `AFFECTED` / `NOT_AFFECTED` / `UNCERTAIN`
+`ImpactAssessment` with `Finding` rows — real TypeScript Compiler API
+semantic proof (`impact/predicate.ts`), never a text/regex match as the
+verdict. Runs synchronously, same reasoning as the evidence flow above (a
+second bounded archive download/extraction, not a heavier workload). No
+assessment is persisted if archive re-acquisition itself fails (fail
+closed — an `ImpactAssessment` should always represent a completed
+evaluation with genuine evidence-based reasoning, not an infrastructure
+error). See [docs/data-model.md](data-model.md) for the schema and
+idempotency (`(analysis_run_id, rule_version_id)` unique, upserted) and
+[docs/impact-analysis.md](impact-analysis.md) for the tri-state safety
+policy and analyzer design.
 
 ## Dependency direction
 

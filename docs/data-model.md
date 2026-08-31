@@ -78,6 +78,11 @@ repositories 1--N repository_snapshots (repository_snapshots.repository_id)
 repository_snapshots 1--N analysis_runs (analysis_runs.repository_snapshot_id)
 users 1--N analysis_runs        (analysis_runs.triggered_by_user_id)
 analysis_runs 1--0..1 analysis_evidence (analysis_evidence.analysis_run_id, unique)
+provider_changes 1--N rule_versions (rule_versions.provider_change_id)
+analysis_runs 1--0..1 impact_assessments (per rule_version, unique on
+                                           (analysis_run_id, rule_version_id))
+rule_versions 1--N impact_assessments (impact_assessments.rule_version_id)
+impact_assessments 1--N impact_findings (impact_findings.impact_assessment_id)
 ```
 
 No join table for user↔repository access exists yet — access is entirely
@@ -203,6 +208,64 @@ See `apps/api/src/analysis/persistence.ts` and
 `apps/api/src/routes/analyses.ts` (`POST /repositories/:id/analyses`) for
 the implementation.
 
+- **`provider_changes`** — a normalized, provider-issued API change: the
+  fact of what changed, independent of how Patchwork checks whether it
+  applies. `external_id` (**unique**) is a stable slug — currently
+  `basil-2025-03-31-invoice-preview-api-deprecations`, matching the source
+  changelog's own URL segment. Not user-authored: populated via an
+  idempotent upsert from one hardcoded TypeScript definition
+  (`apps/api/src/analysis/impact/stripe-basil-invoice-preview.ts`), run
+  lazily before evaluating it — no admin rule-authoring UI.
+
+- **`rule_versions`** — one versioned, immutable check of whether/how a
+  `ProviderChange` applies (`ApplicabilityConstraint`/`ImpactPredicate`
+  bundle — see the `ChangeRule` splitting section below). `provider_
+change_id` references `provider_changes.id`, **`ON DELETE RESTRICT`**.
+  `(provider_change_id, version)` is **unique** — `version` is a hardcoded,
+  manually-bumped string (currently `'v1'`), same convention as
+  `ANALYZER_VERSION`: a future bugfix to the predicate bumps `version`
+  rather than silently rewriting what an existing `ImpactAssessment`
+  meant. `predicate_kind` is a code discriminator (currently
+  `'stripe_invoices_retrieve_upcoming'`) identifying which hardcoded
+  predicate function to run — not a general rule-authoring DSL.
+  `migration_requirement` is Stripe's own verbatim migration text, not
+  Patchwork-authored prose.
+
+- **`impact_assessments`** — truth about one `(AnalysisRun, RuleVersion)`
+  pair, never about a commit SHA alone (the same snapshot can be
+  re-evaluated by a newer `RuleVersion` and legitimately produce a
+  different result). `analysis_run_id`/`rule_version_id` both reference
+  their tables **`ON DELETE RESTRICT`** (an assessment is a historical
+  record that shouldn't silently vanish). `status` is
+  `AFFECTED | NOT_AFFECTED | UNCERTAIN`; `reason` is a short human-readable
+  summary; `coverage` is small structured JSON (per-workspace
+  applicability breakdown, ambiguous references, load failures) — not raw
+  source, no natural per-row identity of its own.
+
+  **`(analysis_run_id, rule_version_id)` is unique, upserted** — unlike
+  `analysis_runs` (an execution/audit log, deliberately not deduplicated),
+  an `ImpactAssessment` is a **pure function** of two already-immutable
+  inputs (the run's underlying `RepositorySnapshot`, and a versioned
+  `RuleVersion`), so re-evaluating the identical pair converges to one row
+  rather than accumulating duplicates.
+
+- **`impact_findings`** — a specific proven location an `AFFECTED`
+  assessment points to: `workspace_path`, `source_file`, `line`,
+  `matched_symbol`. Real rows (small, bounded — zero to a few per
+  assessment), not a JSONB blob, per the `AffectedLocation`/Finding
+  candidate table named below. `impact_assessment_id` references
+  `impact_assessments.id`, **`ON DELETE CASCADE`** (a finding without its
+  assessment is meaningless). Re-evaluation deletes and reinserts a run's
+  findings wholesale rather than diffing individual rows.
+
+See `apps/api/src/analysis/impact/` (the ProviderChange/RuleVersion
+definition, applicability, the TypeScript-Compiler-API predicate, and
+tri-state aggregation), `apps/api/src/analysis/impact-persistence.ts`, and
+`apps/api/src/routes/impact-assessments.ts`
+(`POST /analysis-runs/:id/impact-assessments`) for the implementation. See
+[docs/impact-analysis.md](impact-analysis.md) for the one encoded
+`ProviderChange`'s exact provenance and the tri-state safety policy.
+
 ## Candidate domain concepts (PROPOSED — not implemented)
 
 None of what follows is implemented. This section was revised following
@@ -229,14 +292,19 @@ none of which exist as columns today, since the systems they'd describe
 (rules, a provider catalog, real TypeScript analysis) don't exist yet.
 
 **Do not treat an `ImpactAssessment` as timeless truth about a commit
-SHA.** It is truth about `(RepositorySnapshot, AnalysisRun)` — re-running
-analysis with a newer analyzer/ruleset against the _same_ SHA is expected
-to sometimes produce a different, and more correct, result.
+SHA.** It is truth about `(AnalysisRun, RuleVersion)` — re-running the
+same rule against the same `AnalysisRun` converges to one row (see the new
+`impact_assessments`/`impact_findings` tables above, now **CURRENT** for
+the one encoded rule), and re-running a **newer** `RuleVersion` against
+the _same_ `AnalysisRun`/snapshot is expected to sometimes produce a
+different, and more correct, result — a second, distinct row.
 
 ```
 RepositorySnapshot 1 ── * AnalysisRun
-ProviderChange      1 ── * ImpactAssessment
-AnalysisRun         1 ── * ImpactAssessment
+ProviderChange      1 ── * RuleVersion        (CURRENT)
+AnalysisRun         1 ── * ImpactAssessment   (CURRENT)
+RuleVersion         1 ── * ImpactAssessment   (CURRENT)
+ImpactAssessment    1 ── * Finding            (impact_findings, CURRENT)
 ```
 
 ### Version applicability is evidence, not one repository field (CURRENT for InstalledSdkEvidence/ClientVersionEvidence; correction from the original candidate model)
@@ -298,7 +366,7 @@ specific usage rather than a snapshot-wide value (**PROPOSED, not
 implemented**) — the current `StripeEvidence` JSON blob is not that
 abstraction, just the discoverable evidence it would eventually draw from.
 
-### Splitting what `ChangeRule` was implied to be (PROPOSED — correction)
+### Splitting what `ChangeRule` was implied to be (`ApplicabilityConstraint`/`ImpactPredicate`/`MigrationRequirement` now CURRENT for the one encoded rule; `TransformationRecipe`/`VerificationExpectation` still PROPOSED — correction)
 
 The original model treated `ChangeRule` as one undifferentiated "rule."
 That combines responsibilities that need to stay separable: **a change can
@@ -306,21 +374,33 @@ be reliably detectable but not safely auto-fixable**, and that distinction
 must be first-class data, not something inferred from application logic.
 
 ```
-ProviderChange
-  ├── ApplicabilityConstraint[]   (does this change apply to this SDK/API/
-  │                                 account/product version at all?)
-  ├── ImpactPredicate[]           (does specific source code actually use
-  │                                 the affected surface?)
-  ├── MigrationRequirement[]      (what needs to change, in prose/structured
-  │                                 form, independent of whether it's
-  │                                 automatable)
-  ├── TransformationRecipe[]?     (optional — only present when a safe,
-  │                                 mechanical or bounded-AI transform
-  │                                 exists)
-  └── VerificationExpectation[]?  (optional — only present when a
-                                    meaningful independent postcondition
-                                    can be stated)
+ProviderChange (provider_changes row)
+  ├── ApplicabilityConstraint[]   (CURRENT -- apps/api/src/analysis/impact/
+  │                                 applicability.ts: does this change apply
+  │                                 to this SDK/API version at all?)
+  ├── ImpactPredicate[]           (CURRENT -- apps/api/src/analysis/impact/
+  │                                 predicate.ts: does specific source code
+  │                                 actually use the affected surface?)
+  ├── MigrationRequirement[]      (CURRENT, but a single verbatim-Stripe-text
+  │                                 field on rule_versions, not yet a
+  │                                 structured/multi-entry shape -- what
+  │                                 needs to change, independent of whether
+  │                                 it's automatable)
+  ├── TransformationRecipe[]?     (PROPOSED, not implemented -- optional,
+  │                                 only present when a safe, mechanical or
+  │                                 bounded-AI transform exists)
+  └── VerificationExpectation[]?  (PROPOSED, not implemented -- optional,
+                                    only present when a meaningful
+                                    independent postcondition can be stated)
 ```
+
+For this one rule, `ApplicabilityConstraint`/`ImpactPredicate` aren't yet
+persisted as their own structured rows — they're deterministic code
+(`applicability.ts`/`predicate.ts`) identified by `rule_versions
+.predicate_kind`, not data a future rule-authoring surface could edit.
+Whether they become data-driven (vs. code-driven) rows is an open question
+below, deferred until a second rule exists to prove out the right
+abstraction.
 
 A `ProviderChange` may legitimately have high detectability, low
 fixability, and only partial verifiability — that should be visible in the
@@ -333,14 +413,14 @@ verifiability   MEDIUM
 ```
 
 This whole bundle (the constraints/predicates/requirements derived from one
-`ProviderChange`) should eventually be versioned and immutable once an
-`ImpactAssessment` references it — rules are effectively a software supply
-chain: a bad rule produces incorrect findings across every repository that
-references it. The external research materials call this versioned,
-immutable bundle a `RuleVersion`; we keep referring to it here as the
-(now-structured) `ChangeRule` concept since both name the same
-not-yet-designed idea — this is not a decision to introduce a differently
-named entity, just a note that the two names refer to the same thing.
+`ProviderChange`) is now versioned and immutable once an `ImpactAssessment`
+references it (**CURRENT** — `rule_versions`, `(provider_change_id,
+version)` unique) — rules are effectively a software supply chain: a bad
+rule produces incorrect findings across every repository that references
+it. The external research materials called this versioned, immutable
+bundle a `RuleVersion`; that is the name actually used in the schema
+(`rule_versions`), not a separately-named `ChangeRule` table — both always
+named the same idea, and the schema settled on `RuleVersion`.
 
 **Do not over-design a universal cross-provider ontology yet.** Generic
 primitives (member access on an external API path, argument property,
@@ -362,10 +442,12 @@ initial product, persist:
   schema-validated JSON document, not a `Dependency`/`ApiUsage` table.
 - analysis coverage (`AnalysisCoverage`, part of `StripeEvidence` above) —
   **CURRENT**
-- `ImpactAssessment`s — **PROPOSED**
+- `ImpactAssessment`s — **CURRENT** (`impact_assessments`, for the one
+  encoded rule)
 - findings/evidence spans (`AffectedLocation` / "Finding" — the specific
-  file/line/usage an assessment points to)
-- analyzer/rule versions
+  file/line/usage an assessment points to) — **CURRENT** (`impact_findings`)
+- analyzer/rule versions — **CURRENT** (`ANALYZER_VERSION` constant;
+  `rule_versions.version`)
 
 The intermediate, complete API-usage graph (every resolved symbol/call in a
 snapshot, not just the ones relevant to a specific `ProviderChange`) should
@@ -377,11 +459,13 @@ normalized, cross-snapshot business entity.
 ### Full candidate list
 
 `User`, `GitHubInstallation`, `Repository`, `RepositorySnapshot`,
-`AnalysisRun` (all now CURRENT, as `users`, `github_installations`,
-`repositories`, `repository_snapshots`, `analysis_runs` above),
-`ProviderChange`, `ChangeRule` (structured as above), `Dependency`,
-`ImpactAssessment`, `AffectedLocation`/Finding, `PatchAttempt`,
-`VerificationRun`, `PullRequest`, `AuditEvent`. See
+`AnalysisRun`, `ProviderChange`, `ChangeRule` (as `RuleVersion`),
+`ImpactAssessment`, `AffectedLocation`/Finding (all now CURRENT, as
+`users`, `github_installations`, `repositories`, `repository_snapshots`,
+`analysis_runs`, `provider_changes`, `rule_versions`,
+`impact_assessments`, `impact_findings` above), `Dependency`,
+`PatchAttempt`, `VerificationRun`, `PullRequest`, `AuditEvent`
+(still PROPOSED). See
 [CLAUDE.md](../CLAUDE.md#product) for the core workflow these will support,
 and [docs/impact-analysis.md](impact-analysis.md) for the pipeline that
 produces an `ImpactAssessment`.
@@ -396,19 +480,30 @@ produces an `ImpactAssessment`.
 - Retention policy for `RepositorySnapshot` source data (see
   [docs/security.md](security.md) on minimizing source-code persistence).
 - Exact relationship cardinality between `ProviderChange`, the structured
-  `ChangeRule`/`RuleVersion` bundle, and `ImpactAssessment` (e.g. can one
-  `ImpactAssessment` span multiple rule bundles) is undecided.
+  `RuleVersion` bundle, and `ImpactAssessment` beyond the one encoded rule
+  (e.g. can one `ImpactAssessment` span multiple rule bundles) is
+  undecided.
 - Whether/when `VersionContext` becomes its own entity versus staying
   embedded evidence on an `ImpactAssessment`.
+- Whether `ApplicabilityConstraint`/`ImpactPredicate` become data-driven
+  rows (a small rule DSL) versus staying code identified by
+  `rule_versions.predicate_kind`, as they are for this one rule — deferred
+  until a second rule exists to prove out the right abstraction; building
+  a DSL for exactly one rule would be speculative.
 
 ## Deferred
 
-`ProviderChange` through `AuditEvent` (the remainder of the candidate list
-above, now that `RepositorySnapshot`, `AnalysisRun`, and the evidence
-subset above are implemented) require their own design pass once the
-impact-analysis vertical slice is scoped. Full repository-content
-persistence remains deferred: an exact-SHA archive is downloaded and
-extracted per analysis, but only ever to an OS temp directory deleted
-immediately after evidence collection (`apps/api/src/analysis/archive.ts`)
-— no source file content is ever persisted to PostgreSQL, only the
-structured evidence derived from it.
+`Dependency` through `AuditEvent` (the remainder of the candidate list
+above, now that `RepositorySnapshot`, `AnalysisRun`, the evidence subset,
+and the `ProviderChange`/`RuleVersion`/`ImpactAssessment`/Finding subset
+for one rule are implemented) require their own design pass once a second
+rule or patch generation is scoped. Full repository-content persistence
+remains deferred: an exact-SHA archive is downloaded and extracted per
+analysis (evidence collection, and again independently per impact
+assessment — never reused/cached across the two, and never persisted
+between requests), but only ever to an OS temp directory deleted
+immediately after use (`apps/api/src/analysis/archive.ts`) — no source
+file content is ever persisted to PostgreSQL, only the structured evidence
+and findings derived from it. Multiple rules, automated changelog
+ingestion, `TransformationRecipe`/`VerificationExpectation`, and patch
+generation are all explicitly out of scope for this rule.

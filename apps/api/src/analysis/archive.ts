@@ -14,6 +14,7 @@ const MANIFEST_BASENAMES = new Set([
   'pnpm-lock.yaml',
   'yarn.lock',
 ]);
+const TSCONFIG_BASENAME_PATTERN = /^tsconfig(\.[\w-]+)?\.json$/;
 const SOURCE_EXTENSIONS = new Set(['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs']);
 const EXCLUDED_SEGMENTS = new Set([
   'node_modules',
@@ -45,10 +46,14 @@ function isExcludedPath(entryPath: string): boolean {
   return entryPath.split('/').some((segment) => EXCLUDED_SEGMENTS.has(segment));
 }
 
+function isManifestBasename(basename: string): boolean {
+  return MANIFEST_BASENAMES.has(basename) || TSCONFIG_BASENAME_PATTERN.test(basename);
+}
+
 function isRelevantPath(entryPath: string): boolean {
   if (isExcludedPath(entryPath)) return false;
   const basename = basenameOf(entryPath);
-  if (MANIFEST_BASENAMES.has(basename)) return true;
+  if (isManifestBasename(basename)) return true;
   const dotIndex = basename.lastIndexOf('.');
   const extension = dotIndex === -1 ? '' : basename.slice(dotIndex);
   return SOURCE_EXTENSIONS.has(extension);
@@ -65,7 +70,7 @@ function isRelevantPath(entryPath: string): boolean {
  * by default (preservePaths is never set here) -- Zip Slip protection
  * comes from the library, not reimplemented here. On top of that,
  * extraction is selective via a filter callback (never "extract
- * everything then scan the filesystem"): only manifest/lockfile
+ * everything then scan the filesystem"): only manifest/lockfile/tsconfig
  * basenames and known source extensions, outside excluded directories,
  * are ever written to disk, and only regular files are extracted
  * (symlinks/hardlinks are rejected). `strip: 1` removes GitHub's wrapping
@@ -101,7 +106,7 @@ export async function withExtractedArchive<T>(
         const relativePath = slashIndex === -1 ? '' : entryPath.slice(slashIndex + 1);
         if (!relativePath || !isRelevantPath(relativePath)) return false;
 
-        const cap = MANIFEST_BASENAMES.has(basenameOf(relativePath))
+        const cap = isManifestBasename(basenameOf(relativePath))
           ? MAX_MANIFEST_ENTRY_BYTES
           : MAX_SOURCE_ENTRY_BYTES;
         if (entry.size > cap) {

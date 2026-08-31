@@ -8,10 +8,24 @@ interface LatestAnalysisStripeSummary {
   workspacePath: string;
 }
 
+interface ImpactFinding {
+  sourceFile: string;
+  line: number;
+  matchedSymbol: string;
+}
+
+interface LatestImpactAssessment {
+  status: string;
+  reason: string;
+  findings: ImpactFinding[];
+}
+
 interface LatestAnalysis {
+  analysisRunId: string;
   commitSha: string;
   status: string;
   stripe: LatestAnalysisStripeSummary | null;
+  latestImpactAssessment: LatestImpactAssessment | null;
 }
 
 interface Repository {
@@ -27,6 +41,12 @@ interface Repository {
 async function analyseRepository(repositoryId: string) {
   'use server';
   await apiFetch(`/repositories/${repositoryId}/analyses`, { method: 'POST' });
+  redirect('/repositories');
+}
+
+async function checkStripeBasilImpact(analysisRunId: string) {
+  'use server';
+  await apiFetch(`/analysis-runs/${analysisRunId}/impact-assessments`, { method: 'POST' });
   redirect('/repositories');
 }
 
@@ -98,6 +118,27 @@ export default async function RepositoriesPage({
                   {repo.latestAnalysis.stripe.declaredRange})
                 </span>
               )}
+              {repo.latestAnalysis?.latestImpactAssessment && (
+                <div className="mt-1 flex flex-col gap-0.5 rounded border border-zinc-200 px-2 py-1.5 dark:border-zinc-800">
+                  <span className="text-xs font-medium text-zinc-700 dark:text-zinc-300">
+                    Stripe change: Upcoming Invoice API removed/replaced
+                  </span>
+                  <span className="text-xs text-zinc-500 dark:text-zinc-400">
+                    Status: {repo.latestAnalysis.latestImpactAssessment.status}
+                  </span>
+                  {repo.latestAnalysis.latestImpactAssessment.findings.map((finding) => (
+                    <span
+                      key={`${finding.sourceFile}:${finding.line}`}
+                      className="text-xs text-zinc-500 dark:text-zinc-400"
+                    >
+                      Evidence: {finding.sourceFile}:{finding.line} — {finding.matchedSymbol}
+                    </span>
+                  ))}
+                  <span className="text-xs text-zinc-500 dark:text-zinc-400">
+                    Reason: {repo.latestAnalysis.latestImpactAssessment.reason}
+                  </span>
+                </div>
+              )}
             </div>
             <div className="flex items-center gap-3">
               <form action={analyseRepository.bind(null, repo.id)}>
@@ -108,6 +149,16 @@ export default async function RepositoriesPage({
                   Analyse repository
                 </button>
               </form>
+              {repo.latestAnalysis && (
+                <form action={checkStripeBasilImpact.bind(null, repo.latestAnalysis.analysisRunId)}>
+                  <button
+                    type="submit"
+                    className="rounded-md border border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-700 transition-colors hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-900"
+                  >
+                    Check Basil invoice migration
+                  </button>
+                </form>
+              )}
               <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400">
                 <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
                 Connected

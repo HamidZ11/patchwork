@@ -23,25 +23,38 @@ Vitest is the test runner across every package and app.
   `apps/api/src/__tests__/ready.integration.test.ts`,
   `apps/api/src/__tests__/auth.integration.test.ts`,
   `apps/api/src/__tests__/github.integration.test.ts`,
-  `apps/api/src/__tests__/analyses.integration.test.ts`) run against a real
-  PostgreSQL instance, exercising real
-  user/session/installation/repository/snapshot/analysis-run/evidence
-  persistence and uniqueness/idempotency (duplicate upserts converge to one
-  row). `analyses.integration.test.ts` additionally covers: authorization
-  (404, not 403, for a repository connected by a different user — no
-  existence leak); the fail-closed/no-partial-write behavior when SHA
-  resolution fails; that a `'failed'` `AnalysisRun` (no `analysis_evidence`
-  row) is recorded — without discarding the already-valid snapshot — when
-  archive acquisition fails; real Stripe evidence persisted and correctly
-  linked to its `analysis_run_id` when a fixture archive declares a
-  dependency; that repeated triggers against an unchanged commit converge
-  to one `RepositorySnapshot` but create a new `AnalysisRun` (and its own
-  evidence row) each time; and FK/cascade behavior when a repository is
-  deleted. They require `DATABASE_URL` to point at a reachable, migrated
-  PostgreSQL database — either `docker compose up -d postgres` +
-  `pnpm db:migrate` locally, or the `postgres` service container plus the
-  migrate step in CI (migrations run once as a separate CI step, not
-  inside every test file).
+  `apps/api/src/__tests__/analyses.integration.test.ts`,
+  `apps/api/src/__tests__/impact-assessments.integration.test.ts`) run
+  against a real PostgreSQL instance, exercising real
+  user/session/installation/repository/snapshot/analysis-run/evidence/
+  impact-assessment persistence and uniqueness/idempotency (duplicate
+  upserts converge to one row). `analyses.integration.test.ts` covers:
+  authorization (404, not 403, for a repository connected by a different
+  user — no existence leak); the fail-closed/no-partial-write behavior
+  when SHA resolution fails; that a `'failed'` `AnalysisRun` (no
+  `analysis_evidence` row) is recorded — without discarding the
+  already-valid snapshot — when archive acquisition fails; real Stripe
+  evidence persisted and correctly linked to its `analysis_run_id` when a
+  fixture archive declares a dependency; that repeated triggers against
+  an unchanged commit converge to one `RepositorySnapshot` but create a
+  new `AnalysisRun` (and its own evidence row) each time; and FK/cascade
+  behavior when a repository is deleted.
+  `impact-assessments.integration.test.ts` covers: authorization (401
+  unauthenticated, 404 for an `AnalysisRun` connected by a different user
+  — no existence leak), 409 when the target run has no evidence to assess,
+  a real positive fixture (`stripe@18.2.0`, a genuine
+  `stripe.invoices.retrieveUpcoming` call) persisting `AFFECTED` with a
+  `Finding` correctly linked to its assessment, a real negative fixture
+  (same SDK version, `createPreview` instead) persisting `NOT_AFFECTED`,
+  `ProviderChange`/`RuleVersion` upsert idempotency, that re-triggering an
+  assessment for the same `AnalysisRun` converges to one
+  `ImpactAssessment` row with findings replaced (not duplicated), and that
+  deleting an `ImpactAssessment` cascades to its `Finding` rows. They
+  require `DATABASE_URL` to point at a reachable, migrated PostgreSQL
+  database — either `docker compose up -d postgres` + `pnpm db:migrate`
+  locally, or the `postgres` service container plus the migrate step in
+  CI (migrations run once as a separate CI step, not inside every test
+  file).
 - **The GitHub HTTP boundary is fakeable, never real.** `apps/api/src/github/client.ts`
   and `github/auth.ts` accept an injectable `fetch`/auth implementation
   (`apps/api/src/__tests__/fixtures.ts` provides `fakeGitHubClient` and
@@ -70,6 +83,26 @@ api-version}.test.ts`): manifest/workspace discovery, declared-range vs.
   literal/local-constant/dynamic `apiVersion` classification, an unrelated
   `apiVersion`-named property outside a Stripe construction producing no
   evidence, and malformed source/manifests handled without crashing.
+- **Impact assessment is unit-tested independent of the DB/HTTP boundary**:
+  `apps/api/src/analysis/impact/__tests__/applicability.test.ts` (SDK
+  version `>= 18.0.0` → `APPLICABLE`; pre-Basil `apiVersion` →
+  `NOT_APPLICABLE`; unresolved/absent evidence → `UNKNOWN`; conflicting
+  `apiVersion`s across constructions → `UNKNOWN`; multiple workspaces never
+  collapsed); `predicate.test.ts` (a ~15-scenario fixture matrix using
+  real in-memory `ts.Program`s — see below — covering direct calls,
+  same-file aliases, bare method references, different file layouts, and
+  a monorepo workspace as positives; an unrelated same-named method,
+  comment/string-only mentions, a user-defined type with the same
+  property, an unused-but-present dependency, and a non-property-access
+  identifier as negatives; dynamic construction, an unresolved import, and
+  a cross-file wrapper as `UNCERTAIN`; a same-file wrapper function
+  resolving correctly, not falling to `UNCERTAIN`); `assess.test.ts`
+  (tri-state aggregation: full coverage + no match + applicable →
+  `NOT_AFFECTED`; incomplete coverage → `UNCERTAIN`; a confirmed match →
+  `AFFECTED`; `UNKNOWN` applicability capping the result even when the
+  predicate independently matches; `AFFECTED` in one workspace winning
+  over `UNCERTAIN` in another; truncated archive extraction downgrading an
+  otherwise-`NOT_AFFECTED` result but never an `AFFECTED` one).
 
 ### Test isolation
 

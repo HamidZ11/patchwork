@@ -161,6 +161,7 @@ export interface LatestAnalysisStripeSummary {
 }
 
 export interface LatestAnalysis {
+  analysisRunId: string;
   commitSha: string;
   status: string;
   startedAt: Date;
@@ -185,6 +186,7 @@ export async function getLatestAnalysisForRepositories(
 
   const rows = await db
     .select({
+      analysisRunId: schema.analysisRuns.id,
       repositoryId: schema.repositorySnapshots.repositoryId,
       commitSha: schema.repositorySnapshots.commitSha,
       status: schema.analysisRuns.status,
@@ -212,6 +214,7 @@ export async function getLatestAnalysisForRepositories(
     const firstSdk = evidence?.installedSdks[0];
 
     latest.set(row.repositoryId, {
+      analysisRunId: row.analysisRunId,
       commitSha: row.commitSha,
       status: row.status,
       startedAt: row.startedAt,

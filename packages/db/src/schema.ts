@@ -203,3 +203,116 @@ export const analysisEvidence = pgTable('analysis_evidence', {
   evidence: jsonb('evidence').notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
+
+/**
+ * A normalized, provider-issued API change -- the fact of what changed,
+ * independent of how Patchwork checks whether it applies. Not
+ * user-authored: populated via an idempotent upsert from one hardcoded
+ * definition per real, manually-verified change (see
+ * analysis/provider-changes/). external_id is a stable slug (currently
+ * matching the source changelog's URL segment) so re-running the upsert
+ * converges to one row.
+ */
+export const providerChanges = pgTable(
+  'provider_changes',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    provider: text('provider').notNull(),
+    externalId: text('external_id').notNull(),
+    title: text('title').notNull(),
+    sourceUrl: text('source_url').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [uniqueIndex('provider_changes_external_id_idx').on(table.externalId)],
+);
+
+/**
+ * One versioned, immutable check of whether/how a ProviderChange applies
+ * -- the rule bundle. predicate_kind is a code discriminator (which
+ * hardcoded predicate function to run), not a general rule-authoring DSL.
+ * migration_requirement is Stripe's own verbatim migration text, not
+ * Patchwork-authored prose. Versioned like ANALYZER_VERSION: a future
+ * bugfix bumps `version` rather than silently rewriting what an existing
+ * ImpactAssessment meant.
+ */
+export const ruleVersions = pgTable(
+  'rule_versions',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    providerChangeId: uuid('provider_change_id')
+      .notNull()
+      .references(() => providerChanges.id, { onDelete: 'restrict' }),
+    version: text('version').notNull(),
+    predicateKind: text('predicate_kind').notNull(),
+    migrationRequirement: text('migration_requirement').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex('rule_versions_change_version_idx').on(table.providerChangeId, table.version),
+  ],
+);
+
+/**
+ * Truth about one (AnalysisRun, RuleVersion) pair -- never about a commit
+ * SHA alone (the same snapshot can be re-evaluated by a newer RuleVersion
+ * and legitimately produce a different result). Unlike AnalysisRun
+ * (an execution/audit log, deliberately not deduplicated), an
+ * ImpactAssessment is a pure function of two already-immutable inputs, so
+ * `(analysis_run_id, rule_version_id)` is unique and upserted -- re-running
+ * the identical evaluation converges to one row rather than accumulating
+ * duplicates. `status` is AFFECTED | NOT_AFFECTED | UNCERTAIN; `reason` is
+ * a short human-readable summary; `coverage` is small structured JSON
+ * (workspace-level applicability breakdown, ambiguous references, load
+ * failures) -- not raw source, no natural per-row identity of its own.
+ * ON DELETE RESTRICT from both analysis_runs and rule_versions -- an
+ * assessment is a historical record that shouldn't silently vanish.
+ */
+export const impactAssessments = pgTable(
+  'impact_assessments',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    analysisRunId: uuid('analysis_run_id')
+      .notNull()
+      .references(() => analysisRuns.id, { onDelete: 'restrict' }),
+    ruleVersionId: uuid('rule_version_id')
+      .notNull()
+      .references(() => ruleVersions.id, { onDelete: 'restrict' }),
+    status: text('status').notNull(),
+    reason: text('reason').notNull(),
+    coverage: jsonb('coverage').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex('impact_assessments_run_rule_idx').on(table.analysisRunId, table.ruleVersionId),
+  ],
+);
+
+/**
+ * A specific proven location an AFFECTED ImpactAssessment points to --
+ * real rows (small, bounded: zero to a few per assessment), not a JSONB
+ * blob, matching the AffectedLocation/Finding candidate table from
+ * docs/data-model.md's research correction (distinct from the large,
+ * deliberately-non-persisted intermediate ApiUsage graph). ON DELETE
+ * CASCADE from impact_assessments -- a finding without its assessment is
+ * meaningless. Re-evaluation deletes and reinserts a run's findings
+ * rather than trying to diff/update individual rows.
+ */
+export const impactFindings = pgTable('impact_findings', {
+  id: uuid('id')
+    .primaryKey()
+    .$defaultFn(() => crypto.randomUUID()),
+  impactAssessmentId: uuid('impact_assessment_id')
+    .notNull()
+    .references(() => impactAssessments.id, { onDelete: 'cascade' }),
+  workspacePath: text('workspace_path').notNull(),
+  sourceFile: text('source_file').notNull(),
+  line: integer('line').notNull(),
+  matchedSymbol: text('matched_symbol').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});

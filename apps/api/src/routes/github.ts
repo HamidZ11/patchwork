@@ -8,6 +8,7 @@ import {
   upsertInstallationAndRepositories,
 } from '../github/persistence.js';
 import { getLatestAnalysisForRepositories } from '../analysis/persistence.js';
+import { getImpactAssessmentsForAnalysisRuns } from '../analysis/impact-persistence.js';
 import type { CookiePolicy } from '../plugins/cookies.js';
 import { generateAndSetState, validateAndConsumeState } from '../plugins/oauth-state.js';
 import { requireAuth } from '../plugins/session.js';
@@ -84,12 +85,25 @@ export function registerGitHubRoutes(app: FastifyInstance, deps: GitHubRoutesDep
       deps.db,
       repositories.map((repo) => repo.id),
     );
+    const latestImpactAssessmentByRun = await getImpactAssessmentsForAnalysisRuns(
+      deps.db,
+      [...latestAnalysisByRepo.values()].map((analysis) => analysis.analysisRunId),
+    );
 
     return {
-      repositories: repositories.map((repo) => ({
-        ...repo,
-        latestAnalysis: latestAnalysisByRepo.get(repo.id) ?? null,
-      })),
+      repositories: repositories.map((repo) => {
+        const latestAnalysis = latestAnalysisByRepo.get(repo.id) ?? null;
+        return {
+          ...repo,
+          latestAnalysis: latestAnalysis
+            ? {
+                ...latestAnalysis,
+                latestImpactAssessment:
+                  latestImpactAssessmentByRun.get(latestAnalysis.analysisRunId) ?? null,
+              }
+            : null,
+        };
+      }),
     };
   });
 }
