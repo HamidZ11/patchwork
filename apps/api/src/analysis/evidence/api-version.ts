@@ -1,6 +1,6 @@
 import ts from 'typescript';
 import type { ExtractedFile } from '../archive.js';
-import { workspacePathOf } from './manifests.js';
+import { discoverWorkspaceDirs, nearestWorkspaceFor } from './manifests.js';
 import type { ApiVersionValueKind, ClientVersionEvidence } from './types.js';
 
 const SOURCE_EXTENSIONS = new Set(['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs']);
@@ -101,11 +101,14 @@ function classifyApiVersionValue(
  * is the only indirection resolved; anything else (env vars, imports,
  * calls, ternaries) is DYNAMIC_UNKNOWN, never guessed.
  */
-function scanFileForClientVersions(file: ExtractedFile): ClientVersionEvidence[] {
+function scanFileForClientVersions(
+  file: ExtractedFile,
+  workspaceDirs: string[],
+): ClientVersionEvidence[] {
   const sourceFile = ts.createSourceFile(file.path, file.content, ts.ScriptTarget.Latest, true);
   const stripeLocalNames = collectStripeLocalNames(sourceFile);
   const localConstants = collectLocalStringConstants(sourceFile);
-  const workspacePath = workspacePathOf(file.path);
+  const workspacePath = nearestWorkspaceFor(file.path, workspaceDirs);
   const results: ClientVersionEvidence[] = [];
 
   function visit(node: ts.Node): void {
@@ -149,6 +152,7 @@ function scanFileForClientVersions(file: ExtractedFile): ClientVersionEvidence[]
  * all, so this avoids parsing every source file found.
  */
 export function scanForClientVersionEvidence(files: ExtractedFile[]): ApiVersionScanResult {
+  const workspaceDirs = discoverWorkspaceDirs(files);
   const candidates = files.filter(
     (file) =>
       isSourceFile(file.path) &&
@@ -161,7 +165,7 @@ export function scanForClientVersionEvidence(files: ExtractedFile[]): ApiVersion
 
   for (const file of candidates) {
     try {
-      clientVersions.push(...scanFileForClientVersions(file));
+      clientVersions.push(...scanFileForClientVersions(file, workspaceDirs));
     } catch {
       parseFailures.push(file.path);
     }

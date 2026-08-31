@@ -15,6 +15,7 @@ interface ImpactFinding {
 }
 
 interface LatestImpactAssessment {
+  providerChangeTitle: string;
   status: string;
   reason: string;
   findings: ImpactFinding[];
@@ -25,7 +26,7 @@ interface LatestAnalysis {
   commitSha: string;
   status: string;
   stripe: LatestAnalysisStripeSummary | null;
-  latestImpactAssessment: LatestImpactAssessment | null;
+  latestImpactAssessments: LatestImpactAssessment[];
 }
 
 interface Repository {
@@ -44,7 +45,7 @@ async function analyseRepository(repositoryId: string) {
   redirect('/repositories');
 }
 
-async function checkStripeBasilImpact(analysisRunId: string) {
+async function checkStripeImpact(analysisRunId: string) {
   'use server';
   await apiFetch(`/analysis-runs/${analysisRunId}/impact-assessments`, { method: 'POST' });
   redirect('/repositories');
@@ -118,15 +119,18 @@ export default async function RepositoriesPage({
                   {repo.latestAnalysis.stripe.declaredRange})
                 </span>
               )}
-              {repo.latestAnalysis?.latestImpactAssessment && (
-                <div className="mt-1 flex flex-col gap-0.5 rounded border border-zinc-200 px-2 py-1.5 dark:border-zinc-800">
+              {repo.latestAnalysis?.latestImpactAssessments.map((assessment) => (
+                <div
+                  key={assessment.providerChangeTitle}
+                  className="mt-1 flex flex-col gap-0.5 rounded border border-zinc-200 px-2 py-1.5 dark:border-zinc-800"
+                >
                   <span className="text-xs font-medium text-zinc-700 dark:text-zinc-300">
-                    Stripe change: Upcoming Invoice API removed/replaced
+                    Stripe change: {assessment.providerChangeTitle}
                   </span>
                   <span className="text-xs text-zinc-500 dark:text-zinc-400">
-                    Status: {repo.latestAnalysis.latestImpactAssessment.status}
+                    Status: {assessment.status}
                   </span>
-                  {repo.latestAnalysis.latestImpactAssessment.findings.map((finding) => (
+                  {assessment.findings.map((finding) => (
                     <span
                       key={`${finding.sourceFile}:${finding.line}`}
                       className="text-xs text-zinc-500 dark:text-zinc-400"
@@ -135,10 +139,10 @@ export default async function RepositoriesPage({
                     </span>
                   ))}
                   <span className="text-xs text-zinc-500 dark:text-zinc-400">
-                    Reason: {repo.latestAnalysis.latestImpactAssessment.reason}
+                    Reason: {assessment.reason}
                   </span>
                 </div>
-              )}
+              ))}
             </div>
             <div className="flex items-center gap-3">
               <form action={analyseRepository.bind(null, repo.id)}>
@@ -150,12 +154,12 @@ export default async function RepositoriesPage({
                 </button>
               </form>
               {repo.latestAnalysis && (
-                <form action={checkStripeBasilImpact.bind(null, repo.latestAnalysis.analysisRunId)}>
+                <form action={checkStripeImpact.bind(null, repo.latestAnalysis.analysisRunId)}>
                   <button
                     type="submit"
                     className="rounded-md border border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-700 transition-colors hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-900"
                   >
-                    Check Basil invoice migration
+                    Check Stripe impact
                   </button>
                 </form>
               )}

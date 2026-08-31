@@ -1,10 +1,9 @@
 import ts from 'typescript';
-import type { ExtractedFile } from '../archive.js';
-import { workspacePathOf } from '../evidence/manifests.js';
-import { STRIPE_TYPE_STUB_CONTENT, STRIPE_TYPE_STUB_PATH } from './stripe-type-stub.js';
-import type { Finding } from './types.js';
+import type { ExtractedFile } from '../../archive.js';
+import { nearestWorkspaceFor, workspacePathOf } from '../../evidence/manifests.js';
+import { STRIPE_TYPE_STUB_CONTENT, STRIPE_TYPE_STUB_PATH } from '../stripe-type-stub.js';
+import type { Finding } from '../types.js';
 
-const TARGET_PROPERTY_NAME = 'retrieveUpcoming';
 const SOURCE_EXTENSIONS = new Set(['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs']);
 const TSCONFIG_BASENAME_PATTERN = /^tsconfig(\.[\w-]+)?\.json$/;
 
@@ -20,6 +19,20 @@ export interface PredicateScanResult {
   sourceFilesScanned: number;
 }
 
+/**
+ * A rule-specific AST visitor: given a real bounded Program's SourceFile
+ * and TypeChecker (built against the trusted stripe stub -- see
+ * stripe-type-stub.ts), find matches/ambiguous references for one
+ * predicate. Shared three-way contract across every predicate primitive:
+ * confirmed match, confirmed non-match (silently excluded, not returned
+ * at all), or ambiguous (never silently dropped to a negative).
+ */
+export type PredicateVisitor = (
+  sourceFile: ts.SourceFile,
+  checker: ts.TypeChecker,
+  workspacePath: string,
+) => { matches: Finding[]; ambiguous: AmbiguousReference[] };
+
 function isSourceFile(path: string): boolean {
   const dotIndex = path.lastIndexOf('.');
   return dotIndex !== -1 && SOURCE_EXTENSIONS.has(path.slice(dotIndex));
@@ -28,20 +41,6 @@ function isSourceFile(path: string): boolean {
 function directoryOf(path: string): string {
   const index = path.lastIndexOf('/');
   return index === -1 ? '' : path.slice(0, index);
-}
-
-/** The workspace directory (one containing a package.json) that is the closest ancestor of filePath. */
-function nearestWorkspaceFor(filePath: string, workspaceDirs: string[]): string {
-  let best = '';
-  let bestLength = -1;
-  for (const dir of workspaceDirs) {
-    const isAncestor = dir === '' || filePath.startsWith(`${dir}/`);
-    if (isAncestor && dir.length > bestLength) {
-      best = dir;
-      bestLength = dir.length;
-    }
-  }
-  return best;
 }
 
 function jsxForPath(path: string): ts.JsxEmit | undefined {
@@ -124,66 +123,19 @@ function createInMemoryCompilerHost(files: Map<string, string>): ts.CompilerHost
 }
 
 /**
- * Finds `retrieveUpcoming` property accesses whose object expression's
- * type resolves (via the real TypeChecker, against the trusted stub) to
- * Stripe's Invoices resource. Same-file aliases and bare method
- * references are covered for free by ordinary type inference -- no
- * special-casing. Three-way outcome per reference: confirmed match
- * (declaration traces to the stub), confirmed non-match (resolves to a
- * distinguishable declaration elsewhere -- excluded, not ambiguous), or
- * ambiguous (`any`/unresolved -- ends up UNCERTAIN upstream, never
- * silently dropped to a negative).
+ * Scans every extracted source file matching `prefilter` (a cheap lexical
+ * check on raw file text, applied before ever building a Program --
+ * candidate discovery only, never decisive) with `visitor` (the real
+ * TypeChecker-based semantic proof for one predicate), grouped by
+ * workspace. Building a Program is a bounded, in-memory, per-file
+ * operation -- never real disk I/O, never node_modules, never
+ * `ts.createProgram` over the whole repo. Shared by every predicate
+ * primitive; rule-specific logic lives entirely in `prefilter`/`visitor`.
  */
-function scanSourceFileForMatches(
-  sourceFile: ts.SourceFile,
-  checker: ts.TypeChecker,
-  workspacePath: string,
-): { matches: Finding[]; ambiguous: AmbiguousReference[] } {
-  const matches: Finding[] = [];
-  const ambiguous: AmbiguousReference[] = [];
-
-  function visit(node: ts.Node): void {
-    if (ts.isPropertyAccessExpression(node) && node.name.text === TARGET_PROPERTY_NAME) {
-      const line = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1;
-      const symbol = checker.getSymbolAtLocation(node);
-
-      if (!symbol) {
-        ambiguous.push({ sourceFile: sourceFile.fileName, line });
-      } else {
-        const declaredInStub = (symbol.declarations ?? []).some(
-          (declaration) => declaration.getSourceFile().fileName === STRIPE_TYPE_STUB_PATH,
-        );
-        if (declaredInStub) {
-          matches.push({
-            workspacePath,
-            sourceFile: sourceFile.fileName,
-            line,
-            matchedSymbol: 'stripe.invoices.retrieveUpcoming',
-          });
-        }
-        // Symbol resolved to something else entirely (a local interface,
-        // an unrelated object literal, ...) -- confirmed non-match, not
-        // ambiguous, no finding.
-      }
-    }
-    ts.forEachChild(node, visit);
-  }
-
-  visit(sourceFile);
-  return { matches, ambiguous };
-}
-
-/**
- * Scans every extracted source file for `retrieveUpcoming` usage,
- * grouped by workspace. A cheap lexical prefilter (file text must contain
- * the literal property name) avoids building a Program for files that
- * couldn't possibly match -- most files in a repository won't. Building
- * a Program is a bounded, in-memory, per-file operation (see
- * buildCompilerOptions/createInMemoryCompilerHost) -- never real disk
- * I/O, never node_modules, never `ts.createProgram` over the whole repo.
- */
-export function scanForRetrieveUpcomingUsage(
+export function scanFilesWithVisitor(
   files: ExtractedFile[],
+  prefilter: (fileContent: string) => boolean,
+  visitor: PredicateVisitor,
 ): Map<string, PredicateScanResult> {
   const tsconfigFiles = files.filter((file) =>
     TSCONFIG_BASENAME_PATTERN.test(file.path.split('/').pop() ?? ''),
@@ -209,9 +161,7 @@ export function scanForRetrieveUpcomingUsage(
   }
   for (const dir of workspaceDirs) ensureWorkspace(dir);
 
-  const candidates = files.filter(
-    (file) => isSourceFile(file.path) && file.content.includes(TARGET_PROPERTY_NAME),
-  );
+  const candidates = files.filter((file) => isSourceFile(file.path) && prefilter(file.content));
 
   for (const file of candidates) {
     const workspacePath = nearestWorkspaceFor(file.path, workspaceDirs);
@@ -236,11 +186,7 @@ export function scanForRetrieveUpcomingUsage(
         continue;
       }
 
-      const { matches, ambiguous } = scanSourceFileForMatches(
-        sourceFile,
-        program.getTypeChecker(),
-        workspacePath,
-      );
+      const { matches, ambiguous } = visitor(sourceFile, program.getTypeChecker(), workspacePath);
       bucket.matches.push(...matches);
       bucket.ambiguousReferences.push(...ambiguous);
     } catch {

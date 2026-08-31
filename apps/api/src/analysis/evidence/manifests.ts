@@ -27,6 +27,35 @@ export function workspacePathOf(manifestPath: string): string {
   return index === -1 ? '' : manifestPath.slice(0, index);
 }
 
+/** Every workspace directory (one containing a package.json) found in an extracted file set. */
+export function discoverWorkspaceDirs(files: ExtractedFile[]): string[] {
+  const dirs = files
+    .filter((file) => file.path === 'package.json' || file.path.endsWith('/package.json'))
+    .map((file) => workspacePathOf(file.path));
+  return dirs.length === 0 ? [''] : dirs;
+}
+
+/**
+ * The workspace directory that is the closest ancestor of filePath -- for
+ * attributing evidence found in an arbitrary source file (not a manifest
+ * itself) to the correct workspace. Unlike workspacePathOf (which only
+ * strips a manifest's own last path segment), this walks up from a
+ * nested source file to whichever known workspace directory actually
+ * contains it.
+ */
+export function nearestWorkspaceFor(filePath: string, workspaceDirs: string[]): string {
+  let best = '';
+  let bestLength = -1;
+  for (const dir of workspaceDirs) {
+    const isAncestor = dir === '' || filePath.startsWith(`${dir}/`);
+    if (isAncestor && dir.length > bestLength) {
+      best = dir;
+      bestLength = dir.length;
+    }
+  }
+  return best;
+}
+
 /**
  * Every package.json found during archive extraction IS the workspace
  * list -- no glob-matching of a `workspaces` field or pnpm-workspace.yaml

@@ -8,7 +8,8 @@ import { findOrCreateUserByGitHubProfile } from '../auth/users.js';
 import type { GitHubInstallationInfo, GitHubRepository } from '../github/client.js';
 import { upsertInstallationAndRepositories } from '../github/persistence.js';
 import { upsertProviderChangeAndRuleVersion } from '../analysis/impact-persistence.js';
-import { STRIPE_BASIL_INVOICE_PREVIEW } from '../analysis/impact/stripe-basil-invoice-preview.js';
+import { STRIPE_BASIL_RETRIEVE_UPCOMING_RULE } from '../analysis/impact/rules/stripe-basil-retrieve-upcoming.js';
+import { STRIPE_CLOVER_SCHEDULE_ITERATIONS_RULE } from '../analysis/impact/rules/stripe-clover-schedule-iterations.js';
 import {
   fakeGitHubAppAuth,
   fakeGitHubClientWithArchive,
@@ -238,29 +239,45 @@ describe('impact assessments (real database)', () => {
         findings: { sourceFile: string; matchedSymbol: string }[];
       }[];
     };
-    expect(body.impactAssessments).toHaveLength(1);
-    expect(body.impactAssessments[0]?.status).toBe('AFFECTED');
-    expect(body.impactAssessments[0]?.providerChange.title).toBe(
-      STRIPE_BASIL_INVOICE_PREVIEW.title,
+    // Every registered rule is evaluated -- only the retrieveUpcoming rule
+    // should come back AFFECTED for this fixture, the rest NOT_AFFECTED.
+    expect(body.impactAssessments).toHaveLength(4);
+    const retrieveUpcomingAssessment = body.impactAssessments.find(
+      (a) => a.providerChange.title === STRIPE_BASIL_RETRIEVE_UPCOMING_RULE.providerChange.title,
     );
-    expect(body.impactAssessments[0]?.findings).toEqual([
+    expect(retrieveUpcomingAssessment?.status).toBe('AFFECTED');
+    expect(retrieveUpcomingAssessment?.findings).toEqual([
       expect.objectContaining({
         sourceFile: 'src/billing.ts',
         matchedSymbol: 'stripe.invoices.retrieveUpcoming',
       }),
     ]);
+    // The schedule-iterations rule's boundary (SDK v19 / 2025-09-30) can't
+    // be resolved from this fixture's evidence (SDK 18.2.0, no explicit
+    // apiVersion) -- applicability is genuinely UNKNOWN, which correctly
+    // caps the result at UNCERTAIN rather than guessing NOT_AFFECTED.
+    const scheduleIterationsAssessment = body.impactAssessments.find(
+      (a) => a.providerChange.title === STRIPE_CLOVER_SCHEDULE_ITERATIONS_RULE.providerChange.title,
+    );
+    expect(scheduleIterationsAssessment?.status).toBe('UNCERTAIN');
+    expect(
+      body.impactAssessments
+        .filter((a) => a !== retrieveUpcomingAssessment && a !== scheduleIterationsAssessment)
+        .every((a) => a.status === 'NOT_AFFECTED'),
+    ).toBe(true);
 
     const assessments = await db.db
       .select()
       .from(schema.impactAssessments)
       .where(eq(schema.impactAssessments.analysisRunId, analysisRunId));
-    expect(assessments).toHaveLength(1);
-    expect(assessments[0]!.status).toBe('AFFECTED');
+    expect(assessments).toHaveLength(4);
+    const affected = assessments.filter((a) => a.status === 'AFFECTED');
+    expect(affected).toHaveLength(1);
 
     const findings = await db.db
       .select()
       .from(schema.impactFindings)
-      .where(eq(schema.impactFindings.impactAssessmentId, assessments[0]!.id));
+      .where(eq(schema.impactFindings.impactAssessmentId, affected[0]!.id));
     expect(findings).toHaveLength(1);
 
     await cleanupUser(userId);
@@ -283,10 +300,26 @@ describe('impact assessments (real database)', () => {
 
     expect(response.statusCode).toBe(201);
     const body = response.json() as {
-      impactAssessments: { status: string; findings: unknown[] }[];
+      impactAssessments: {
+        status: string;
+        providerChange: { title: string };
+        findings: unknown[];
+      }[];
     };
-    expect(body.impactAssessments[0]?.status).toBe('NOT_AFFECTED');
-    expect(body.impactAssessments[0]?.findings).toHaveLength(0);
+    expect(body.impactAssessments).toHaveLength(4);
+    expect(body.impactAssessments.every((a) => a.findings.length === 0)).toBe(true);
+    // Same applicability gap as above: the schedule-iterations rule's
+    // boundary can't be resolved from this fixture's evidence, so it
+    // correctly abstains as UNCERTAIN rather than claiming NOT_AFFECTED.
+    const scheduleIterationsAssessment = body.impactAssessments.find(
+      (a) => a.providerChange.title === STRIPE_CLOVER_SCHEDULE_ITERATIONS_RULE.providerChange.title,
+    );
+    expect(scheduleIterationsAssessment?.status).toBe('UNCERTAIN');
+    expect(
+      body.impactAssessments
+        .filter((a) => a !== scheduleIterationsAssessment)
+        .every((a) => a.status === 'NOT_AFFECTED'),
+    ).toBe(true);
 
     await cleanupUser(userId);
   });
@@ -313,26 +346,40 @@ describe('impact assessments (real database)', () => {
       .select()
       .from(schema.impactAssessments)
       .where(eq(schema.impactAssessments.analysisRunId, analysisRunId));
-    expect(assessments).toHaveLength(1);
+    expect(assessments).toHaveLength(4); // one row per rule, upserted not duplicated
+
+    const affected = assessments.find((a) => a.status === 'AFFECTED');
+    expect(affected).toBeDefined();
 
     const findings = await db.db
       .select()
       .from(schema.impactFindings)
-      .where(eq(schema.impactFindings.impactAssessmentId, assessments[0]!.id));
+      .where(eq(schema.impactFindings.impactAssessmentId, affected!.id));
     expect(findings).toHaveLength(1); // not duplicated across the two triggers
 
     await cleanupUser(userId);
   });
 
   it('upserting the ProviderChange/RuleVersion definition twice converges to one row each', async () => {
-    const first = await upsertProviderChangeAndRuleVersion(db.db, STRIPE_BASIL_INVOICE_PREVIEW);
-    const second = await upsertProviderChangeAndRuleVersion(db.db, STRIPE_BASIL_INVOICE_PREVIEW);
+    const first = await upsertProviderChangeAndRuleVersion(
+      db.db,
+      STRIPE_BASIL_RETRIEVE_UPCOMING_RULE.providerChange,
+    );
+    const second = await upsertProviderChangeAndRuleVersion(
+      db.db,
+      STRIPE_BASIL_RETRIEVE_UPCOMING_RULE.providerChange,
+    );
     expect(first.ruleVersionId).toBe(second.ruleVersionId);
 
     const providerChanges = await db.db
       .select()
       .from(schema.providerChanges)
-      .where(eq(schema.providerChanges.externalId, STRIPE_BASIL_INVOICE_PREVIEW.externalId));
+      .where(
+        eq(
+          schema.providerChanges.externalId,
+          STRIPE_BASIL_RETRIEVE_UPCOMING_RULE.providerChange.externalId,
+        ),
+      );
     expect(providerChanges).toHaveLength(1);
   });
 
@@ -351,10 +398,11 @@ describe('impact assessments (real database)', () => {
       headers: { cookie },
     });
 
-    const [assessment] = await db.db
+    const assessments = await db.db
       .select()
       .from(schema.impactAssessments)
       .where(eq(schema.impactAssessments.analysisRunId, analysisRunId));
+    const assessment = assessments.find((a) => a.status === 'AFFECTED');
     expect(assessment).toBeDefined();
 
     await db.db

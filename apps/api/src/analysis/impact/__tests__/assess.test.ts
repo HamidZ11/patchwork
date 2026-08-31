@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { ExtractedFile } from '../../archive.js';
 import type { StripeEvidence } from '../../evidence/types.js';
-import { assessRetrieveUpcomingImpact } from '../assess.js';
+import { assessRuleImpact } from '../assess.js';
+import { STRIPE_BASIL_RETRIEVE_UPCOMING_RULE } from '../rules/stripe-basil-retrieve-upcoming.js';
 
 function file(path: string, content: string): ExtractedFile {
   return { path, content };
@@ -30,6 +31,7 @@ function evidence(overrides: Partial<StripeEvidence> = {}): StripeEvidence {
 }
 
 const STRIPE_IMPORT = "import Stripe from 'stripe';";
+const RULE = STRIPE_BASIL_RETRIEVE_UPCOMING_RULE;
 
 function applicableEvidence(): StripeEvidence {
   return evidence({
@@ -48,12 +50,15 @@ function applicableEvidence(): StripeEvidence {
   });
 }
 
-describe('assessRetrieveUpcomingImpact', () => {
+describe('assessRuleImpact (retrieveUpcoming case)', () => {
   it('is NOT_AFFECTED when applicable, no match found, and coverage is complete', () => {
     const files = [file('package.json', '{}'), file('src/other.ts', 'export const x = 1;')];
-    const result = assessRetrieveUpcomingImpact(applicableEvidence(), files, {
-      sourceFilesTruncated: false,
-    });
+    const result = assessRuleImpact(
+      applicableEvidence(),
+      files,
+      { sourceFilesTruncated: false },
+      RULE,
+    );
     expect(result.status).toBe('NOT_AFFECTED');
     expect(result.findings).toHaveLength(0);
   });
@@ -70,9 +75,12 @@ describe('assessRetrieveUpcomingImpact', () => {
         ].join('\n'),
       ),
     ];
-    const result = assessRetrieveUpcomingImpact(applicableEvidence(), files, {
-      sourceFilesTruncated: false,
-    });
+    const result = assessRuleImpact(
+      applicableEvidence(),
+      files,
+      { sourceFilesTruncated: false },
+      RULE,
+    );
     expect(result.status).toBe('AFFECTED');
     expect(result.findings).toHaveLength(1);
     expect(result.findings[0]).toMatchObject({
@@ -94,9 +102,12 @@ describe('assessRetrieveUpcomingImpact', () => {
         ].join('\n'),
       ),
     ];
-    const result = assessRetrieveUpcomingImpact(applicableEvidence(), files, {
-      sourceFilesTruncated: false,
-    });
+    const result = assessRuleImpact(
+      applicableEvidence(),
+      files,
+      { sourceFilesTruncated: false },
+      RULE,
+    );
     expect(result.status).toBe('UNCERTAIN');
   });
 
@@ -137,9 +148,7 @@ describe('assessRetrieveUpcomingImpact', () => {
         ].join('\n'),
       ),
     ];
-    const result = assessRetrieveUpcomingImpact(preBasilEvidence, files, {
-      sourceFilesTruncated: false,
-    });
+    const result = assessRuleImpact(preBasilEvidence, files, { sourceFilesTruncated: false }, RULE);
     expect(result.status).toBe('NOT_AFFECTED');
   });
 
@@ -169,9 +178,12 @@ describe('assessRetrieveUpcomingImpact', () => {
         ].join('\n'),
       ),
     ];
-    const result = assessRetrieveUpcomingImpact(unknownApplicabilityEvidence, files, {
-      sourceFilesTruncated: false,
-    });
+    const result = assessRuleImpact(
+      unknownApplicabilityEvidence,
+      files,
+      { sourceFilesTruncated: false },
+      RULE,
+    );
     // Insufficient applicability evidence caps the result at UNCERTAIN --
     // never overridden by an independently-found predicate match.
     expect(result.status).toBe('UNCERTAIN');
@@ -215,18 +227,24 @@ describe('assessRetrieveUpcomingImpact', () => {
       ),
       file('packages/unknown/src/other.ts', 'export const x = 1;'),
     ];
-    const result = assessRetrieveUpcomingImpact(multiWorkspaceEvidence, files, {
-      sourceFilesTruncated: false,
-    });
+    const result = assessRuleImpact(
+      multiWorkspaceEvidence,
+      files,
+      { sourceFilesTruncated: false },
+      RULE,
+    );
     expect(result.status).toBe('AFFECTED');
     expect(result.findings).toHaveLength(1);
   });
 
   it('downgrades an otherwise-NOT_AFFECTED result to UNCERTAIN when archive extraction was truncated', () => {
     const files = [file('package.json', '{}'), file('src/other.ts', 'export const x = 1;')];
-    const result = assessRetrieveUpcomingImpact(applicableEvidence(), files, {
-      sourceFilesTruncated: true,
-    });
+    const result = assessRuleImpact(
+      applicableEvidence(),
+      files,
+      { sourceFilesTruncated: true },
+      RULE,
+    );
     expect(result.status).toBe('UNCERTAIN');
   });
 
@@ -242,15 +260,18 @@ describe('assessRetrieveUpcomingImpact', () => {
         ].join('\n'),
       ),
     ];
-    const result = assessRetrieveUpcomingImpact(applicableEvidence(), files, {
-      sourceFilesTruncated: true,
-    });
+    const result = assessRuleImpact(
+      applicableEvidence(),
+      files,
+      { sourceFilesTruncated: true },
+      RULE,
+    );
     expect(result.status).toBe('AFFECTED');
   });
 
   it('is NOT_AFFECTED when there is no Stripe dependency evidence at all', () => {
     const files = [file('package.json', '{}')];
-    const result = assessRetrieveUpcomingImpact(evidence(), files, { sourceFilesTruncated: false });
+    const result = assessRuleImpact(evidence(), files, { sourceFilesTruncated: false }, RULE);
     expect(result.status).toBe('NOT_AFFECTED');
   });
 });

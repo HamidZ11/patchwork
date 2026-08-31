@@ -18,14 +18,38 @@ describe('scanForClientVersionEvidence', () => {
       ),
     ]);
 
+    // No package.json is present in this fixture, so '' is the only known
+    // workspace directory and it is the ancestor of every file --
+    // workspacePath must reflect the nearest actual workspace root, not
+    // just the source file's own containing directory.
     expect(result.clientVersions).toEqual([
       {
-        workspacePath: 'src',
+        workspacePath: '',
         sourceFile: 'src/stripe.ts',
         line: 2,
         apiVersion: '2025-01-27.acacia',
         valueKind: 'LITERAL',
       },
+    ]);
+  });
+
+  it("attributes evidence to the nearest ancestor workspace, not the source file's own directory", () => {
+    const result = scanForClientVersionEvidence([
+      file(
+        'packages/billing/package.json',
+        JSON.stringify({ dependencies: { stripe: '^18.0.0' } }),
+      ),
+      file(
+        'packages/billing/src/deeply/nested/stripe.ts',
+        [
+          "import Stripe from 'stripe';",
+          'const stripe = new Stripe(secretKey, { apiVersion: "2025-01-27.acacia" });',
+        ].join('\n'),
+      ),
+    ]);
+
+    expect(result.clientVersions).toEqual([
+      expect.objectContaining({ workspacePath: 'packages/billing' }),
     ]);
   });
 

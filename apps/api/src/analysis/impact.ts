@@ -5,22 +5,28 @@ import type { GitHubAppAuth } from '../github/auth.js';
 import type { GitHubClient } from '../github/client.js';
 import { withExtractedArchive } from './archive.js';
 import type { StripeEvidence } from './evidence/types.js';
-import { assessRetrieveUpcomingImpact } from './impact/assess.js';
-import type { ImpactAssessmentResult } from './impact/types.js';
+import { assessRuleImpact } from './impact/assess.js';
+import { IMPACT_RULES } from './impact/registry.js';
+import type { ImpactAssessmentResult, RuleDefinition } from './impact/types.js';
+
+export interface RuleAssessment {
+  rule: RuleDefinition;
+  result: ImpactAssessmentResult;
+}
 
 /**
  * Downloads the exact-SHA repository archive for a RepositorySnapshot
  * (fresh -- the extraction from the original evidence-collection request
- * was already deleted, no permanent source storage) and evaluates the one
- * encoded Stripe ProviderChange against it, using evidence already
- * collected for this AnalysisRun for applicability. Orchestration only,
- * mirrors analysis/evidence.ts's structure.
+ * was already deleted, no permanent source storage) ONCE, and evaluates
+ * every currently-known rule (see impact/registry.ts) against it, using
+ * evidence already collected for this AnalysisRun for applicability.
+ * Orchestration only, mirrors analysis/evidence.ts's structure.
  */
-export async function assessStripeBasilInvoicePreviewImpact(
+export async function assessAllRulesImpact(
   params: { owner: string; name: string; commitSha: string; githubInstallationId: number },
   evidence: StripeEvidence,
   deps: { client: GitHubClient; appAuth: GitHubAppAuth },
-): Promise<ImpactAssessmentResult> {
+): Promise<RuleAssessment[]> {
   const downloadDir = await mkdtemp(join(tmpdir(), 'patchwork-download-'));
   const archivePath = join(downloadDir, 'archive.tar.gz');
 
@@ -35,9 +41,15 @@ export async function assessStripeBasilInvoicePreviewImpact(
     );
 
     return await withExtractedArchive(archivePath, (extraction) =>
-      assessRetrieveUpcomingImpact(evidence, extraction.files, {
-        sourceFilesTruncated: extraction.truncated,
-      }),
+      IMPACT_RULES.map((rule) => ({
+        rule,
+        result: assessRuleImpact(
+          evidence,
+          extraction.files,
+          { sourceFilesTruncated: extraction.truncated },
+          rule,
+        ),
+      })),
     );
   } finally {
     await rm(downloadDir, { recursive: true, force: true });

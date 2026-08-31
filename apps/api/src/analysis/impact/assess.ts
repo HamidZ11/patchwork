@@ -1,14 +1,19 @@
 import type { ExtractedFile } from '../archive.js';
 import type { StripeEvidence } from '../evidence/types.js';
 import { computeApplicability } from './applicability.js';
-import { scanForRetrieveUpcomingUsage } from './predicate.js';
-import type { ImpactAssessmentResult, ImpactStatus, WorkspaceCoverage } from './types.js';
+import type {
+  ImpactAssessmentResult,
+  ImpactStatus,
+  RuleDefinition,
+  WorkspaceCoverage,
+} from './types.js';
 
 /**
  * Combines applicability (§ applicability.ts, from already-collected
- * evidence) and the semantic predicate (§ predicate.ts, real TypeScript
- * analysis) into one tri-state verdict per workspace, then aggregates to
- * one assessment for the whole AnalysisRun.
+ * evidence) and a rule's semantic predicate (§ predicates/*.ts, real
+ * TypeScript analysis) into one tri-state verdict per workspace, then
+ * aggregates to one assessment for the whole AnalysisRun. Shared by every
+ * rule -- only `rule.applicabilityConfig`/`rule.runPredicate` differ.
  *
  * Precedence when aggregating across workspaces: AFFECTED > UNCERTAIN >
  * NOT_AFFECTED. Positive proof in one workspace is never suppressed by
@@ -23,13 +28,14 @@ import type { ImpactAssessmentResult, ImpactStatus, WorkspaceCoverage } from './
  *   - APPLICABLE + ambiguous/failed-to-load reference(s) -> UNCERTAIN
  *   - APPLICABLE + zero matches, full coverage -> NOT_AFFECTED
  */
-export function assessRetrieveUpcomingImpact(
+export function assessRuleImpact(
   evidence: StripeEvidence,
   extractedFiles: ExtractedFile[],
   archiveCoverage: { sourceFilesTruncated: boolean },
+  rule: RuleDefinition,
 ): ImpactAssessmentResult {
-  const applicabilityByWorkspace = computeApplicability(evidence);
-  const predicateByWorkspace = scanForRetrieveUpcomingUsage(extractedFiles);
+  const applicabilityByWorkspace = computeApplicability(evidence, rule.applicabilityConfig);
+  const predicateByWorkspace = rule.runPredicate(extractedFiles);
 
   const workspacePaths = new Set<string>([
     ...applicabilityByWorkspace.map((entry) => entry.workspacePath),
@@ -82,7 +88,7 @@ export function assessRetrieveUpcomingImpact(
     if (workspaceStatus === 'AFFECTED') {
       overall = 'AFFECTED';
       reasons.push(
-        `[${label}] AFFECTED: ${predicate.matches.length} confirmed usage(s) of stripe.invoices.retrieveUpcoming found (${applicability.reason})`,
+        `[${label}] AFFECTED: ${predicate.matches.length} confirmed usage(s) matching ${rule.providerChange.title} found (${applicability.reason})`,
       );
     } else if (workspaceStatus === 'UNCERTAIN' && overall !== 'AFFECTED') {
       overall = 'UNCERTAIN';

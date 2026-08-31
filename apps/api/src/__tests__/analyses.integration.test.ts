@@ -384,7 +384,7 @@ describe('repository analyses (real database)', () => {
       startedAt: expect.any(String),
       completedAt: expect.any(String),
       stripe: { resolvedVersion: null, declaredRange: '^17.0.0', workspacePath: '' },
-      latestImpactAssessment: null,
+      latestImpactAssessments: [],
     });
 
     await cleanupUser(userId);

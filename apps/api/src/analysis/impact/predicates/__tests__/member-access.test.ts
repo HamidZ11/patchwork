@@ -1,28 +1,35 @@
 import { describe, expect, it } from 'vitest';
-import type { ExtractedFile } from '../../archive.js';
-import { scanForRetrieveUpcomingUsage } from '../predicate.js';
+import type { ExtractedFile } from '../../../archive.js';
+import { scanForMemberAccess } from '../member-access.js';
 
 function file(path: string, content: string): ExtractedFile {
   return { path, content };
 }
 
-function allMatches(results: ReturnType<typeof scanForRetrieveUpcomingUsage>) {
+function scan(files: ExtractedFile[]) {
+  return scanForMemberAccess(files, {
+    propertyName: 'retrieveUpcoming',
+    matchedSymbol: 'stripe.invoices.retrieveUpcoming',
+  });
+}
+
+function allMatches(results: ReturnType<typeof scan>) {
   return [...results.values()].flatMap((r) => r.matches);
 }
-function allAmbiguous(results: ReturnType<typeof scanForRetrieveUpcomingUsage>) {
+function allAmbiguous(results: ReturnType<typeof scan>) {
   return [...results.values()].flatMap((r) => r.ambiguousReferences);
 }
-function allFailedToLoad(results: ReturnType<typeof scanForRetrieveUpcomingUsage>) {
+function allFailedToLoad(results: ReturnType<typeof scan>) {
   return [...results.values()].flatMap((r) => r.filesFailedToLoad);
 }
 
 const STRIPE_IMPORT = "import Stripe from 'stripe';";
 
-describe('scanForRetrieveUpcomingUsage', () => {
+describe('scanForMemberAccess (retrieveUpcoming case)', () => {
   // --- POSITIVE ---------------------------------------------------------
 
   it('1. direct Stripe call matches', () => {
-    const results = scanForRetrieveUpcomingUsage([
+    const results = scan([
       file('package.json', '{}'),
       file(
         'src/billing.ts',
@@ -37,7 +44,7 @@ describe('scanForRetrieveUpcomingUsage', () => {
   });
 
   it('2. same-file local alias of stripe.invoices matches', () => {
-    const results = scanForRetrieveUpcomingUsage([
+    const results = scan([
       file('package.json', '{}'),
       file(
         'src/billing.ts',
@@ -53,7 +60,7 @@ describe('scanForRetrieveUpcomingUsage', () => {
   });
 
   it('3. bare method reference (not called) matches', () => {
-    const results = scanForRetrieveUpcomingUsage([
+    const results = scan([
       file('package.json', '{}'),
       file(
         'src/billing.ts',
@@ -68,7 +75,7 @@ describe('scanForRetrieveUpcomingUsage', () => {
   });
 
   it('4. matches regardless of file/project layout', () => {
-    const results = scanForRetrieveUpcomingUsage([
+    const results = scan([
       file('package.json', '{}'),
       file(
         'lib/deeply/nested/module/billing.ts',
@@ -83,7 +90,7 @@ describe('scanForRetrieveUpcomingUsage', () => {
   });
 
   it('5. monorepo workspace: match attributed to the correct workspace, not collapsed', () => {
-    const results = scanForRetrieveUpcomingUsage([
+    const results = scan([
       file('packages/billing/package.json', '{}'),
       file('packages/web/package.json', '{}'),
       file(
@@ -106,7 +113,7 @@ describe('scanForRetrieveUpcomingUsage', () => {
   // --- NEGATIVE -----------------------------------------------------------
 
   it('6. same method name on an unrelated object does not match', () => {
-    const results = scanForRetrieveUpcomingUsage([
+    const results = scan([
       file('package.json', '{}'),
       file(
         'src/other.ts',
@@ -121,7 +128,7 @@ describe('scanForRetrieveUpcomingUsage', () => {
   });
 
   it('7. method name only in a comment or string does not match', () => {
-    const results = scanForRetrieveUpcomingUsage([
+    const results = scan([
       file('package.json', '{}'),
       file(
         'src/notes.ts',
@@ -136,7 +143,7 @@ describe('scanForRetrieveUpcomingUsage', () => {
   });
 
   it('8. a user-defined type/object with the same property does not match', () => {
-    const results = scanForRetrieveUpcomingUsage([
+    const results = scan([
       file('package.json', '{}'),
       file(
         'src/custom.ts',
@@ -152,7 +159,7 @@ describe('scanForRetrieveUpcomingUsage', () => {
   });
 
   it('9. Stripe dependency present but retrieveUpcoming unused produces no matches', () => {
-    const results = scanForRetrieveUpcomingUsage([
+    const results = scan([
       file('package.json', JSON.stringify({ dependencies: { stripe: '^18.0.0' } })),
       file(
         'src/billing.ts',
@@ -167,7 +174,7 @@ describe('scanForRetrieveUpcomingUsage', () => {
   });
 
   it('10. the assignment target named retrieveUpcoming (not a property access) is never considered', () => {
-    const results = scanForRetrieveUpcomingUsage([
+    const results = scan([
       file('package.json', '{}'),
       file('src/local.ts', 'const retrieveUpcoming = () => {};\nretrieveUpcoming();'),
     ]);
@@ -178,7 +185,7 @@ describe('scanForRetrieveUpcomingUsage', () => {
   // --- UNCERTAIN ------------------------------------------------------------
 
   it('11. dynamic Stripe client construction is ambiguous', () => {
-    const results = scanForRetrieveUpcomingUsage([
+    const results = scan([
       file('package.json', '{}'),
       file(
         'src/dynamic.ts',
@@ -195,7 +202,7 @@ describe('scanForRetrieveUpcomingUsage', () => {
   });
 
   it('12. an unresolved import is ambiguous, not a confirmed non-match', () => {
-    const results = scanForRetrieveUpcomingUsage([
+    const results = scan([
       file('package.json', '{}'),
       file(
         'src/wrapper.ts',
@@ -212,7 +219,7 @@ describe('scanForRetrieveUpcomingUsage', () => {
   });
 
   it('13. a cross-file wrapper function is ambiguous (only same-file resolution is supported)', () => {
-    const results = scanForRetrieveUpcomingUsage([
+    const results = scan([
       file('package.json', '{}'),
       file(
         'src/consumer.ts',
@@ -233,7 +240,7 @@ describe('scanForRetrieveUpcomingUsage', () => {
   it('14. same-file wrapper functions still resolve correctly (not ambiguous)', () => {
     // Same-file indirection is ordinary type inference, not a special
     // case -- this is the "basic aliases" the escalation ladder allows.
-    const results = scanForRetrieveUpcomingUsage([
+    const results = scan([
       file('package.json', '{}'),
       file(
         'src/same-file-wrapper.ts',
@@ -251,7 +258,7 @@ describe('scanForRetrieveUpcomingUsage', () => {
   });
 
   it('15. does not crash on a malformed/incomplete file, records it or degrades gracefully', () => {
-    const results = scanForRetrieveUpcomingUsage([
+    const results = scan([
       file('package.json', '{}'),
       file('src/broken.ts', `${STRIPE_IMPORT}\nconst stripe = new Stripe(secretKey, { apiVersion:`),
     ]);
@@ -263,7 +270,7 @@ describe('scanForRetrieveUpcomingUsage', () => {
   });
 
   it('scanning is skipped entirely for files that never mention the target property (cheap prefilter)', () => {
-    const results = scanForRetrieveUpcomingUsage([
+    const results = scan([
       file('package.json', '{}'),
       file('src/unrelated.ts', "import Stripe from 'stripe';\nexport const x = 1;"),
     ]);

@@ -1,8 +1,7 @@
 import { and, eq, inArray } from 'drizzle-orm';
 import { schema, type Database } from '@patchwork/db';
 import type { StripeEvidence } from './evidence/types.js';
-import type { Finding, ImpactAssessmentResult } from './impact/types.js';
-import type { STRIPE_BASIL_INVOICE_PREVIEW } from './impact/stripe-basil-invoice-preview.js';
+import type { Finding, ImpactAssessmentResult, ProviderChangeDefinition } from './impact/types.js';
 
 export interface AnalysisRunForImpactAssessment {
   id: string;
@@ -75,7 +74,7 @@ export async function getAnalysisRunForUser(
  */
 export async function upsertProviderChangeAndRuleVersion(
   db: Database,
-  definition: typeof STRIPE_BASIL_INVOICE_PREVIEW,
+  definition: ProviderChangeDefinition,
 ): Promise<{ ruleVersionId: string }> {
   return db.transaction(async (tx) => {
     const [providerChange] = await tx
@@ -182,6 +181,7 @@ export async function upsertImpactAssessment(
 }
 
 export interface LatestImpactAssessmentSummary {
+  providerChangeTitle: string;
   status: string;
   reason: string;
   findings: Finding[];
@@ -189,14 +189,14 @@ export interface LatestImpactAssessmentSummary {
 
 /**
  * Impact assessments for a set of AnalysisRuns, keyed by analysis_run_id.
- * Exactly one RuleVersion exists today, so (analysis_run_id,
- * rule_version_id) uniqueness already guarantees at most one assessment
- * per run -- no "pick the latest among several" logic needed yet.
+ * Multiple rules can now exist, so each run may have several assessments
+ * (one per rule) -- (analysis_run_id, rule_version_id) uniqueness still
+ * guarantees at most one assessment per (run, rule) pair, but not per run.
  */
 export async function getImpactAssessmentsForAnalysisRuns(
   db: Database,
   analysisRunIds: string[],
-): Promise<Map<string, LatestImpactAssessmentSummary>> {
+): Promise<Map<string, LatestImpactAssessmentSummary[]>> {
   if (analysisRunIds.length === 0) return new Map();
 
   const assessmentRows = await db
@@ -205,8 +205,17 @@ export async function getImpactAssessmentsForAnalysisRuns(
       analysisRunId: schema.impactAssessments.analysisRunId,
       status: schema.impactAssessments.status,
       reason: schema.impactAssessments.reason,
+      providerChangeTitle: schema.providerChanges.title,
     })
     .from(schema.impactAssessments)
+    .innerJoin(
+      schema.ruleVersions,
+      eq(schema.impactAssessments.ruleVersionId, schema.ruleVersions.id),
+    )
+    .innerJoin(
+      schema.providerChanges,
+      eq(schema.ruleVersions.providerChangeId, schema.providerChanges.id),
+    )
     .where(inArray(schema.impactAssessments.analysisRunId, analysisRunIds));
 
   const assessmentIds = assessmentRows.map((row) => row.id);
@@ -229,13 +238,16 @@ export async function getImpactAssessmentsForAnalysisRuns(
     findingsByAssessment.set(finding.impactAssessmentId, list);
   }
 
-  const result = new Map<string, LatestImpactAssessmentSummary>();
+  const result = new Map<string, LatestImpactAssessmentSummary[]>();
   for (const row of assessmentRows) {
-    result.set(row.analysisRunId, {
+    const list = result.get(row.analysisRunId) ?? [];
+    list.push({
+      providerChangeTitle: row.providerChangeTitle,
       status: row.status,
       reason: row.reason,
       findings: findingsByAssessment.get(row.id) ?? [],
     });
+    result.set(row.analysisRunId, list);
   }
   return result;
 }

@@ -2,8 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import type { Database } from '@patchwork/db';
 import type { GitHubAppAuth } from '../github/auth.js';
 import type { GitHubClient } from '../github/client.js';
-import { assessStripeBasilInvoicePreviewImpact } from '../analysis/impact.js';
-import { STRIPE_BASIL_INVOICE_PREVIEW } from '../analysis/impact/stripe-basil-invoice-preview.js';
+import { assessAllRulesImpact } from '../analysis/impact.js';
 import {
   getAnalysisRunForUser,
   upsertImpactAssessment,
@@ -18,13 +17,12 @@ export interface ImpactAssessmentsRoutesDeps {
 }
 
 /**
- * Evaluates every currently-known RuleVersion (today: exactly one, the
- * Stripe Basil Upcoming Invoice API removal) against an existing
- * AnalysisRun -- never a new AnalysisRun, never a new archive-and-evidence
- * collection cycle. No rule-id parameter: forward-compatible without a
- * rule-selection surface that has no real use while exactly one rule
- * exists. Kept separate from routes/analyses.ts, which stays scoped to
- * snapshot/evidence collection.
+ * Evaluates every currently-known RuleVersion (see analysis/impact/
+ * registry.ts) against an existing, already-authorized AnalysisRun --
+ * never a new AnalysisRun, never a new archive-and-evidence collection
+ * cycle. No rule-id parameter: forward-compatible without a
+ * rule-selection surface. Kept separate from routes/analyses.ts, which
+ * stays scoped to snapshot/evidence collection.
  */
 export function registerImpactAssessmentsRoutes(
   app: FastifyInstance,
@@ -46,11 +44,11 @@ export function registerImpactAssessmentsRoutes(
         });
       }
 
-      let result;
+      let ruleAssessments;
       try {
         // owner/name/commitSha/installationId all come from our own
         // stored, authorized record -- never from caller input.
-        result = await assessStripeBasilInvoicePreviewImpact(
+        ruleAssessments = await assessAllRulesImpact(
           {
             owner: run.repositoryOwner,
             name: run.repositoryName,
@@ -64,38 +62,38 @@ export function registerImpactAssessmentsRoutes(
         // No assessment is persisted on an infrastructure failure -- an
         // ImpactAssessment should always represent a completed evaluation
         // with genuine evidence-based reasoning, not a transient error.
-        request.log.error({ err: error }, 'failed to assess stripe basil invoice preview impact');
+        request.log.error({ err: error }, 'failed to assess stripe rule impact');
         return reply.status(502).send({
           error: 'Bad Gateway',
-          message: 'Could not re-acquire the repository archive to evaluate this change.',
+          message: 'Could not re-acquire the repository archive to evaluate these changes.',
         });
       }
 
-      const { ruleVersionId } = await upsertProviderChangeAndRuleVersion(
-        deps.db,
-        STRIPE_BASIL_INVOICE_PREVIEW,
-      );
-      const assessment = await upsertImpactAssessment(deps.db, {
-        analysisRunId: run.id,
-        ruleVersionId,
-        result,
-      });
-
-      return reply.status(201).send({
-        impactAssessments: [
-          {
-            id: assessment.id,
-            providerChange: {
-              provider: STRIPE_BASIL_INVOICE_PREVIEW.provider,
-              title: STRIPE_BASIL_INVOICE_PREVIEW.title,
-              sourceUrl: STRIPE_BASIL_INVOICE_PREVIEW.sourceUrl,
-            },
-            status: assessment.status,
-            reason: assessment.reason,
-            findings: assessment.findings,
+      const responseAssessments = [];
+      for (const { rule, result } of ruleAssessments) {
+        const { ruleVersionId } = await upsertProviderChangeAndRuleVersion(
+          deps.db,
+          rule.providerChange,
+        );
+        const assessment = await upsertImpactAssessment(deps.db, {
+          analysisRunId: run.id,
+          ruleVersionId,
+          result,
+        });
+        responseAssessments.push({
+          id: assessment.id,
+          providerChange: {
+            provider: rule.providerChange.provider,
+            title: rule.providerChange.title,
+            sourceUrl: rule.providerChange.sourceUrl,
           },
-        ],
-      });
+          status: assessment.status,
+          reason: assessment.reason,
+          findings: assessment.findings,
+        });
+      }
+
+      return reply.status(201).send({ impactAssessments: responseAssessments });
     },
   );
 }

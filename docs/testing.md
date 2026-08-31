@@ -43,17 +43,19 @@ Vitest is the test runner across every package and app.
   unauthenticated, 404 for an `AnalysisRun` connected by a different user
   — no existence leak), 409 when the target run has no evidence to assess,
   a real positive fixture (`stripe@18.2.0`, a genuine
-  `stripe.invoices.retrieveUpcoming` call) persisting `AFFECTED` with a
-  `Finding` correctly linked to its assessment, a real negative fixture
-  (same SDK version, `createPreview` instead) persisting `NOT_AFFECTED`,
-  `ProviderChange`/`RuleVersion` upsert idempotency, that re-triggering an
-  assessment for the same `AnalysisRun` converges to one
-  `ImpactAssessment` row with findings replaced (not duplicated), and that
-  deleting an `ImpactAssessment` cascades to its `Finding` rows. They
-  require `DATABASE_URL` to point at a reachable, migrated PostgreSQL
-  database — either `docker compose up -d postgres` + `pnpm db:migrate`
-  locally, or the `postgres` service container plus the migrate step in
-  CI (migrations run once as a separate CI step, not inside every test
+  `stripe.invoices.retrieveUpcoming` call) persisting one `AFFECTED`
+  assessment (among all four registered rules' assessments, each
+  persisted per `AnalysisRun`) with a `Finding` correctly linked to it, a
+  real negative fixture (same SDK version, `createPreview` instead)
+  persisting `NOT_AFFECTED` for every rule, `ProviderChange`/`RuleVersion`
+  upsert idempotency, that re-triggering an assessment for the same
+  `AnalysisRun` converges to one `ImpactAssessment` row per rule (not
+  duplicated) with findings replaced, and that deleting an
+  `ImpactAssessment` cascades to its `Finding` rows. They require
+  `DATABASE_URL` to point at a reachable, migrated PostgreSQL database —
+  either `docker compose up -d postgres` + `pnpm db:migrate` locally, or
+  the `postgres` service container plus the migrate step in CI
+  (migrations run once as a separate CI step, not inside every test
   file).
 - **The GitHub HTTP boundary is fakeable, never real.** `apps/api/src/github/client.ts`
   and `github/auth.ts` accept an injectable `fetch`/auth implementation
@@ -88,21 +90,41 @@ api-version}.test.ts`): manifest/workspace discovery, declared-range vs.
   version `>= 18.0.0` → `APPLICABLE`; pre-Basil `apiVersion` →
   `NOT_APPLICABLE`; unresolved/absent evidence → `UNKNOWN`; conflicting
   `apiVersion`s across constructions → `UNKNOWN`; multiple workspaces never
-  collapsed); `predicate.test.ts` (a ~15-scenario fixture matrix using
-  real in-memory `ts.Program`s — see below — covering direct calls,
-  same-file aliases, bare method references, different file layouts, and
-  a monorepo workspace as positives; an unrelated same-named method,
-  comment/string-only mentions, a user-defined type with the same
+  collapsed; a second, different `ApplicabilityConfig` boundary — SDK v19 /
+  2025-09-30 — proving the boundary is a genuine per-rule parameter, not a
+  global constant). Each predicate primitive has its own fixture matrix
+  under `apps/api/src/analysis/impact/predicates/__tests__/`:
+  `member-access.test.ts` (16 scenarios, real in-memory `ts.Program`s —
+  direct calls, same-file aliases, bare method references, different file
+  layouts, and a monorepo workspace as positives; an unrelated same-named
+  method, comment/string-only mentions, a user-defined type with the same
   property, an unused-but-present dependency, and a non-property-access
   identifier as negatives; dynamic construction, an unresolved import, and
   a cross-file wrapper as `UNCERTAIN`; a same-file wrapper function
-  resolving correctly, not falling to `UNCERTAIN`); `assess.test.ts`
-  (tri-state aggregation: full coverage + no match + applicable →
-  `NOT_AFFECTED`; incomplete coverage → `UNCERTAIN`; a confirmed match →
-  `AFFECTED`; `UNKNOWN` applicability capping the result even when the
-  predicate independently matches; `AFFECTED` in one workspace winning
-  over `UNCERTAIN` in another; truncated archive extraction downgrading an
-  otherwise-`NOT_AFFECTED` result but never an `AFFECTED` one).
+  resolving correctly, not falling to `UNCERTAIN`); `call-argument-
+property.test.ts` and `literal-comparison.test.ts` (14 scenarios each,
+  the same positive/negative/uncertain shape, adapted to their own
+  predicate contract — e.g. an unresolved callee with no matching argument
+  property is correctly "not interesting," not ambiguous, to avoid
+  `UNCERTAIN`-flooding on unrelated dynamic code). `assess.test.ts` (tri-
+  state aggregation, using the retrieveUpcoming rule as its subject: full
+  coverage + no match + applicable → `NOT_AFFECTED`; incomplete coverage →
+  `UNCERTAIN`; a confirmed match → `AFFECTED`; `UNKNOWN` applicability
+  capping the result even when the predicate independently matches;
+  `AFFECTED` in one workspace winning over `UNCERTAIN` in another;
+  truncated archive extraction downgrading an otherwise-`NOT_AFFECTED`
+  result but never an `AFFECTED` one) — this aggregation logic is shared
+  by all four rules via `assessRuleImpact(evidence, files, coverage,
+rule)`, so one rule's fixture matrix is sufficient to cover it.
+- **The impact benchmark is a CI-enforced safety gate, not just a manual
+  report** (CURRENT): `apps/api/src/benchmark/__tests__/safety-gate.test.ts`
+  runs the full hand-labelled corpus (`apps/api/src/benchmark/cases/`, ~11
+  cases × 4 rules) through the real production pipeline inside `pnpm test`
+  and asserts `falseNotAffectedSafetyFailures === 0` and
+  `unsafeCertaintyCount === 0` — see [impact-analysis.md](impact-analysis.md#evaluation-approach-current--controlled-benchmark-real-historical-pairs-still-proposed)
+  for the full design, classification table, and current results.
+  `pnpm benchmark` runs the same corpus as a standalone report (human-
+  readable, or `--json`), without needing a database.
 
 ### Test isolation
 
@@ -140,17 +162,18 @@ validating once product features exist:
   recorded-fixture or contract-test approach.
 - **Stripe integration tests** — against real or realistic Stripe API
   behaviour, not just mocks. No Stripe integration exists yet at all.
-- **Fixture repositories** — small, real-shaped TypeScript repositories
-  used as targets for impact analysis and patch generation testing, not
-  synthetic one-liners.
-- **A labelled impact-analysis evaluation set** — fixture repositories
-  paired with known-correct expected outcomes for real Stripe breaking
-  changes, used to measure the pipeline's actual accuracy. See
-  [impact-analysis.md](impact-analysis.md).
-- **Precision/recall tracking** for impact analysis — false positives and
-  false negatives tracked as an ongoing metric, not just pass/fail on a
-  fixed test list, since the underlying analysis is probabilistic in
-  practice even where individual steps are deterministic.
+- **Real-GitHub fixture repositories beyond `stripe-basil-fixture`** —
+  small, real-shaped TypeScript repositories used as targets for impact
+  analysis and (later) patch generation testing. A labelled, hand-written
+  benchmark corpus and CI-enforced safety gate now exist (see
+  [impact-analysis.md](impact-analysis.md#evaluation-approach-current--controlled-benchmark-real-historical-pairs-still-proposed));
+  additional purpose-built real-GitHub repositories for rules B/C/D remain
+  a candidate follow-up, proposed only if a materially different predicate
+  shape genuinely needs real-GitHub confidence beyond the controlled corpus.
+- **Real historical migration pairs** — a commit before a real Stripe
+  upgrade and the commit after the corresponding developer migration, for
+  realism the controlled benchmark corpus can't fully provide. Deferred;
+  not attempted in the benchmark slice.
 - **Patch regression tests** — once patch generation exists, confirming a
   known change still produces the expected (or an equally valid) patch
   over time, to catch silent regressions in generation quality.

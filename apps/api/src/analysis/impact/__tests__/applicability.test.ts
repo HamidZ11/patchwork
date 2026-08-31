@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import type { StripeEvidence } from '../../evidence/types.js';
-import { computeApplicability } from '../applicability.js';
+import { computeApplicability, type ApplicabilityConfig } from '../applicability.js';
+
+const BASIL_CONFIG: ApplicabilityConfig = {
+  sdkBoundaryMajor: 18,
+  apiVersionBoundaryDate: '2025-03-31',
+  changeDescription: 'the affected surface was removed from the SDK',
+};
 
 function evidence(overrides: Partial<StripeEvidence> = {}): StripeEvidence {
   return {
@@ -41,6 +47,7 @@ describe('computeApplicability', () => {
           },
         ],
       }),
+      BASIL_CONFIG,
     );
 
     expect(result).toEqual([
@@ -77,6 +84,7 @@ describe('computeApplicability', () => {
           },
         ],
       }),
+      BASIL_CONFIG,
     );
 
     expect(result).toEqual([
@@ -109,6 +117,7 @@ describe('computeApplicability', () => {
           },
         ],
       }),
+      BASIL_CONFIG,
     );
 
     expect(result).toEqual([
@@ -132,6 +141,7 @@ describe('computeApplicability', () => {
           },
         ],
       }),
+      BASIL_CONFIG,
     );
 
     expect(result).toEqual([
@@ -159,6 +169,7 @@ describe('computeApplicability', () => {
           },
         ],
       }),
+      BASIL_CONFIG,
     );
 
     expect(result).toEqual([
@@ -167,7 +178,7 @@ describe('computeApplicability', () => {
   });
 
   it('is NOT_APPLICABLE when there is no Stripe dependency evidence at all', () => {
-    const result = computeApplicability(evidence());
+    const result = computeApplicability(evidence(), BASIL_CONFIG);
     expect(result).toEqual([
       expect.objectContaining({ workspacePath: '', applicability: 'NOT_APPLICABLE' }),
     ]);
@@ -199,10 +210,73 @@ describe('computeApplicability', () => {
           },
         ],
       }),
+      BASIL_CONFIG,
     );
 
     expect(result).toHaveLength(2);
     expect(result.find((r) => r.workspacePath === 'packages/a')?.applicability).toBe('APPLICABLE');
     expect(result.find((r) => r.workspacePath === 'packages/b')?.applicability).toBe('UNKNOWN');
+  });
+
+  it('generalizes to a second, different boundary (SDK v19 / Clover), not just the Basil one', () => {
+    const CLOVER_CONFIG: ApplicabilityConfig = {
+      sdkBoundaryMajor: 19,
+      apiVersionBoundaryDate: '2025-09-30',
+      changeDescription: 'the iterations parameter was removed from the SDK',
+    };
+
+    const applicableResult = computeApplicability(
+      evidence({
+        installedSdks: [
+          {
+            packageName: 'stripe',
+            workspacePath: '',
+            manifestPath: 'package.json',
+            dependencyField: 'dependencies',
+            declaredRange: '^19.0.0',
+            resolvedVersion: '19.1.0',
+            resolutionStatus: 'EXACT',
+            evidenceSources: ['package.json', 'package-lock.json'],
+          },
+        ],
+      }),
+      CLOVER_CONFIG,
+    );
+    expect(applicableResult).toEqual([
+      expect.objectContaining({ workspacePath: '', applicability: 'APPLICABLE' }),
+    ]);
+
+    // Same SDK version is NOT applicable under the Basil rules' earlier
+    // boundary check for a *different* rule's config -- proves the
+    // boundary is genuinely a per-rule parameter, not a global constant.
+    const notApplicableUnderClover = computeApplicability(
+      evidence({
+        installedSdks: [
+          {
+            packageName: 'stripe',
+            workspacePath: '',
+            manifestPath: 'package.json',
+            dependencyField: 'dependencies',
+            declaredRange: '^18.5.0',
+            resolvedVersion: '18.5.0',
+            resolutionStatus: 'EXACT',
+            evidenceSources: ['package.json', 'package-lock.json'],
+          },
+        ],
+        clientVersions: [
+          {
+            workspacePath: '',
+            sourceFile: 'src/stripe.ts',
+            line: 1,
+            apiVersion: '2025-06-30.basil',
+            valueKind: 'LITERAL',
+          },
+        ],
+      }),
+      CLOVER_CONFIG,
+    );
+    expect(notApplicableUnderClover).toEqual([
+      expect.objectContaining({ workspacePath: '', applicability: 'NOT_APPLICABLE' }),
+    ]);
   });
 });

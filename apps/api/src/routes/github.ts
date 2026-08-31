@@ -98,8 +98,8 @@ export function registerGitHubRoutes(app: FastifyInstance, deps: GitHubRoutesDep
           latestAnalysis: latestAnalysis
             ? {
                 ...latestAnalysis,
-                latestImpactAssessment:
-                  latestImpactAssessmentByRun.get(latestAnalysis.analysisRunId) ?? null,
+                latestImpactAssessments:
+                  latestImpactAssessmentByRun.get(latestAnalysis.analysisRunId) ?? [],
               }
             : null,
         };

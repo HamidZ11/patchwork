@@ -12,6 +12,7 @@
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
+    "benchmark": "turbo run benchmark",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "db:migrate": "pnpm --filter @patchwork/db migrate"
