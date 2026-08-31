@@ -12,13 +12,8 @@ import {
   fakeGitHubClient,
   fakeGitHubClientWithArchive,
   testAppDeps,
+  uniqueGithubId,
 } from './fixtures.js';
-
-let idCounter = 0;
-function uniqueGithubId(): number {
-  idCounter += 1;
-  return Date.now() * 1000 + idCounter;
-}
 
 // Requires a reachable, migrated PostgreSQL instance (see docs/testing.md).
 // Each test uses unique GitHub ids and cleans up exactly the rows it created.
@@ -31,9 +26,10 @@ describe('repository analyses (real database)', () => {
   });
 
   async function createAuthenticatedUser(): Promise<{ cookie: string; userId: string }> {
+    const githubUserId = uniqueGithubId();
     const user = await findOrCreateUserByGitHubProfile(db.db, {
-      id: uniqueGithubId(),
-      login: `test-user-${idCounter}`,
+      id: githubUserId,
+      login: `test-user-${githubUserId}`,
       avatarUrl: null,
     });
     const { token } = await createSession(db.db, user.id);

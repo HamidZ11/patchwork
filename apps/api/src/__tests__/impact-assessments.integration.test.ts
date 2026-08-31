@@ -9,13 +9,12 @@ import type { GitHubInstallationInfo, GitHubRepository } from '../github/client.
 import { upsertInstallationAndRepositories } from '../github/persistence.js';
 import { upsertProviderChangeAndRuleVersion } from '../analysis/impact-persistence.js';
 import { STRIPE_BASIL_INVOICE_PREVIEW } from '../analysis/impact/stripe-basil-invoice-preview.js';
-import { fakeGitHubAppAuth, fakeGitHubClientWithArchive, testAppDeps } from './fixtures.js';
-
-let idCounter = 0;
-function uniqueGithubId(): number {
-  idCounter += 1;
-  return Date.now() * 1000 + idCounter;
-}
+import {
+  fakeGitHubAppAuth,
+  fakeGitHubClientWithArchive,
+  testAppDeps,
+  uniqueGithubId,
+} from './fixtures.js';
 
 const STRIPE_IMPORT = "import Stripe from 'stripe';";
 
@@ -58,9 +57,10 @@ describe('impact assessments (real database)', () => {
   });
 
   async function createAuthenticatedUser(): Promise<{ cookie: string; userId: string }> {
+    const githubUserId = uniqueGithubId();
     const user = await findOrCreateUserByGitHubProfile(db.db, {
-      id: uniqueGithubId(),
-      login: `test-user-${idCounter}`,
+      id: githubUserId,
+      login: `test-user-${githubUserId}`,
       avatarUrl: null,
     });
     const { token } = await createSession(db.db, user.id);

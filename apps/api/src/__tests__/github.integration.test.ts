@@ -6,13 +6,7 @@ import { buildApp } from '../app.js';
 import { createSession } from '../auth/sessions.js';
 import { findOrCreateUserByGitHubProfile } from '../auth/users.js';
 import type { GitHubInstallationInfo, GitHubRepository } from '../github/client.js';
-import { fakeGitHubAppAuth, fakeGitHubClient, testAppDeps } from './fixtures.js';
-
-let idCounter = 0;
-function uniqueGithubId(): number {
-  idCounter += 1;
-  return Date.now() * 1000 + idCounter;
-}
+import { fakeGitHubAppAuth, fakeGitHubClient, testAppDeps, uniqueGithubId } from './fixtures.js';
 
 function extractCookie(setCookieHeader: string | string[] | undefined, name: string): string {
   const headers = Array.isArray(setCookieHeader)
@@ -36,9 +30,10 @@ describe('github install flow (real database)', () => {
   });
 
   async function createAuthenticatedSessionCookie(): Promise<{ cookie: string; userId: string }> {
+    const githubUserId = uniqueGithubId();
     const user = await findOrCreateUserByGitHubProfile(db.db, {
-      id: uniqueGithubId(),
-      login: `test-user-${idCounter}`,
+      id: githubUserId,
+      login: `test-user-${githubUserId}`,
       avatarUrl: null,
     });
     const { token } = await createSession(db.db, user.id);

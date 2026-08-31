@@ -5,6 +5,23 @@ import type { GitHubAppAuth } from '../github/auth.js';
 import type { GitHubClient } from '../github/client.js';
 import { buildFixtureArchive } from './build-fixture-archive.js';
 
+/**
+ * A large random integer, safe to use as a synthetic GitHub id
+ * (github_user_id / github_installation_id / github_repository_id) in
+ * integration tests. Vitest runs test files concurrently by default, and
+ * every integration test file shares one real PostgreSQL instance -- a
+ * per-file counter combined with `Date.now()` can collide across files
+ * that happen to generate an id in the same millisecond, silently
+ * merging two unrelated tests' rows via `onConflictDoUpdate` and causing
+ * one test's cleanup to delete another concurrently-running test's
+ * in-progress data. A random draw from a huge range makes cross-process
+ * collisions negligible without needing any shared coordination between
+ * files.
+ */
+export function uniqueGithubId(): number {
+  return Math.floor(Math.random() * 1_000_000_000_000);
+}
+
 export function fakeDbClient(overrides: Partial<DbClient> = {}): DbClient {
   return {
     db: {} as Database,

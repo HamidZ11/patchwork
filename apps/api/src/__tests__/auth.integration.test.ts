@@ -3,7 +3,7 @@ import { eq } from 'drizzle-orm';
 import { loadEnv } from '@patchwork/config';
 import { createDbClient, schema, type DbClient } from '@patchwork/db';
 import { buildApp } from '../app.js';
-import { fakeGitHubClient, testAppDeps } from './fixtures.js';
+import { fakeGitHubClient, testAppDeps, uniqueGithubId as uniqueGithubUserId } from './fixtures.js';
 
 function extractCookie(setCookieHeader: string | string[] | undefined, name: string): string {
   const headers = Array.isArray(setCookieHeader)
@@ -14,12 +14,6 @@ function extractCookie(setCookieHeader: string | string[] | undefined, name: str
   const match = headers.find((h) => h.startsWith(`${name}=`));
   if (!match) throw new Error(`cookie ${name} not set`);
   return match.split(';')[0]!.slice(name.length + 1);
-}
-
-let idCounter = 0;
-function uniqueGithubUserId(): number {
-  idCounter += 1;
-  return Date.now() * 1000 + idCounter;
 }
 
 // Requires a reachable, migrated PostgreSQL instance (see docs/testing.md).
