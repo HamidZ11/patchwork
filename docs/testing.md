@@ -132,19 +132,35 @@ rule)`, so one rule's fixture matrix is sufficient to cover it.
 - **The impact benchmark is a CI-enforced safety gate, not just a manual
   report** (CURRENT): `apps/api/src/benchmark/__tests__/safety-gate.test.ts`
   runs the full hand-labelled corpus (`apps/api/src/benchmark/cases/` — 44
-  control cases plus, under `cases/realistic/`, 26 realistic cases shaped
-  like ordinary production TypeScript rather than around the analyser's
-  own capabilities, prioritizing the two rules whose predicates depend on
-  the awaited-property/literal analysis path) through the real production
-  pipeline inside `pnpm test`, asserting
-  `falseNotAffectedSafetyFailures === 0` and `unsafeCertaintyCount === 0`
-  across the combined corpus, plus a dedicated assertion that the
-  realistic corpus alone is present, meaningfully sized, and meets that
-  same bar — see [impact-analysis.md](impact-analysis.md#evaluation-approach-current--controlled-benchmark-real-historical-pairs-still-proposed)
-  for the full design, classification table, control-vs-realistic
-  distinction, and current results. `pnpm benchmark` runs the same corpus
-  as a standalone report (human-readable, or `--json`, with control and
-  realistic metrics broken out separately), without needing a database.
+  control cases; 26 realistic cases under `cases/realistic/`, shaped like
+  ordinary production TypeScript rather than around the analyser's own
+  capabilities, prioritizing the two rules whose predicates depend on the
+  awaited-property/literal analysis path; 3 historical cases under
+  `cases/historical/`, minimal reconstructions of real public GitHub
+  repositories at the exact commit before a real developer performed a
+  real Stripe migration -- the one corpus not authored by the analyser's
+  own author at all) through the real production pipeline inside `pnpm
+test`, asserting `falseNotAffectedSafetyFailures === 0` and
+  `unsafeCertaintyCount === 0` across the combined corpus, plus dedicated
+  assertions that the realistic corpus alone is present, meaningfully
+  sized, and meets that same bar, and that the historical corpus alone is
+  present with zero false-`NOT_AFFECTED` failures -- the single most
+  important historical failure mode, tracked on its own so it can never
+  be averaged away by the much larger control/realistic corpora. A
+  further `historical.test.ts` validates historical-fixture metadata
+  (real, pinned 40-hex-char commit SHAs; a `sourceCommitUrl` that
+  actually points at the real migration commit; a non-empty developer
+  diff for every AFFECTED-expected case) and the matched/missed/extra
+  location-recall computation itself (via synthetic cases, independent
+  of what the 3 real cases happen to score). See
+  [impact-analysis.md](impact-analysis.md#evaluation-approach-current--control-realistic-and-real-historical-corpora)
+  for the full design, classification table, and current results across
+  all three corpora. `pnpm benchmark` runs the same corpus as a
+  standalone report (human-readable, or `--json`, with control/realistic/
+  historical metrics broken out separately, plus per-case historical
+  location detail), without needing a database or live GitHub access --
+  the historical fixtures are checked-in, pinned to exact SHAs, never
+  fetched at test/benchmark time.
 
 ### Test isolation
 
@@ -187,7 +203,7 @@ validating once product features exist:
   analysis and (later) patch generation testing. A labelled, hand-written
   benchmark corpus (both control and realistic) and CI-enforced safety
   gate now exist (see
-  [impact-analysis.md](impact-analysis.md#evaluation-approach-current--controlled-benchmark-real-historical-pairs-still-proposed));
+  [impact-analysis.md](impact-analysis.md#evaluation-approach-current--control-realistic-and-real-historical-corpora));
   `stripe-basil-fixture` itself was extended in slice 5 with realistic
   await + destructuring fixtures for rules B and D (verified end-to-end
   against the real archive — see impact-analysis.md's Realistic
@@ -195,10 +211,13 @@ validating once product features exist:
   remains a candidate follow-up, proposed only if a materially different
   predicate shape genuinely needs real-GitHub confidence beyond the
   controlled and realistic corpora.
-- **Real historical migration pairs** — a commit before a real Stripe
-  upgrade and the commit after the corresponding developer migration, for
-  realism the controlled benchmark corpus can't fully provide. Deferred;
-  not attempted in the benchmark slice.
+- **Real historical migration pairs** (CURRENT, 3 cases) — a commit
+  before a real Stripe upgrade and the commit after the corresponding
+  developer migration; see impact-analysis.md's Historical validation
+  section. A Rule D case remains unavailable (no genuine public migration
+  found for the Issuing `Authorization.status` split); additional
+  historical cases for rules A-C remain a candidate follow-up, not
+  pursued preemptively.
 - **Patch regression tests** — once patch generation exists, confirming a
   known change still produces the expected (or an equally valid) patch
   over time, to catch silent regressions in generation quality.

@@ -1,4 +1,9 @@
-import type { AggregateMetrics, BenchmarkReport, RuleReport } from './types.js';
+import type {
+  AggregateMetrics,
+  BenchmarkReport,
+  HistoricalCaseDetail,
+  RuleReport,
+} from './types.js';
 
 function fmtRate(value: number | null): string {
   return value === null ? 'n/a' : value.toFixed(2);
@@ -6,6 +11,24 @@ function fmtRate(value: number | null): string {
 
 function fmtLocationAccuracy(accuracy: AggregateMetrics['findingLocationAccuracy']): string {
   return accuracy === null ? 'n/a' : `${accuracy.correct}/${accuracy.total}`;
+}
+
+function fmtLocations(locations: { sourceFile: string; line: number }[]): string {
+  return locations.length === 0
+    ? '(none)'
+    : locations.map((l) => `${l.sourceFile}:${l.line}`).join(', ');
+}
+
+function formatHistoricalCase(detail: HistoricalCaseDetail): string[] {
+  return [
+    `  ${detail.caseId} (${detail.repository})`,
+    `    Source: ${detail.sourceCommitUrl}`,
+    `    Developer's actual changed locations: ${fmtLocations(detail.actualChangedLocations)}`,
+    `    Patchwork detected: ${fmtLocations(detail.detectedLocations)}`,
+    `    Matched: ${fmtLocations(detail.matchedLocations)}`,
+    `    Missed: ${fmtLocations(detail.missedLocations)}`,
+    `    Extra (unrelated): ${fmtLocations(detail.extraLocations)}`,
+  ];
 }
 
 function formatMetricsBlock(indent: string, metrics: AggregateMetrics): string[] {
@@ -38,6 +61,18 @@ export function formatBenchmarkReport(report: BenchmarkReport): string {
   lines.push(`Realistic corpus (slice 5, ${report.byCorpus.realistic.totalCases} cases):`);
   lines.push(...formatMetricsBlock('  ', report.byCorpus.realistic));
   lines.push('');
+  lines.push(
+    `Historical corpus (slice 6, ${report.byCorpus.historical.totalCases} cases -- real public GitHub migrations):`,
+  );
+  lines.push(...formatMetricsBlock('  ', report.byCorpus.historical));
+  lines.push(
+    `  Historical location recall: ${report.historical.totalMatched}/${report.historical.totalActualLocations} matched, ${report.historical.totalMissed} missed, ${report.historical.totalExtra} extra`,
+  );
+  for (const detail of report.historical.cases) {
+    lines.push('');
+    lines.push(...formatHistoricalCase(detail));
+  }
+  lines.push('');
   lines.push('Per-rule:');
   for (const rule of report.perRule) {
     lines.push(...formatRuleSection(rule));
@@ -54,6 +89,7 @@ export function formatBenchmarkReportJson(report: BenchmarkReport): string {
       totalCases: report.totalCases,
       overall: report.overall,
       byCorpus: report.byCorpus,
+      historical: report.historical,
       perRule: report.perRule,
       caseOutcomes: report.caseOutcomes.map((outcome) => ({
         id: outcome.case.id,

@@ -189,12 +189,15 @@ direction.
   truth about a specific `(RepositorySnapshot, AnalysisRun)` pair, since
   re-analysis with a newer analyzer/ruleset can legitimately change the
   answer. See docs/data-model.md.
-- Every rule/predicate must be validated against both a control benchmark
-  corpus (fixtures shaped around the specific behavior being tested) and
-  a realistic corpus (ordinary production TypeScript patterns not shaped
-  around the analyser's own capabilities) — a perfect control-corpus
-  score alone is not sufficient evidence a predicate generalizes. See
-  docs/impact-analysis.md's Evaluation approach and Realistic validation
+- Every rule/predicate must be validated against a control benchmark
+  corpus (fixtures shaped around the specific behavior being tested), a
+  realistic corpus (ordinary production TypeScript patterns not shaped
+  around the analyser's own capabilities), and, where a genuine public
+  example exists, a historical corpus (minimal reconstructions of real
+  GitHub repositories at the commit before a real developer's Stripe
+  migration) — a perfect control-corpus score alone is not sufficient
+  evidence a predicate generalizes. See docs/impact-analysis.md's
+  Evaluation approach, Realistic validation, and Historical validation
   sections.
 
 ## Security principles

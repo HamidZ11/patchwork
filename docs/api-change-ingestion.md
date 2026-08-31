@@ -36,7 +36,7 @@ still open.
 - **A controlled, hand-labelled benchmark corpus now exists**
   (`apps/api/src/benchmark/`) measuring whether this manually-encoded
   approach actually generalizes across rule shapes — see
-  [impact-analysis.md](impact-analysis.md#evaluation-approach-current--controlled-benchmark-real-historical-pairs-still-proposed).
+  [impact-analysis.md](impact-analysis.md#evaluation-approach-current--control-realistic-and-real-historical-corpora).
   This is evaluation infrastructure, not ingestion — the four
   `ProviderChange`s themselves are still hand-authored, not derived from
   the benchmark.

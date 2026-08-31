@@ -6,11 +6,45 @@ import type { ImpactStatus } from '../analysis/impact/types.js';
  * `realistic` -- slice 5's fixtures, shaped like ordinary production
  * TypeScript (nested directories, destructuring, class-based services,
  * partial migrations, cross-file layering) rather than around the
- * analyser's own capabilities -- see docs/impact-analysis.md's Realistic
- * validation section. Reported separately so a perfect control-corpus
- * score can never hide weaker realistic-corpus behavior.
+ * analyser's own capabilities.
+ * `historical` -- slice 6's fixtures, minimal reconstructions of real,
+ * independently-sourced public GitHub repositories at the exact commit
+ * before a real developer performed a real Stripe migration -- the one
+ * corpus not authored by the person who wrote the analyser at all. See
+ * docs/impact-analysis.md's Realistic/Historical validation sections.
+ * All three reported separately so a perfect control-corpus score can
+ * never hide weaker realistic- or historical-corpus behavior.
  */
-export type Corpus = 'control' | 'realistic';
+export type Corpus = 'control' | 'realistic' | 'historical';
+
+/**
+ * Provenance for a `corpus: 'historical'` case -- links the fixture back
+ * to the exact real repository/commits it was reconstructed from, so a
+ * reviewer can independently re-verify against the public source. Ground
+ * truth (`expected` on the enclosing BenchmarkCase, and
+ * `actualChangedLocations` here) is derived from the developer's real
+ * migration diff and the before-state's real dependency evidence --
+ * never from running the analyser being evaluated.
+ */
+export interface HistoricalProvenance {
+  /** "owner/repo" on GitHub. */
+  repository: string;
+  /** Exact commit immediately before the developer's migration. */
+  beforeSha: string;
+  /** The commit containing the developer's real migration. */
+  afterSha: string;
+  /** Direct link to the real migration commit, for traceability. */
+  sourceCommitUrl: string;
+  /**
+   * The real locations the developer changed because of the Stripe
+   * breaking change (from the actual diff, not Patchwork's output) --
+   * the ground truth `assessRuleImpact`'s findings are compared against
+   * for historical location recall.
+   */
+  actualChangedLocations: { sourceFile: string; line: number }[];
+  /** Human-readable rationale, citing the real commit message/diff. */
+  rationale: string;
+}
 
 /**
  * One hand-written, hand-labelled fixture. Ground truth is authored and
@@ -23,6 +57,8 @@ export interface BenchmarkCase {
   ruleExternalId: string;
   category: 'POSITIVE' | 'NEGATIVE' | 'UNCERTAIN';
   corpus: Corpus;
+  /** Only present for corpus: 'historical' cases -- see HistoricalProvenance. */
+  historical?: HistoricalProvenance;
   /** file path -> file content, fed directly into ExtractedFile[] (no tar round-trip). */
   files: Record<string, string>;
   expected: {
@@ -76,12 +112,40 @@ export interface RuleReport extends AggregateMetrics {
   title: string;
 }
 
+/**
+ * Location-level detail for one historical case: the developer's real
+ * changed locations (ground truth) vs. what Patchwork actually detected
+ * on the before-state, split into matched/missed/extra so a small sample
+ * size is never hidden behind a single ratio -- raw counts and the
+ * specific locations, per case.
+ */
+export interface HistoricalCaseDetail {
+  caseId: string;
+  repository: string;
+  sourceCommitUrl: string;
+  actualChangedLocations: { sourceFile: string; line: number }[];
+  detectedLocations: { sourceFile: string; line: number }[];
+  matchedLocations: { sourceFile: string; line: number }[];
+  missedLocations: { sourceFile: string; line: number }[];
+  extraLocations: { sourceFile: string; line: number }[];
+}
+
+export interface HistoricalSummary {
+  totalActualLocations: number;
+  totalMatched: number;
+  totalMissed: number;
+  totalExtra: number;
+  cases: HistoricalCaseDetail[];
+}
+
 export interface BenchmarkReport {
   totalRules: number;
   totalCases: number;
   overall: AggregateMetrics;
-  /** Same metrics, split by control vs. realistic corpus -- see Corpus above. */
+  /** Same metrics, split by control vs. realistic vs. historical corpus -- see Corpus above. */
   byCorpus: Record<Corpus, AggregateMetrics>;
+  /** Location-level detail for historical cases only -- see HistoricalSummary. */
+  historical: HistoricalSummary;
   perRule: RuleReport[];
   caseOutcomes: CaseOutcome[];
 }

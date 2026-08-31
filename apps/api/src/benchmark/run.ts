@@ -10,6 +10,8 @@ import type {
   BenchmarkReport,
   CaseOutcome,
   Corpus,
+  HistoricalCaseDetail,
+  HistoricalSummary,
   OutcomeBucket,
   RuleReport,
 } from './types.js';
@@ -51,18 +53,57 @@ function findingLocationsCorrect(
   return true;
 }
 
-function runCase(benchmarkCase: BenchmarkCase, rule: RuleDefinition): CaseOutcome {
+interface CaseRun {
+  outcome: CaseOutcome;
+  detectedLocations: { sourceFile: string; line: number }[];
+}
+
+function runCase(benchmarkCase: BenchmarkCase, rule: RuleDefinition): CaseRun {
   const extractedFiles: ExtractedFile[] = Object.entries(benchmarkCase.files).map(
     ([path, content]) => ({ path, content }),
   );
   const evidence = buildStripeEvidenceFromFiles(extractedFiles, false);
   const result = assessRuleImpact(evidence, extractedFiles, { sourceFilesTruncated: false }, rule);
+  const detectedLocations = result.findings.map((f) => ({
+    sourceFile: f.sourceFile,
+    line: f.line,
+  }));
 
   return {
-    case: benchmarkCase,
-    actualStatus: result.status,
-    bucket: classify(benchmarkCase.expected.status, result.status),
-    findingLocationsCorrect: findingLocationsCorrect(benchmarkCase, result.findings),
+    outcome: {
+      case: benchmarkCase,
+      actualStatus: result.status,
+      bucket: classify(benchmarkCase.expected.status, result.status),
+      findingLocationsCorrect: findingLocationsCorrect(benchmarkCase, detectedLocations),
+    },
+    detectedLocations,
+  };
+}
+
+/**
+ * Location-level detail for one historical case: the developer's real
+ * changed locations (`historical.actualChangedLocations`, ground truth)
+ * vs. what Patchwork actually detected on the before-state -- matched/
+ * missed/extra, never collapsed into a single ratio.
+ */
+function historicalCaseDetail(
+  benchmarkCase: BenchmarkCase,
+  detectedLocations: { sourceFile: string; line: number }[],
+): HistoricalCaseDetail {
+  const historical = benchmarkCase.historical!;
+  const key = (loc: { sourceFile: string; line: number }) => `${loc.sourceFile}:${loc.line}`;
+  const actualSet = new Set(historical.actualChangedLocations.map(key));
+  const detectedSet = new Set(detectedLocations.map(key));
+
+  return {
+    caseId: benchmarkCase.id,
+    repository: historical.repository,
+    sourceCommitUrl: historical.sourceCommitUrl,
+    actualChangedLocations: historical.actualChangedLocations,
+    detectedLocations,
+    matchedLocations: historical.actualChangedLocations.filter((loc) => detectedSet.has(key(loc))),
+    missedLocations: historical.actualChangedLocations.filter((loc) => !detectedSet.has(key(loc))),
+    extraLocations: detectedLocations.filter((loc) => !actualSet.has(key(loc))),
   };
 }
 
@@ -155,9 +196,10 @@ function toMetrics(counts: MutableCounts): AggregateMetrics {
  * so what's benchmarked can't drift from what's shipped. Archive
  * extraction itself is skipped deliberately (see docs/testing.md); that
  * safety property is covered by archive.test.ts. Aggregates overall, per
- * rule, and per corpus (control vs. realistic -- see types.ts) so a
- * perfect control-corpus score can never silently hide weaker realistic
- * behavior.
+ * rule, and per corpus (control vs. realistic vs. historical -- see
+ * types.ts) so a perfect control-corpus score can never silently hide
+ * weaker realistic or historical behavior. Historical cases additionally
+ * get location-level detail against the real developer's migration diff.
  */
 export function runBenchmark(cases: BenchmarkCase[] = ALL_BENCHMARK_CASES): BenchmarkReport {
   const rulesById = new Map(IMPACT_RULES.map((rule) => [rule.providerChange.externalId, rule]));
@@ -167,8 +209,10 @@ export function runBenchmark(cases: BenchmarkCase[] = ALL_BENCHMARK_CASES): Benc
   const byCorpusCounts: Record<Corpus, MutableCounts> = {
     control: emptyCounts(),
     realistic: emptyCounts(),
+    historical: emptyCounts(),
   };
   const caseOutcomes: CaseOutcome[] = [];
+  const historicalCases: HistoricalCaseDetail[] = [];
 
   for (const benchmarkCase of cases) {
     const rule = rulesById.get(benchmarkCase.ruleExternalId);
@@ -178,7 +222,7 @@ export function runBenchmark(cases: BenchmarkCase[] = ALL_BENCHMARK_CASES): Benc
       );
     }
 
-    const outcome = runCase(benchmarkCase, rule);
+    const { outcome, detectedLocations } = runCase(benchmarkCase, rule);
     caseOutcomes.push(outcome);
 
     addOutcome(overallCounts, outcome);
@@ -186,6 +230,10 @@ export function runBenchmark(cases: BenchmarkCase[] = ALL_BENCHMARK_CASES): Benc
     const ruleCounts = perRuleCounts.get(rule.providerChange.externalId) ?? emptyCounts();
     addOutcome(ruleCounts, outcome);
     perRuleCounts.set(rule.providerChange.externalId, ruleCounts);
+
+    if (benchmarkCase.historical) {
+      historicalCases.push(historicalCaseDetail(benchmarkCase, detectedLocations));
+    }
   }
 
   const perRule: RuleReport[] = IMPACT_RULES.filter((rule) =>
@@ -196,6 +244,17 @@ export function runBenchmark(cases: BenchmarkCase[] = ALL_BENCHMARK_CASES): Benc
     ...toMetrics(perRuleCounts.get(rule.providerChange.externalId)!),
   }));
 
+  const historical: HistoricalSummary = {
+    totalActualLocations: historicalCases.reduce(
+      (sum, c) => sum + c.actualChangedLocations.length,
+      0,
+    ),
+    totalMatched: historicalCases.reduce((sum, c) => sum + c.matchedLocations.length, 0),
+    totalMissed: historicalCases.reduce((sum, c) => sum + c.missedLocations.length, 0),
+    totalExtra: historicalCases.reduce((sum, c) => sum + c.extraLocations.length, 0),
+    cases: historicalCases,
+  };
+
   return {
     totalRules: perRule.length,
     totalCases: cases.length,
@@ -203,7 +262,9 @@ export function runBenchmark(cases: BenchmarkCase[] = ALL_BENCHMARK_CASES): Benc
     byCorpus: {
       control: toMetrics(byCorpusCounts.control),
       realistic: toMetrics(byCorpusCounts.realistic),
+      historical: toMetrics(byCorpusCounts.historical),
     },
+    historical,
     perRule,
     caseOutcomes,
   };

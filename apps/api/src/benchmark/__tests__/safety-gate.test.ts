@@ -48,4 +48,23 @@ describe('impact engine benchmark (safety gate)', () => {
     expect(report.byCorpus.realistic.falseNotAffectedSafetyFailures).toBe(0);
     expect(report.byCorpus.realistic.unsafeCertaintyCount).toBe(0);
   });
+
+  /**
+   * Slice 6's historical corpus is the one category not authored by the
+   * person who wrote the analyser at all -- real, independently-sourced
+   * public repositories at the exact commit before a real developer
+   * performed a real Stripe migration. The task's own framing names this
+   * the single most important historical failure mode: "real developer
+   * migration proves affected usage existed, and Patchwork's BEFORE-state
+   * analysis says NOT_AFFECTED." Tracked here on its own, never folded
+   * into the combined-corpus assertion above, so a historical safety
+   * failure can never be silently averaged away by the much larger
+   * control/realistic corpora.
+   */
+  it('the historical corpus is present and has zero false NOT_AFFECTED safety failures', () => {
+    const report = runBenchmark();
+
+    expect(report.byCorpus.historical.totalCases).toBeGreaterThanOrEqual(1);
+    expect(report.byCorpus.historical.falseNotAffectedSafetyFailures).toBe(0);
+  });
 });

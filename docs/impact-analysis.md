@@ -2,15 +2,16 @@
 
 This is the central engineering problem for Patchwork and the most important
 technical document in this repository. Four real rules are now implemented
-end-to-end against a shared engine, and a two-part benchmark corpus (a
-control corpus plus a realistic corpus of ordinary production TypeScript
-patterns) measures whether that generalizes (see "Rules implemented",
-"Analyzer escalation ladder", and "Evaluation approach" — including its
-"Realistic validation" subsection — below); everything beyond that
-remains principles and a likely pipeline shape, not a finalized design.
-It was revised following external technical/product research; corrections
-that research introduced are marked explicitly rather than blended in
-silently.
+end-to-end against a shared engine, and a three-part benchmark corpus (a
+control corpus, a realistic corpus of ordinary production TypeScript
+patterns, and a historical corpus of real public GitHub migrations)
+measures whether that generalizes (see "Rules implemented", "Analyzer
+escalation ladder", and "Evaluation approach" — including its "Realistic
+validation" and "Historical validation" subsections — below); everything
+beyond that remains principles and a likely pipeline shape, not a
+finalized design. It was revised following external technical/product
+research; corrections that research introduced are marked explicitly
+rather than blended in silently.
 
 ## Product positioning (PROPOSED — correction)
 
@@ -273,7 +274,7 @@ not built preemptively.
   keeps same-file resolution (the actual scope of Level C above) fully
   correct without needing whole-repository project construction.
 
-## Evaluation approach (CURRENT — controlled benchmark; real historical pairs still PROPOSED)
+## Evaluation approach (CURRENT — control, realistic, and real historical corpora)
 
 A benchmark is needed **before** a polished product — there is no credible
 external precision/recall number to import, since published results (e.g.
@@ -289,10 +290,11 @@ extraction itself (tar packing/unpacking) is deliberately skipped — that
 safety property is already covered by `archive.test.ts`; the benchmark
 measures evidence → applicability → predicate → assess accuracy.
 
-Two corpora, distinguished by each `BenchmarkCase`'s `corpus: 'control' |
-'realistic'` field and reported separately (see "Realistic validation"
-below) so a perfect control-corpus score can never silently stand in for
-weaker real-world behavior:
+Three corpora, distinguished by each `BenchmarkCase`'s `corpus: 'control'
+| 'realistic' | 'historical'` field and reported separately (see
+"Realistic validation" and "Historical validation" below) so a perfect
+control-corpus score can never silently stand in for weaker real-world
+behavior:
 
 **Control corpus** (slice 4, `apps/api/src/benchmark/cases/*.ts`, ~11
 cases × 4 rules = 44 total) — each fixture shaped closely around one
@@ -311,6 +313,12 @@ predicate/applicability behavior:
 **Realistic corpus** (slice 5, `apps/api/src/benchmark/cases/realistic/
 *.ts`, 26 total) — ordinary production TypeScript patterns, not shaped
 around the analyser's own capabilities; see "Realistic validation" below.
+
+**Historical corpus** (slice 6, `apps/api/src/benchmark/cases/
+historical/*.ts`, 3 total) — minimal reconstructions of real, publicly
+sourced GitHub repositories at the exact commit before a real developer
+performed a real Stripe migration, the one corpus not authored by the
+person who wrote the analyser at all; see "Historical validation" below.
 
 Each `BenchmarkCase` is `{ id, ruleExternalId, category, files, expected:
 { status, findingCount?, findingLocations? }, notes }` — ground truth is
@@ -355,16 +363,18 @@ gate, not a claim that production false negatives will be zero.
 Run it: `pnpm benchmark` (human-readable) or `pnpm --filter @patchwork/api
 benchmark -- --json` (machine-readable). At the time of writing, all four
 rules score AFFECTED precision 1.00 / recall 1.00, 0 false `NOT_AFFECTED`
-safety failures, 0 unsafe certainty, and 0 over-abstentions across 70
-cases (44 control + 26 realistic) — see "Analyser changes driven by
-benchmark evidence" and "Realistic validation" below for why that wasn't
-true on the first run of each corpus.
+safety failures, 0 unsafe certainty, and 0 over-abstentions across 73
+cases (44 control + 26 realistic + 3 historical) — see "Analyser changes
+driven by benchmark evidence", "Realistic validation", and "Historical
+validation" below for why that wasn't true on the first run of each
+corpus.
 
-**Deferred, not attempted this slice**: real historical migration pairs (a
-commit before a real Stripe upgrade and the commit after the corresponding
-developer migration) — the controlled, hand-labelled corpus above is
-prioritized as a trustworthy foundation first; historical-repository
-evaluation remains a future extension, not mined here.
+**Historical location recall** is reported as a fourth, historical-only
+metric alongside the table above: for each historical case, the real
+developer's changed locations (ground truth, from the actual migration
+diff) are compared against what `assessRuleImpact` actually detected on
+the before-state — matched / missed / extra, raw counts, per case, never
+collapsed into one ratio (see "Historical validation" below).
 
 ### Rule/predicate reuse
 
@@ -533,6 +543,100 @@ reported `UNCERTAIN` (stripe@18.5.0 resolved, below its v19 boundary, no
 false result); the unrelated domain model produced no findings for any
 rule.
 
+### Historical validation (CURRENT)
+
+The control and realistic corpora above answer "is the mechanism
+correct?" and "does it hold up on ordinary production patterns?" — but
+every fixture in both, even the realistic ones, was still authored by
+the same person who wrote the analyser. Slice 6 adds the one form of
+evidence that was entirely absent: **did the engine's mechanism,
+evaluated on the actual before-state source of a real public
+repository, identify the same code a real developer later changed in a
+real migration?** Three cases (`apps/api/src/benchmark/cases/
+historical/*.ts`), each a minimal reconstruction of real, independently
+sourced GitHub history — never a vendored copy of the full file, which
+ranged 9–604 lines including large amounts of unrelated business logic
+(Supabase queries, Sentry, tier-mapping tables) not touched by the
+migration in question. Each case cites its exact `repository`,
+`beforeSha`, `afterSha`, and `sourceCommitUrl` (real, pinned commit
+SHAs — a rerun always tests identical code, never a moving branch; no
+live GitHub dependency exists in `pnpm test`/`pnpm benchmark`) via the
+`HistoricalProvenance` type in `benchmark/types.ts`.
+
+**Ground truth has three independent legs**, all established before any
+Patchwork code runs against the fixture: the developer's real diff
+(fetched via the GitHub API, not paraphrased), the real before-state
+dependency evidence (`package.json`/`package-lock.json` at the before
+SHA, fetched directly), and — critically, per the standing rule never to
+let the system mark its own homework — the _expected_ result was
+determined from the first two alone; the real, current predicate was
+then run against a reconstruction and _compared against_ that
+independently-derived expectation, never used to produce it.
+
+- **Case 1 — Rule A** (`stripe.invoices.retrieveUpcoming` removal):
+  [`dzinesco/route-commerce`](https://github.com/dzinesco/route-commerce),
+  `src/lib/stripe-billing.ts`, before SHA `fbddd245`, migration commit
+  [`dad8b0f`](https://github.com/dzinesco/route-commerce/commit/dad8b0fbe37ffedbfdb6aa297400e41317f1b8bb).
+  Same-file Stripe client construction with an explicit, on-boundary
+  `apiVersion: "2025-04-30.basil"` literal (this repo has no committed
+  lockfile, so SDK-version evidence alone would have been `DECLARED_
+ONLY` — applicability instead comes cleanly from the apiVersion
+  literal path). **Result: `AFFECTED`, exactly the location the
+  developer changed. A historical true positive.**
+- **Case 2 — Rule B** (`Invoice.subscription` removal):
+  [`caterbidsUK/caterbids.uk`](https://github.com/caterbidsUK/caterbids.uk),
+  `app/api/stripe/webhook/route.ts`, before SHA `1959db44`, migration
+  commit [`c6556b5`](https://github.com/caterbidsUK/caterbids.uk/commit/c6556b5a3a1ddacc34f407a4c24e60203def95b7).
+  Two real call sites, both reading `invoice` from `event.data.object as
+Stripe.Invoice`. **Result: `UNCERTAIN`** — the already-documented
+  `Stripe.X` namespace-annotation stub gap (above), hit by real code.
+  This is a **correct, safe abstention, not a bug** — and independent
+  confirmation the limitation isn't a rare edge case: every other real
+  Rule B migration found during this slice's research (5+ repositories)
+  used the identical `event.data.object as Stripe.Invoice` pattern, the
+  standard idiomatic way Stripe webhook handlers are written in
+  TypeScript.
+- **Case 3 — Rule C** (`iterations` parameter removal):
+  [`Avanti-Creativo/bill-korman-website`](https://github.com/Avanti-Creativo/bill-korman-website),
+  `src/app/api/stripe/installment-plan/route.ts`, before SHA `931f6685`,
+  migration commit [`71ecd30`](https://github.com/Avanti-Creativo/bill-korman-website/commit/71ecd30172112206f7f07e5a4a82bdd018e0e76e).
+  The real before-state code wraps the phases array in `as any` — the
+  predicate's structural search still finds `iterations` right through
+  that cast (a type-level cast doesn't defeat an AST-level search).
+  **Result: `UNCERTAIN`** — not because of the cast, but because
+  `stripe` itself is imported cross-file (`import { stripe } from
+'@/lib/stripe'`), the already-documented client-singleton limitation.
+  Independent, real-world confirmation of that limitation too.
+- **Rule D**: no case. I searched `gh api search/commits` and
+  `search/code` with multiple targeted queries for real public
+  migrations of the Issuing `Authorization.status` split; Issuing
+  (corporate card programs) is a narrow product, and no genuine match
+  was found — only noise (OAuth "authorization," generic "expired"/
+  "reversed" hits, dependency-bot PRs). Reported honestly rather than
+  stretching a weak match, per the task's explicit instruction.
+
+**Historical location recall**: 1 of 4 real developer-changed locations
+matched (the Rule A case; the two Rule B locations and the one Rule C
+location were correctly not claimed, since those cases correctly
+abstained rather than guess), 0 extra/unrelated findings. **Zero false
+`NOT_AFFECTED` safety failures** across all three cases — the single
+most important historical failure mode named by the task ("real
+developer migration proves affected usage existed, and Patchwork's
+before-state analysis says `NOT_AFFECTED`") did not occur.
+
+**No analyser change was made because of this slice.** Both `UNCERTAIN`
+results are the existing, already-correct, already-tested behavior for
+limitations documented in slice 5 — not new bugs this evidence exposed.
+The `Stripe.X` and cross-file-client-singleton gaps remain deliberately
+unfixed (see "Realistic validation" above for why), even though this
+slice's real-world evidence now confirms both are common in practice,
+not rare — the task's own framing anticipated exactly this ("a
+historical case hitting a known limitation may correctly return
+`UNCERTAIN`"). This is the strongest evidence yet for prioritizing the
+`Stripe.X` namespace stub expansion in a future slice, if real-world
+_coverage_ (not safety) becomes the priority — flagged here, not acted
+on.
+
 ## Rules implemented (CURRENT)
 
 Four real, officially-verified Stripe changes, chosen for materially
@@ -675,11 +779,10 @@ Stripe dependency — correctly `NOT_AFFECTED`) and a purpose-built
 controlled fixture repository (`HamidZ11/stripe-basil-fixture`)
 exercising a real positive match.
 
-**The fifth step is what this slice adds**: a controlled, hand-labelled
+**The fifth step, built across slices 5–6**: a controlled, hand-labelled
 benchmark corpus (`apps/api/src/benchmark/`) and a CI-enforced safety
-gate — see "Evaluation approach" above for the full design and current
-results. Real historical migration pairs remain a deferred future
-extension (see "Deferred" below), not a formal benchmark component yet.
+gate, now spanning control, realistic, and real historical corpora — see
+"Evaluation approach" above for the full design and current results.
 Everything beyond these four rules (patch generation, additional rules,
 automated changelog ingestion) remains unimplemented, and none of it
 should be started without a separate planning/approval pass.
@@ -713,14 +816,16 @@ should be started without a separate planning/approval pass.
 ## Deferred
 
 Additional rules beyond the four implemented, automated Stripe changelog
-ingestion, `TransformationRecipe`/`VerificationExpectation`, real
-historical migration-pair fixtures in the benchmark corpus, expanding the
-trusted stub's type surface to support `Stripe.X` namespace-style type
-annotations, broadening `call-argument-property.ts`'s lexical prefilter
-to catch cross-file data-carried usage (see "Realistic validation"
-above for both), and all patching/verification/PR automation downstream
-of impact analysis. This document will be revised again as a fifth rule
-(or a materially different predicate shape) validates or further
-generalizes the pipeline shape above — treat it as a working hypothesis
-validated across four rules, two applicability boundaries, and both a
-control and a realistic benchmark corpus, not a finished spec.
+ingestion, `TransformationRecipe`/`VerificationExpectation`, a historical
+migration case for Rule D (no genuine public example found), expanding
+the trusted stub's type surface to support `Stripe.X` namespace-style
+type annotations, broadening `call-argument-property.ts`'s lexical
+prefilter to catch cross-file data-carried usage (see "Realistic
+validation" above for both — now with independent real-world confirmation
+from the historical corpus that both are common, not rare), and all
+patching/verification/PR automation downstream of impact analysis. This
+document will be revised again as a fifth rule (or a materially different
+predicate shape) validates or further generalizes the pipeline shape
+above — treat it as a working hypothesis validated across four rules, two
+applicability boundaries, and a control, realistic, and real historical
+benchmark corpus, not a finished spec.
