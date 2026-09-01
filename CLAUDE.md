@@ -281,6 +281,8 @@ code. When documenting or discussing them, label status explicitly:
 
 Full architecture: [docs/architecture.md](docs/architecture.md). Candidate
 (not implemented) domain concepts: [docs/data-model.md](docs/data-model.md).
+Frontend design guidance (Taste Skill, Emil Kowalski's design-engineering
+pack, and how they resolve conflicts): [docs/frontend-design.md](docs/frontend-design.md).
 
 ## ADRs
 

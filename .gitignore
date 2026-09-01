@@ -30,3 +30,9 @@ coverage/
 # misc
 *.tsbuildinfo
 next-env.d.ts
+
+# local Claude Code state (personal permission allowlist, process locks) --
+# .agents/skills and .claude/skills (installed skill content/symlinks) are
+# intentionally tracked, not ignored
+.claude/settings.local.json
+.claude/scheduled_tasks.lock
