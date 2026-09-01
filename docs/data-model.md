@@ -375,7 +375,7 @@ specific usage rather than a snapshot-wide value (**PROPOSED, not
 implemented**) — the current `StripeEvidence` JSON blob is not that
 abstraction, just the discoverable evidence it would eventually draw from.
 
-### Splitting what `ChangeRule` was implied to be (`ApplicabilityConstraint`/`ImpactPredicate`/`MigrationRequirement` now CURRENT across four encoded rules; `TransformationRecipe`/`VerificationExpectation` still PROPOSED — correction)
+### Splitting what `ChangeRule` was implied to be (`ApplicabilityConstraint`/`ImpactPredicate`/`MigrationRequirement` now CURRENT across four encoded rules; `TransformationRecipe`/`VerificationExpectation` now CURRENT for one rule, code-level not persisted — correction)
 
 The original model treated `ChangeRule` as one undifferentiated "rule."
 That combines responsibilities that need to stay separable: **a change can
@@ -398,12 +398,25 @@ ProviderChange (provider_changes row)
   │                                 structured/multi-entry shape -- what
   │                                 needs to change, independent of whether
   │                                 it's automatable)
-  ├── TransformationRecipe[]?     (PROPOSED, not implemented -- optional,
-  │                                 only present when a safe, mechanical or
-  │                                 bounded-AI transform exists)
-  └── VerificationExpectation[]?  (PROPOSED, not implemented -- optional,
-                                    only present when a meaningful
-                                    independent postcondition can be stated)
+  ├── TransformationRecipe[]?     (CURRENT for one rule -- apps/api/src/
+  │                                 remediation/recipes/: a hardcoded,
+  │                                 versioned, pure transformFile() function
+  │                                 per proven-mechanical migration, mirroring
+  │                                 how ImpactPredicate itself is code, not
+  │                                 persisted rows. Optional by construction:
+  │                                 three of four rules have none, since no
+  │                                 argument-shape/request-shape subset of
+  │                                 those migrations was provable safe as a
+  │                                 pure mechanical rewrite -- see
+  │                                 impact-analysis.md#remediation)
+  └── VerificationExpectation[]?  (CURRENT for one rule -- each recipe's own
+                                    checkPostconditions(), re-proving the
+                                    migration held via the same real
+                                    TypeChecker-based engine ImpactPredicate
+                                    uses, independent of the rewrite code.
+                                    Distinct from the future sandboxed
+                                    build/test VerificationRun below, which
+                                    remains entirely deferred)
 ```
 
 For all four rules implemented so far, `ApplicabilityConstraint`/
@@ -417,7 +430,11 @@ without needing per-rule persisted structure — see
 generic rule DSL still isn't justified. Whether they become data-driven
 (vs. code-driven) rows is an open question below — four rules sharing
 this code-driven mechanism without friction is evidence against needing
-it yet, not proof it will never be needed.
+it yet, not proof it will never be needed. `TransformationRecipe`/
+`VerificationExpectation` follow the identical code-driven pattern for the
+one rule that has them (`apps/api/src/remediation/registry.ts`, keyed by
+`predicate_kind` exactly like `IMPACT_RULES`) -- not a DB table, not a
+migration-language platform.
 
 A `ProviderChange` may legitimately have high detectability, low
 fixability, and only partial verifiability — that should be visible in the
@@ -480,9 +497,18 @@ normalized, cross-snapshot business entity.
 `ImpactAssessment`, `AffectedLocation`/Finding (all now CURRENT, as
 `users`, `github_installations`, `repositories`, `repository_snapshots`,
 `analysis_runs`, `provider_changes`, `rule_versions`,
-`impact_assessments`, `impact_findings` above), `Dependency`,
-`PatchAttempt`, `VerificationRun`, `PullRequest`, `AuditEvent`
-(still PROPOSED). See
+`impact_assessments`, `impact_findings` above), `PatchAttempt` (now
+CURRENT, as `patch_attempts` -- an audit-log-style table like
+`AnalysisRun`, never upserted: `impact_assessment_id`,
+`transformation_kind`/`transformation_version` (the code discriminator
+above), `status` (`GENERATED`/`REFUSED`/`FAILED`), `refusal_reason`/
+`failure_reason`, `changed_files`, `diff` (unified-diff text, never a
+repository copy), `postcondition_result` (jsonb, one entry per
+`VerificationExpectation` check)), `Dependency`, `VerificationRun`,
+`PullRequest`, `AuditEvent` (still PROPOSED -- `VerificationRun`
+specifically means the future _sandboxed build/test_ verification
+described in [verification.md](verification.md), not the static
+postcondition checks a `PatchAttempt` already carries). See
 [CLAUDE.md](../CLAUDE.md#product) for the core workflow these will support,
 and [docs/impact-analysis.md](impact-analysis.md) for the pipeline that
 produces an `ImpactAssessment`.
@@ -513,17 +539,22 @@ produces an `ImpactAssessment`.
 
 ## Deferred
 
-`Dependency` through `AuditEvent` (the remainder of the candidate list
-above, now that `RepositorySnapshot`, `AnalysisRun`, the evidence subset,
-and the `ProviderChange`/`RuleVersion`/`ImpactAssessment`/Finding subset
-for four rules are implemented) require their own design pass once patch
-generation is scoped. Full repository-content persistence
-remains deferred: an exact-SHA archive is downloaded and extracted per
-analysis (evidence collection, and again independently per impact
-assessment — never reused/cached across the two, and never persisted
-between requests), but only ever to an OS temp directory deleted
-immediately after use (`apps/api/src/analysis/archive.ts`) — no source
-file content is ever persisted to PostgreSQL, only the structured evidence
-and findings derived from it. Multiple rules, automated changelog
-ingestion, `TransformationRecipe`/`VerificationExpectation`, and patch
-generation are all explicitly out of scope for this rule.
+`Dependency`, `VerificationRun` (the future sandboxed build/test kind),
+`PullRequest`, and `AuditEvent` (the remainder of the candidate list above,
+now that `RepositorySnapshot`, `AnalysisRun`, the evidence subset, the
+`ProviderChange`/`RuleVersion`/`ImpactAssessment`/Finding subset for four
+rules, and `PatchAttempt`/one `TransformationRecipe` are implemented)
+require their own design pass once GitHub write access is scoped. Full
+repository-content persistence remains deferred: an exact-SHA archive is
+downloaded and extracted per analysis (evidence collection, impact
+assessment, and now remediation — never reused/cached across the three,
+and never persisted between requests), but only ever to an OS temp
+directory deleted immediately after use
+(`apps/api/src/analysis/archive.ts`) — no source file content is ever
+persisted to PostgreSQL; a `PatchAttempt` persists only a small, bounded
+unified diff for the changed file(s), never a repository copy. Automated
+changelog ingestion, additional rules' `TransformationRecipe`/
+`VerificationExpectation` (Rules A/C/D were evaluated and found to have no
+provable-safe mechanical subset -- see impact-analysis.md#remediation),
+sandboxed build/test verification, and any GitHub write (branch, commit,
+PR) remain explicitly out of scope.

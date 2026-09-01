@@ -83,11 +83,13 @@ requests either. See [ADR-003](adr/0003-server-to-server-cookie-forwarding.md).
 ## Threat model (initial)
 
 **Private source code.** Customer repositories are sensitive, untrusted
-input. **Genuinely relevant on two routes now**: `POST /repositories/:id
-/analyses` (evidence collection) and `POST /analysis-runs/:id/impact-
-assessments` (impact assessment — re-downloads and re-extracts the same
-exact-SHA archive independently, never reusing or caching the first
-download) both call `GitHubClient.downloadRepositoryArchive`
+input. **Genuinely relevant on three routes now**: `POST /repositories/:id
+/analyses` (evidence collection), `POST /analysis-runs/:id/impact-
+assessments` (impact assessment), and `POST /impact-assessments/:id
+/patch-attempts` (deterministic remediation, `apps/api/src/remediation/`)
+— each independently re-downloads and re-extracts the same exact-SHA
+archive, never reusing or caching a prior download. All three call
+`GitHubClient.downloadRepositoryArchive`
 (`apps/api/src/github/client.ts`) and extract a narrow allowlist of files
 (manifests, lockfiles, `tsconfig.json`, `.ts`/`.tsx`/`.js`/`.jsx`/`.mjs`
 /`.cjs` source, excluding `node_modules`/`.git`/build output — see
@@ -102,9 +104,11 @@ produce evidence and findings. Controls in place:
   longer exists afterward, including when the caller's handler throws.
   **Only structured evidence/findings** (package names, version strings,
   an `apiVersion` value and its source file/line; for impact assessment, a
-  matched symbol name and file/line) is persisted to PostgreSQL
-  (`analysis_evidence.evidence`, `impact_findings`) — never raw file
-  content.
+  matched symbol name and file/line; for remediation, a small, bounded
+  unified diff for the changed file(s) — never the whole file, never a
+  repository copy) is persisted to PostgreSQL
+  (`analysis_evidence.evidence`, `impact_findings`, `patch_attempts.diff`)
+  — never raw file content beyond that bounded diff.
 - **Untrusted archive treated as untrusted**: extraction uses the `tar`
   library, which rejects/strips absolute paths and `..` traversal entries
   by default (`preservePaths` is never set) — Zip Slip protection from the
@@ -161,7 +165,47 @@ never directly inside the `apps/api` or `apps/worker` process/environment.
 meaningfully deeper analysis than the evidence slice's syntax-only
 parsing, but remains reading/type-checking text — never installing
 dependencies, never compiling to executable output, never running a
-script or test from the repository.
+script or test from the repository. Remediation (`apps/api/src/
+remediation/`) goes one step further — it _rewrites_ text — but the same
+boundary holds: the rewrite is a syntax-guided text splice computed from
+an in-memory `ts.Program` (same construction as impact assessment's,
+never a second/diverging implementation — see
+[impact-analysis.md](impact-analysis.md#remediation)), the rewritten text
+is only ever re-parsed/re-type-checked in memory to independently verify
+it, and it is never written back to the archive, never written to disk
+outside the per-request temp directory, and never executed.
+
+**Remediation write scope (new).** `POST /impact-assessments/:id
+/patch-attempts` never writes to GitHub — no branch, no commit, no PR; it
+only reads (the exact-SHA archive) and persists a candidate `PatchAttempt`
+to Patchwork's own database. Additional controls specific to this route:
+
+- **Trusted inputs only.** The file path, line, and matched symbol used to
+  locate what to rewrite always come from already-persisted `Finding` rows
+  tied to the assessment (via the same ownership-scoped lookup as every
+  other route) — never from the request body. A client cannot supply an
+  arbitrary file path or source span.
+- **Whole-attempt refusal, not best-effort.** If any finding can't be
+  proven safe (wrong shape, stale span, a write position, ...), nothing in
+  that file is rewritten and the whole attempt is REFUSED with a specific
+  reason — never a partial patch silently covering only the "easy"
+  findings.
+- **Patch policy (forbidden paths).** `package.json`, lockfiles, and
+  `.github/**` are refused outright even if a transformation somehow
+  targeted them (`apps/api/src/remediation/generate.ts`); today's one
+  recipe only ever targets `.ts` source, so this is defense in depth for
+  future rules, not a control this rule currently needs to rely on.
+- **Bounded diff.** A candidate diff exceeding a fixed character bound is
+  refused rather than persisted, so this endpoint can't become a vector
+  for smuggling large source dumps into PostgreSQL under the guise of a
+  "small" patch.
+
+Verified with a real request against the real `HamidZ11/stripe-basil-
+fixture` repository (not just faked-archive tests): confirmed via the
+GitHub API afterward that `main` remained the only branch, its tip commit
+was unchanged, and no pull request (open or closed) existed — a candidate
+patch attempt was generated/refused and persisted, and nothing was ever
+written to GitHub.
 
 **Prompt injection.** Customer source code and external API documentation
 are both untrusted input to any future LLM step. Content from either must

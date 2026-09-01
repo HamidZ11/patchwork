@@ -16,6 +16,7 @@
     "@octokit/auth-app": "^7.1.5",
     "@patchwork/config": "workspace:*",
     "@patchwork/db": "workspace:*",
+    "diff": "^7.0.0",
     "dotenv": "^16.4.7",
     "drizzle-orm": "^0.38.4",
     "fastify": "^5.2.1",
@@ -25,6 +26,7 @@
     "zod": "^3.24.1"
   },
   "devDependencies": {
+    "@types/diff": "^7.0.2",
     "tsx": "^4.19.2",
     "vitest": "^3.0.5"
   }

@@ -316,3 +316,38 @@ export const impactFindings = pgTable('impact_findings', {
   matchedSymbol: text('matched_symbol').notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
+
+/**
+ * One attempt to deterministically remediate an AFFECTED ImpactAssessment
+ * -- an execution/audit record like AnalysisRun, deliberately not
+ * deduplicated/upserted: each POST is its own historical attempt, not a
+ * pure function of its inputs (a future transformation_version bump can
+ * legitimately produce a different result for the same assessment).
+ * transformation_kind is a code discriminator (which hardcoded
+ * TransformationRecipe ran), not a migration-language DSL -- mirrors
+ * rule_versions.predicate_kind. Exactly one of
+ * (diff, refusal_reason, failure_reason) is populated, matching `status`.
+ * `diff` is unified-diff text for the small, bounded set of changed
+ * files -- never full file bodies, never a repository copy (see
+ * docs/security.md: source persistence is minimized). ON DELETE CASCADE
+ * from impact_assessments -- an attempt without its assessment is
+ * meaningless, same cascade pattern as impact_findings.
+ */
+export const patchAttempts = pgTable('patch_attempts', {
+  id: uuid('id')
+    .primaryKey()
+    .$defaultFn(() => crypto.randomUUID()),
+  impactAssessmentId: uuid('impact_assessment_id')
+    .notNull()
+    .references(() => impactAssessments.id, { onDelete: 'cascade' }),
+  transformationKind: text('transformation_kind').notNull(),
+  transformationVersion: text('transformation_version').notNull(),
+  status: text('status').notNull(),
+  refusalReason: text('refusal_reason'),
+  failureReason: text('failure_reason'),
+  changedFiles: text('changed_files').array().notNull().default([]),
+  diff: text('diff'),
+  postconditionResult: jsonb('postcondition_result'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  completedAt: timestamp('completed_at', { withTimezone: true }),
+});

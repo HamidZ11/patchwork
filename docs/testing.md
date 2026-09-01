@@ -218,9 +218,50 @@ validating once product features exist:
   found for the Issuing `Authorization.status` split); additional
   historical cases for rules A-C remain a candidate follow-up, not
   pursued preemptively.
-- **Patch regression tests** — once patch generation exists, confirming a
-  known change still produces the expected (or an equally valid) patch
-  over time, to catch silent regressions in generation quality.
+- **Patch regression tests** — once patch generation exists more broadly
+  (beyond the one rule below), confirming a known change still produces
+  the expected (or an equally valid) patch over time, to catch silent
+  regressions in generation quality.
+
+### Remediation test corpus (CURRENT, one rule)
+
+Follows the same "hand-labelled, never let the system mark its own
+homework" convention as the impact benchmark, but deliberately kept
+separate from it (`apps/api/src/remediation/__tests__/`, not
+`apps/api/src/benchmark/`) — remediation success is never folded into the
+impact benchmark's precision/recall metrics, so "impact detected
+correctly" and "patch generated correctly" stay distinguishable numbers,
+never conflated into one. Two layers:
+
+- **`invoice-subscription-to-parent.test.ts`** — pure unit tests against
+  the recipe's `transformFile`/`checkPostconditions` directly (no DB, no
+  archive): safe-positive shapes (direct read, aliased receiver, multiple
+  findings in one file), refusal shapes (optional chaining, every write
+  position, destructuring, a stale/mismatched span), negative-safety
+  shapes (an unrelated same-named property, comment/string text, an
+  already-migrated access — all left untouched), idempotency (re-running
+  against already-transformed text refuses rather than double-editing),
+  and the full read-context matrix (strict equality, `Object.is`,
+  ternary, nullish coalescing, object-literal value position, ...) that
+  motivated the `?? null` correction — see
+  [impact-analysis.md](impact-analysis.md#remediation).
+- **`generate.test.ts`** — the orchestration layer against a faked GitHub
+  archive: precondition refusals (non-AFFECTED, unsupported rule, no
+  findings, forbidden path) before any download happens, `FAILED` on
+  archive-acquisition failure, a stale source file, multi-file findings in
+  one assessment, and whole-attempt refusal when only one of several
+  findings is unsafe.
+
+Route-level coverage (auth, ownership, the full DB round-trip, and the
+`GET /analysis-runs/:id` response shape) lives in
+`apps/api/src/__tests__/patch-attempts.integration.test.ts`, mirroring
+`impact-assessments.integration.test.ts`'s existing pattern exactly.
+Additionally verified once, manually, against the real
+`HamidZ11/stripe-basil-fixture` repository's real AFFECTED assessment —
+which uses the destructuring shape, not the supported direct-read shape,
+confirming the refusal path (and its honest, specific reason) against
+real code Patchwork didn't author, not just hand-written fixtures. See
+`docs/security.md` for confirmation no GitHub write occurred.
 
 ## Open questions
 

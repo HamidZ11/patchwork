@@ -49,7 +49,8 @@ Does this specific `ProviderChange` actually affect this specific
 repository, and exactly where? See [data-model.md](data-model.md) for the
 structured breakdown of what a `ProviderChange` decomposes into
 (`ApplicabilityConstraint`, `ImpactPredicate`, `MigrationRequirement`, and
-the optional `TransformationRecipe`/`VerificationExpectation`), and for the
+the optional `TransformationRecipe`/`VerificationExpectation` — now
+implemented for one rule, see "Remediation" below), and for the
 `RepositorySnapshot`/`AnalysisRun` reproducibility model an
 `ImpactAssessment` is actually truth about.
 
@@ -783,9 +784,84 @@ exercising a real positive match.
 benchmark corpus (`apps/api/src/benchmark/`) and a CI-enforced safety
 gate, now spanning control, realistic, and real historical corpora — see
 "Evaluation approach" above for the full design and current results.
-Everything beyond these four rules (patch generation, additional rules,
-automated changelog ingestion) remains unimplemented, and none of it
-should be started without a separate planning/approval pass.
+Additional rules and automated changelog ingestion remain unimplemented,
+and none of it should be started without a separate planning/approval
+pass. Patch generation now has one first, narrow, deterministic instance
+— see "Remediation" below — but it is a separate concern from impact
+analysis: remediation success is deliberately excluded from the impact
+benchmark's precision/recall metrics (see remediation's own test corpus
+under `apps/api/src/remediation/__tests__/`), so "impact detected
+correctly" and "patch generated correctly" are never conflated into one
+number.
+
+## Remediation
+
+**Implemented for exactly one rule.** Given an already-AFFECTED
+`ImpactAssessment`, `apps/api/src/remediation/` deterministically rewrites
+the exact finding location(s) via the TypeScript Compiler API (never
+regex/string replacement), independently re-proves the migration held
+using the same real `TypeChecker`-based engine `ImpactPredicate` uses (not
+by trusting the rewrite's own return value), and persists the result as a
+`PatchAttempt` (see [data-model.md](data-model.md)). No LLM, no customer
+code execution, no GitHub write of any kind (see
+[security.md](security.md)) — a verified _candidate_ patch only.
+
+**Which rule, and why not the others.** Of the four rules, only
+`stripe_invoice_subscription_property` (`Invoice.subscription` →
+`Invoice.parent.subscription_details.subscription`) has a provable-safe
+mechanical subset. The other three were evaluated against Stripe's actual
+changelog/type declarations and rejected as the first target:
+
+- `stripe_invoices_retrieve_upcoming` (Rule A, `retrieveUpcoming` →
+  `createPreview`): Stripe's changelog states outright that previewing a
+  customer's next invoice "across all their subscriptions" via a bare
+  `{ customer }` call is _removed_, not relocated — the single most common
+  real-world call shape has no 1:1-compatible replacement, so no
+  mechanically-safe subset could be defined without deeper, still-open
+  parameter-compatibility research.
+- `stripe_subscription_schedule_iterations_param` (Rule C, `iterations` →
+  `duration`): the replacement value depends on the phase's billing
+  interval, information not present at the call site — not mechanically
+  derivable at all, let alone safely.
+- `stripe_issuing_authorization_status_reversed` (Rule D, new `'expired'`
+  status value): a response-side enum addition, not a call to rewrite —
+  the correct handling of the new value is a business-logic decision, not
+  a mechanical transformation.
+
+**Supported shape, precisely.** Only a direct, non-computed, non-optional,
+read-position property access `X.subscription` resolving (via the trusted
+Stripe type stub, same mechanism `ImpactPredicate` already uses) to
+`StripeInvoice.subscription` — rewritten to
+`(X.parent?.subscription_details?.subscription ?? null)`. The `?? null` is
+load-bearing, not cosmetic: verified against the real stripe-node type
+declarations at both SDK boundary tags, the old field was
+`string | Stripe.Subscription | null` and the replacement path is
+`string | Stripe.Subscription` (reachable only through two independently-
+nullable steps), so `?? null` is what makes the rewritten expression
+produce the _identical_ observable value as the old field in every case —
+not just truthiness, but strict equality, `Object.is`, `switch`,
+serialization, and every other value-comparison context. An _originally_
+optional access (`X?.subscription`) is deliberately refused, not
+rewritten: if the receiver itself is nullish, `X?.subscription` and
+`(X?.parent?.subscription_details?.subscription ?? null)` diverge (`
+undefined` vs. `null`) — a real semantic change the mechanism can't paper
+over. Destructuring (`const { subscription } = invoice`) — a shape
+`ImpactPredicate` itself already detects as AFFECTED — is also refused, a
+distinction confirmed against the real `HamidZ11/stripe-basil-fixture`
+repository, which uses exactly this shape; the refusal names the actual
+reason ("destructures the property") rather than a generic "stale
+finding," so the distinction is visible to whoever reads the result, not
+just enforced silently.
+
+**Postcondition checks are not `docs/verification.md`'s "verification."**
+That document's "verification" means running the customer's own build/
+test/lint in an isolated sandbox — deliberately, entirely deferred, no
+sandbox exists. What a `TransformationRecipe`'s `checkPostconditions`
+does is narrower and purely static: re-run the same real semantic engine
+to confirm the old pattern is gone and the replacement pattern is present
+at the expected location, assert only the expected file(s) changed, and
+assert the diff is bounded. No repository code is ever executed by either
+mechanism today.
 
 ## Open questions
 
@@ -816,8 +892,12 @@ should be started without a separate planning/approval pass.
 ## Deferred
 
 Additional rules beyond the four implemented, automated Stripe changelog
-ingestion, `TransformationRecipe`/`VerificationExpectation`, a historical
-migration case for Rule D (no genuine public example found), expanding
+ingestion, `TransformationRecipe`/`VerificationExpectation` for Rules A/C/D
+(evaluated and found to have no provable-safe mechanical subset — see
+"Remediation" above) or for any future rule, sandboxed build/test
+verification (`docs/verification.md`), any GitHub write (branch, commit,
+PR), a historical migration case for Rule D (no genuine public example
+found), expanding
 the trusted stub's type surface to support `Stripe.X` namespace-style
 type annotations, broadening `call-argument-property.ts`'s lexical
 prefilter to catch cross-file data-carried usage (see "Realistic

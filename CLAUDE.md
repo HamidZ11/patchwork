@@ -200,6 +200,42 @@ direction.
   Evaluation approach, Realistic validation, and Historical validation
   sections.
 
+## Remediation principles
+
+Deterministic remediation (`apps/api/src/remediation/`) is implemented for
+exactly one rule today — see
+[docs/impact-analysis.md](docs/impact-analysis.md#remediation) for which
+one, why the other three don't have one, and the exact supported/refused
+shapes. The invariants below are permanent, not specific to that one rule:
+
+- **Never remediate UNCERTAIN or NOT_AFFECTED.** Only a proven AFFECTED
+  `ImpactAssessment` may be remediated — the same abstain-on-uncertainty
+  invariant above applies identically here: uncertainty must never be
+  treated as "worth trying anyway."
+- **A transformation must be provable safe for the specific call/access
+  shape it targets, not merely "the API is equivalent."** Two API surfaces
+  being described as equivalent in a provider's own migration guide is not
+  sufficient; the specific shape being rewritten must be independently
+  proven value-preserving (verified against the provider's own current
+  type declarations, not assumed from changelog prose alone). Where no
+  such subset can be proven, the rule is not remediated — do not force a
+  rule to be "the first one" because it looks mechanically simple.
+- **Refuse the whole attempt, never a partial patch.** If any part of a
+  candidate rewrite can't be proven safe, nothing is rewritten — never
+  best-effort the "easy" findings and silently skip the rest.
+- **Postcondition verification must be independent of the rewrite's own
+  claimed success** — re-prove the migration held using the same
+  real semantic engine impact analysis uses, never "the rewrite function
+  returned success, therefore it worked."
+- **No GitHub write is authorized by remediation on its own.** Generating
+  and persisting a candidate `PatchAttempt` is not an action against the
+  customer's repository — branch creation, commits, and PRs remain a
+  separate, not-yet-implemented, explicitly-authorized capability.
+- **No code execution during remediation.** Rewriting is a text
+  transformation guided by static analysis, never an occasion to run
+  `npm install`, a build, or a test — that boundary is identical to impact
+  analysis's, see "Security principles" below.
+
 ## Security principles
 
 - Customer repositories are sensitive, untrusted code.

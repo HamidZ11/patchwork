@@ -1,7 +1,15 @@
 # Verification
 
-Not yet implemented. This records principles ahead of the implementation
-slice.
+**Sandboxed build/test/lint verification, as described in this document,
+is not yet implemented** — this still records principles ahead of that
+slice. A different, narrower thing now exists and should not be confused
+with it: each `TransformationRecipe`'s `checkPostconditions`
+(`apps/api/src/remediation/`) independently re-proves a rewrite via the
+same static, real TypeChecker-based engine impact analysis uses — no
+`npm install`, no build, no test, no code execution of any kind. See
+[impact-analysis.md](impact-analysis.md#remediation) for what it actually
+checks. Everything below this point is about the sandbox-execution
+concept, which remains entirely deferred.
 
 ## Principles (DECIDED BUT NOT IMPLEMENTED)
 

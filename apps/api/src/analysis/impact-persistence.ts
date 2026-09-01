@@ -71,6 +71,89 @@ export async function getAnalysisRunForUser(
   return { ...row, evidence: (row.evidence as StripeEvidence | null) ?? null };
 }
 
+export interface ImpactAssessmentForRemediation {
+  id: string;
+  status: string;
+  predicateKind: string;
+  repositoryOwner: string;
+  repositoryName: string;
+  githubInstallationId: number;
+  commitSha: string;
+  findings: Finding[];
+}
+
+/**
+ * Looks up an ImpactAssessment by id, scoped to installations the given
+ * user connected -- same ownership-join pattern as
+ * getAnalysisRunForUser, extended one hop further (impact_assessments ->
+ * rule_versions, for predicate_kind) since remediation needs to know
+ * *which* rule this assessment is for, not just whether the run belongs
+ * to this user. Returns null (never throws) if the assessment doesn't
+ * exist or isn't owned by userId -- never leaks an assessment id's
+ * existence to a non-owner.
+ */
+export async function getImpactAssessmentForUser(
+  db: Database,
+  userId: string,
+  impactAssessmentId: string,
+): Promise<ImpactAssessmentForRemediation | null> {
+  const [row] = await db
+    .select({
+      id: schema.impactAssessments.id,
+      status: schema.impactAssessments.status,
+      predicateKind: schema.ruleVersions.predicateKind,
+      repositoryOwner: schema.repositories.owner,
+      repositoryName: schema.repositories.name,
+      githubInstallationId: schema.githubInstallations.githubInstallationId,
+      commitSha: schema.repositorySnapshots.commitSha,
+    })
+    .from(schema.impactAssessments)
+    .innerJoin(
+      schema.ruleVersions,
+      eq(schema.impactAssessments.ruleVersionId, schema.ruleVersions.id),
+    )
+    .innerJoin(
+      schema.analysisRuns,
+      eq(schema.impactAssessments.analysisRunId, schema.analysisRuns.id),
+    )
+    .innerJoin(
+      schema.repositorySnapshots,
+      eq(schema.analysisRuns.repositorySnapshotId, schema.repositorySnapshots.id),
+    )
+    .innerJoin(
+      schema.repositories,
+      eq(schema.repositorySnapshots.repositoryId, schema.repositories.id),
+    )
+    .innerJoin(
+      schema.githubInstallations,
+      eq(schema.repositories.installationId, schema.githubInstallations.id),
+    )
+    .where(
+      and(
+        eq(schema.impactAssessments.id, impactAssessmentId),
+        eq(schema.githubInstallations.connectedByUserId, userId),
+      ),
+    )
+    .limit(1);
+
+  if (!row) return null;
+
+  const findingRows = await db
+    .select()
+    .from(schema.impactFindings)
+    .where(eq(schema.impactFindings.impactAssessmentId, impactAssessmentId));
+
+  return {
+    ...row,
+    findings: findingRows.map((finding) => ({
+      workspacePath: finding.workspacePath,
+      sourceFile: finding.sourceFile,
+      line: finding.line,
+      matchedSymbol: finding.matchedSymbol,
+    })),
+  };
+}
+
 export interface AssessmentDetail {
   id: string;
   status: string;
@@ -80,6 +163,7 @@ export interface AssessmentDetail {
   providerChangeTitle: string;
   providerChangeSourceUrl: string;
   migrationRequirement: string;
+  predicateKind: string;
 }
 
 export interface AnalysisRunDetail {
@@ -155,6 +239,7 @@ export async function getAnalysisRunDetail(
       providerChangeTitle: schema.providerChanges.title,
       providerChangeSourceUrl: schema.providerChanges.sourceUrl,
       migrationRequirement: schema.ruleVersions.migrationRequirement,
+      predicateKind: schema.ruleVersions.predicateKind,
     })
     .from(schema.impactAssessments)
     .innerJoin(
@@ -199,6 +284,7 @@ export async function getAnalysisRunDetail(
       providerChangeTitle: row.providerChangeTitle,
       providerChangeSourceUrl: row.providerChangeSourceUrl,
       migrationRequirement: row.migrationRequirement,
+      predicateKind: row.predicateKind,
     })),
   };
 }

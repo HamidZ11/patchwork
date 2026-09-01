@@ -38,8 +38,27 @@ declare module 'stripe' {
   // present at tag v17.7.0, absent at v18.0.0 (replaced by createPreview).
   // Invoice.subscription present at v17.7.0, absent at v18.0.0 (replaced
   // by invoice.parent.subscription_details.subscription).
+  // Verified against stripe-node types/Invoices.d.ts at tag v18.0.0:
+  // \`parent: Invoice.Parent | null\`, \`Parent.subscription_details:
+  // Parent.SubscriptionDetails | null\`, \`SubscriptionDetails.subscription:
+  // string | Stripe.Subscription\` (not itself nullable -- only reachable
+  // once subscription_details is non-null). Used only to independently
+  // prove the *replacement* pattern's Stripe provenance after a Rule B
+  // remediation rewrite (see remediation/recipes/) -- distinct interface
+  // from StripeInvoice so the two \`.subscription\` properties resolve to
+  // different declarations and are never conflated by a postcondition
+  // check.
+  interface StripeInvoiceSubscriptionDetails {
+    subscription: string;
+  }
+
+  interface StripeInvoiceParent {
+    subscription_details: StripeInvoiceSubscriptionDetails | null;
+  }
+
   interface StripeInvoice {
     subscription: string | null;
+    parent: StripeInvoiceParent | null;
   }
 
   interface StripeInvoicesResource {

@@ -10,6 +10,7 @@ import { registerAuthRoutes } from './routes/auth.js';
 import { registerGitHubRoutes } from './routes/github.js';
 import { registerHealthRoutes } from './routes/health.js';
 import { registerImpactAssessmentsRoutes } from './routes/impact-assessments.js';
+import { registerPatchAttemptsRoutes } from './routes/patch-attempts.js';
 import { registerReadyRoutes } from './routes/ready.js';
 
 export interface AppDeps {
@@ -75,6 +76,11 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     githubAppAuth: deps.githubAppAuth,
   });
   registerImpactAssessmentsRoutes(app, {
+    db: deps.db.db,
+    githubClient: deps.githubClient,
+    githubAppAuth: deps.githubAppAuth,
+  });
+  registerPatchAttemptsRoutes(app, {
     db: deps.db.db,
     githubClient: deps.githubClient,
     githubAppAuth: deps.githubAppAuth,

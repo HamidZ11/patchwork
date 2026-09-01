@@ -10,6 +10,8 @@ import {
   upsertProviderChangeAndRuleVersion,
 } from '../analysis/impact-persistence.js';
 import { requireAuth } from '../plugins/session.js';
+import { getPatchAttemptsForAssessments } from '../remediation/persistence.js';
+import { findRecipeForPredicateKind } from '../remediation/registry.js';
 
 export interface ImpactAssessmentsRoutesDeps {
   db: Database;
@@ -113,7 +115,23 @@ export function registerImpactAssessmentsRoutes(
       if (!run) {
         return reply.status(404).send({ error: 'Not Found', message: 'Analysis run not found.' });
       }
-      return reply.send({ analysisRun: run });
+
+      const patchAttemptsByAssessment = await getPatchAttemptsForAssessments(
+        deps.db,
+        run.assessments.map((assessment) => assessment.id),
+      );
+
+      return reply.send({
+        analysisRun: {
+          ...run,
+          assessments: run.assessments.map((assessment) => ({
+            ...assessment,
+            remediationSupported:
+              findRecipeForPredicateKind(assessment.predicateKind) !== undefined,
+            patchAttempts: patchAttemptsByAssessment.get(assessment.id) ?? [],
+          })),
+        },
+      });
     },
   );
 }

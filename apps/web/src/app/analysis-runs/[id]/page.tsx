@@ -34,6 +34,23 @@ interface WorkspaceCoverage {
   ambiguousReferences: AmbiguousReference[];
 }
 
+interface PostconditionCheck {
+  name: string;
+  passed: boolean;
+  detail: string;
+}
+
+interface PatchAttempt {
+  id: string;
+  status: 'GENERATED' | 'REFUSED' | 'FAILED';
+  refusalReason: string | null;
+  failureReason: string | null;
+  changedFiles: string[];
+  diff: string | null;
+  postconditionResult: PostconditionCheck[] | null;
+  createdAt: string;
+}
+
 interface AssessmentDetail {
   id: string;
   status: 'AFFECTED' | 'NOT_AFFECTED' | 'UNCERTAIN';
@@ -43,6 +60,9 @@ interface AssessmentDetail {
   providerChangeTitle: string;
   providerChangeSourceUrl: string;
   migrationRequirement: string;
+  predicateKind: string;
+  remediationSupported: boolean;
+  patchAttempts: PatchAttempt[];
 }
 
 interface AnalysisRunDetail {
@@ -73,6 +93,12 @@ const STATUS_LABEL: Record<AssessmentDetail['status'], string> = {
   UNCERTAIN: 'Uncertain',
   NOT_AFFECTED: 'Not affected',
 };
+
+async function prepareFix(assessmentId: string, analysisRunId: string) {
+  'use server';
+  await apiFetch(`/impact-assessments/${assessmentId}/patch-attempts`, { method: 'POST' });
+  redirect(`/analysis-runs/${analysisRunId}`);
+}
 
 function ExternalLinkIcon() {
   return (
@@ -144,8 +170,94 @@ function CoverageDetail({ workspaces }: { workspaces: WorkspaceCoverage[] }) {
   );
 }
 
-function AssessmentBlock({ assessment }: { assessment: AssessmentDetail }) {
+function diffLineClassName(line: string): string {
+  if (line.startsWith('+++') || line.startsWith('---')) return 'text-zinc-500 dark:text-zinc-500';
+  if (line.startsWith('+')) return 'text-emerald-700 dark:text-emerald-400';
+  if (line.startsWith('-')) return 'text-rose-700 dark:text-rose-400';
+  if (line.startsWith('@@')) return 'text-zinc-500 dark:text-zinc-500';
+  return 'text-zinc-600 dark:text-zinc-400';
+}
+
+function DiffBlock({ diff }: { diff: string }) {
+  return (
+    <pre className="overflow-x-auto rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2 font-mono text-xs leading-relaxed dark:border-zinc-800 dark:bg-zinc-900">
+      {diff
+        .split('\n')
+        .filter((line) => line.length > 0)
+        .map((line, index) => (
+          <div key={index} className={diffLineClassName(line)}>
+            {line}
+          </div>
+        ))}
+    </pre>
+  );
+}
+
+function PatchAttemptResult({ attempt }: { attempt: PatchAttempt }) {
+  if (attempt.status === 'REFUSED') {
+    return (
+      <div className="mt-2 flex flex-col gap-1">
+        <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
+          Automatic fix not supported for this usage.
+        </span>
+        {attempt.refusalReason && (
+          <span className="text-xs text-zinc-500 dark:text-zinc-500">{attempt.refusalReason}</span>
+        )}
+      </div>
+    );
+  }
+
+  if (attempt.status === 'FAILED') {
+    return (
+      <div className="mt-2 flex flex-col gap-1">
+        <span className="text-xs font-medium text-amber-700 dark:text-amber-400">
+          Could not generate a verified fix.
+        </span>
+        {attempt.failureReason && (
+          <span className="text-xs text-zinc-500 dark:text-zinc-500">{attempt.failureReason}</span>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-2 flex flex-col gap-2">
+      <span className="text-xs font-medium text-emerald-700 dark:text-emerald-400">
+        Verified candidate fix
+      </span>
+      <span className="text-xs text-zinc-500 dark:text-zinc-400">
+        Changed: {attempt.changedFiles.join(', ')}
+      </span>
+      {attempt.diff && <DiffBlock diff={attempt.diff} />}
+      {attempt.postconditionResult && attempt.postconditionResult.length > 0 && (
+        <div className="flex flex-col gap-0.5">
+          {attempt.postconditionResult.map((check) => (
+            <span
+              key={check.name}
+              className={`text-xs ${
+                check.passed
+                  ? 'text-zinc-500 dark:text-zinc-400'
+                  : 'text-amber-700 dark:text-amber-400'
+              }`}
+            >
+              {check.passed ? '✓' : '✗'} {check.name}
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AssessmentBlock({
+  assessment,
+  analysisRunId,
+}: {
+  assessment: AssessmentDetail;
+  analysisRunId: string;
+}) {
   const style = STATUS_STYLE[assessment.status];
+  const latestAttempt = assessment.patchAttempts[0];
 
   return (
     <div className="flex flex-col gap-2 py-4">
@@ -197,6 +309,20 @@ function AssessmentBlock({ assessment }: { assessment: AssessmentDetail }) {
           <p className="mt-1 font-mono text-xs leading-relaxed whitespace-pre-wrap text-zinc-700 dark:text-zinc-300">
             {assessment.migrationRequirement}
           </p>
+        </div>
+      )}
+
+      {assessment.status === 'AFFECTED' && assessment.remediationSupported && (
+        <div className="mt-1">
+          <form action={prepareFix.bind(null, assessment.id, analysisRunId)}>
+            <button
+              type="submit"
+              className="rounded-md border border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-700 transition-colors hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-900"
+            >
+              Prepare fix
+            </button>
+          </form>
+          {latestAttempt && <PatchAttemptResult attempt={latestAttempt} />}
         </div>
       )}
     </div>
@@ -261,7 +387,11 @@ export default async function AnalysisRunPage({ params }: { params: Promise<{ id
           </p>
         ) : (
           assessments.map((assessment) => (
-            <AssessmentBlock key={assessment.id} assessment={assessment} />
+            <AssessmentBlock
+              key={assessment.id}
+              assessment={assessment}
+              analysisRunId={analysisRun.id}
+            />
           ))
         )}
       </div>

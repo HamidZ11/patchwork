@@ -36,6 +36,13 @@
       "when": 1788184966349,
       "tag": "0004_dark_leo",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1788254333935,
+      "tag": "0005_good_lightspeed",
+      "breakpoints": true
     }
   ]
 }

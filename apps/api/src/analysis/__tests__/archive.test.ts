@@ -49,7 +49,14 @@ describe('withExtractedArchive', () => {
 
     await withArchivePath(archive, (archivePath) => withExtractedArchive(archivePath, (r) => r));
 
-    expect(await tempDirCountUnder('patchwork-archive-')).toBe(before);
+    // Polled, not a single point-in-time read: other test files run
+    // concurrently and legitimately create/remove their own
+    // patchwork-archive-* temp dirs via this same function (e.g.
+    // remediation/), so a single snapshot can race against another
+    // file's own in-flight cleanup. This still proves *this* call cleans
+    // up -- it just tolerates a brief window for unrelated concurrent
+    // activity to finish its own cleanup too.
+    await expect.poll(() => tempDirCountUnder('patchwork-archive-')).toBe(before);
   });
 
   it('cleans up its temp directory even when the handler throws', async () => {
@@ -64,7 +71,7 @@ describe('withExtractedArchive', () => {
       ),
     ).rejects.toThrow('handler failed');
 
-    expect(await tempDirCountUnder('patchwork-archive-')).toBe(before);
+    await expect.poll(() => tempDirCountUnder('patchwork-archive-')).toBe(before);
   });
 
   it('does not extract a maliciously crafted path-traversal entry outside the temp directory', async () => {

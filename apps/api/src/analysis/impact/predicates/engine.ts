@@ -5,7 +5,8 @@ import { STRIPE_TYPE_STUB_CONTENT, STRIPE_TYPE_STUB_PATH } from '../stripe-type-
 import type { Finding } from '../types.js';
 
 const SOURCE_EXTENSIONS = new Set(['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs']);
-const TSCONFIG_BASENAME_PATTERN = /^tsconfig(\.[\w-]+)?\.json$/;
+/** Exported so callers building a Program outside a full scan (remediation/) can pre-filter the same tsconfig files this engine looks for. */
+export const TSCONFIG_BASENAME_PATTERN = /^tsconfig(\.[\w-]+)?\.json$/;
 
 /**
  * Type flags treated as "genuinely can't be resolved either way" by every
@@ -133,6 +134,34 @@ function createInMemoryCompilerHost(files: Map<string, string>): ts.CompilerHost
 }
 
 /**
+ * Builds the same bounded, in-memory, per-file Program that every
+ * predicate scan uses -- exported so callers outside impact analysis
+ * (specifically remediation/, which needs the actual `ts.SourceFile` and
+ * `ts.TypeChecker` for a rewrite, not just the serializable `Finding[]`
+ * a PredicateVisitor returns) build against the exact same stub/options
+ * construction, never a second, potentially-diverging implementation of
+ * "how do we parse this file against the trusted Stripe stub."
+ */
+export function buildProgramForFile(
+  file: ExtractedFile,
+  tsconfigFiles: ExtractedFile[],
+): { program: ts.Program; sourceFile: ts.SourceFile } | null {
+  const compilerOptions = buildCompilerOptions(file.path, tsconfigFiles);
+  const fileMap = new Map<string, string>([
+    [STRIPE_TYPE_STUB_PATH, STRIPE_TYPE_STUB_CONTENT],
+    [file.path, file.content],
+  ]);
+  const program = ts.createProgram({
+    rootNames: [STRIPE_TYPE_STUB_PATH, file.path],
+    options: compilerOptions,
+    host: createInMemoryCompilerHost(fileMap),
+  });
+
+  const sourceFile = program.getSourceFile(file.path);
+  return sourceFile ? { program, sourceFile } : null;
+}
+
+/**
  * Scans every extracted source file matching `prefilter` (a cheap lexical
  * check on raw file text, applied before ever building a Program --
  * candidate discovery only, never decisive) with `visitor` (the real
@@ -179,24 +208,17 @@ export function scanFilesWithVisitor(
     bucket.sourceFilesScanned += 1;
 
     try {
-      const compilerOptions = buildCompilerOptions(file.path, tsconfigFiles);
-      const fileMap = new Map<string, string>([
-        [STRIPE_TYPE_STUB_PATH, STRIPE_TYPE_STUB_CONTENT],
-        [file.path, file.content],
-      ]);
-      const program = ts.createProgram({
-        rootNames: [STRIPE_TYPE_STUB_PATH, file.path],
-        options: compilerOptions,
-        host: createInMemoryCompilerHost(fileMap),
-      });
-
-      const sourceFile = program.getSourceFile(file.path);
-      if (!sourceFile) {
+      const built = buildProgramForFile(file, tsconfigFiles);
+      if (!built) {
         bucket.filesFailedToLoad.push(file.path);
         continue;
       }
 
-      const { matches, ambiguous } = visitor(sourceFile, program.getTypeChecker(), workspacePath);
+      const { matches, ambiguous } = visitor(
+        built.sourceFile,
+        built.program.getTypeChecker(),
+        workspacePath,
+      );
       bucket.matches.push(...matches);
       bucket.ambiguousReferences.push(...ambiguous);
     } catch {
