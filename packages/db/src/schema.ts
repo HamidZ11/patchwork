@@ -351,3 +351,84 @@ export const patchAttempts = pgTable('patch_attempts', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   completedAt: timestamp('completed_at', { withTimezone: true }),
 });
+
+/**
+ * One attempt to execute a GENERATED PatchAttempt in an isolated sandbox
+ * and determine whether it survives a bounded, deterministic verification
+ * plan (install -> typecheck -> test) -- a separate concept from
+ * PatchAttempt on purpose: static postcondition success (PatchAttempt's
+ * own status) is never runtime verification success. PASSED is reserved
+ * exclusively for a completed sandbox VerificationRun; PatchAttempt.status
+ * is never overloaded or reused here. Audit-log style like PatchAttempt/
+ * AnalysisRun, never upserted -- a retry is a new row, never a mutation of
+ * a historical result (same immutable inputs can legitimately produce a
+ * different outcome due to infra flakiness or registry-side changes).
+ *
+ * claimed_by/claimed_at/lease_expires_at exist so a worker crash mid-run
+ * cannot leave a row permanently RUNNING: the worker claims a PENDING row
+ * with a bounded lease (see apps/worker's verification/queue.ts), and a
+ * lease that expires before completion is recoverable by any worker,
+ * classified INFRA_ERROR rather than silently stuck forever. This is a
+ * lease, not a distributed queue framework -- Postgres `SELECT ... FOR
+ * UPDATE SKIP LOCKED` is the only new mechanism.
+ *
+ * `manifest` is the exact resolved VerificationManifest used (small,
+ * bounded, server-generated only -- never accepted from client input),
+ * persisted for reproducibility/audit alongside the individual identity
+ * fields a reader would otherwise have to reconstruct from it.
+ */
+export const verificationRuns = pgTable('verification_runs', {
+  id: uuid('id')
+    .primaryKey()
+    .$defaultFn(() => crypto.randomUUID()),
+  patchAttemptId: uuid('patch_attempt_id')
+    .notNull()
+    .references(() => patchAttempts.id, { onDelete: 'cascade' }),
+  status: text('status').notNull(), // PENDING | RUNNING | PASSED | FAILED | REFUSED | TIMED_OUT | INFRA_ERROR
+  failureCategory: text('failure_category'), // CUSTOMER_REPO_FAILURE | PATCH_FAILURE | POLICY_REFUSAL | SANDBOX_INFRA_FAILURE | TIMEOUT
+  failureReason: text('failure_reason'),
+  manifestVersion: text('manifest_version'),
+  manifest: jsonb('manifest'),
+  sandboxProvider: text('sandbox_provider'),
+  sandboxRuntime: text('sandbox_runtime'),
+  nodeVersion: text('node_version'),
+  nodeVersionSource: text('node_version_source'), // e.g. 'repository' | 'patchwork_default'
+  packageManager: text('package_manager'),
+  resultSummary: jsonb('result_summary'),
+  claimedBy: text('claimed_by'),
+  claimedAt: timestamp('claimed_at', { withTimezone: true }),
+  leaseExpiresAt: timestamp('lease_expires_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  startedAt: timestamp('started_at', { withTimezone: true }),
+  completedAt: timestamp('completed_at', { withTimezone: true }),
+});
+
+/**
+ * One executed step within a VerificationRun (patch_apply, install,
+ * typecheck, test) -- real bounded child rows, matching impact_findings'
+ * precedent, not a JSONB array: a small, known-bounded count per run (at
+ * most 4 today). stdout/stderr are hard-capped (see
+ * apps/worker/src/verification/output.ts) before ever reaching this
+ * table -- never unbounded logs in PostgreSQL. ON DELETE CASCADE from
+ * verification_runs -- a step without its run is meaningless.
+ */
+export const verificationSteps = pgTable('verification_steps', {
+  id: uuid('id')
+    .primaryKey()
+    .$defaultFn(() => crypto.randomUUID()),
+  verificationRunId: uuid('verification_run_id')
+    .notNull()
+    .references(() => verificationRuns.id, { onDelete: 'cascade' }),
+  sequence: integer('sequence').notNull(),
+  kind: text('kind').notNull(), // patch_apply | install | typecheck | test
+  command: text('command').notNull(),
+  status: text('status').notNull(), // PASSED | FAILED | TIMED_OUT | SKIPPED
+  exitCode: integer('exit_code'),
+  timedOut: boolean('timed_out').notNull().default(false),
+  durationMs: integer('duration_ms'),
+  stdoutExcerpt: text('stdout_excerpt'),
+  stderrExcerpt: text('stderr_excerpt'),
+  truncated: boolean('truncated').notNull().default(false),
+  startedAt: timestamp('started_at', { withTimezone: true }),
+  completedAt: timestamp('completed_at', { withTimezone: true }),
+});

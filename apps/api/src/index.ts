@@ -5,8 +5,7 @@ import { loadEnv } from '@patchwork/config';
 import { createDbClient } from '@patchwork/db';
 import { buildApp } from './app.js';
 import { loadApiConfig } from './config.js';
-import { createGitHubAppAuth } from './github/auth.js';
-import { createGitHubClient } from './github/client.js';
+import { createGitHubAppAuth, createGitHubClient } from '@patchwork/github';
 import { resolveCookiePolicy } from './plugins/cookies.js';
 
 // Local dev only -- in production, real environment variables are injected

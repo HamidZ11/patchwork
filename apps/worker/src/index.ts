@@ -4,6 +4,9 @@ import { config as loadDotenv } from 'dotenv';
 import pino from 'pino';
 import { loadEnv } from '@patchwork/config';
 import { createDbClient } from '@patchwork/db';
+import { createGitHubAppAuth, createGitHubClient } from '@patchwork/github';
+import { loadWorkerConfig } from './config.js';
+import { createE2bSandboxRunner } from './verification/e2b-sandbox-runner.js';
 import { createWorker } from './worker.js';
 
 // Local dev only -- in production, real environment variables are injected
@@ -13,9 +16,22 @@ loadDotenv({
 });
 
 const env = loadEnv();
+const workerConfig = loadWorkerConfig();
 const logger = pino({ level: env.LOG_LEVEL, name: 'worker' });
 const db = createDbClient(env.DATABASE_URL);
-const worker = createWorker({ db, logger });
+
+const worker = createWorker({
+  db,
+  logger,
+  githubClient: createGitHubClient(),
+  githubAppAuth: createGitHubAppAuth({
+    appId: workerConfig.github.appId,
+    privateKey: workerConfig.github.privateKey,
+    clientId: workerConfig.github.clientId,
+    clientSecret: workerConfig.github.clientSecret,
+  }),
+  sandboxRunner: createE2bSandboxRunner(workerConfig.e2bApiKey),
+});
 
 async function shutdown(signal: string): Promise<void> {
   logger.info({ signal }, 'shutting down');

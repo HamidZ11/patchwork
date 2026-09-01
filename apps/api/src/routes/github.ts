@@ -1,7 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import type { Database } from '@patchwork/db';
-import type { GitHubClient } from '../github/client.js';
-import type { GitHubAppAuth } from '../github/auth.js';
+import type { GitHubAppAuth, GitHubClient } from '@patchwork/github';
 import { syncInstallation } from '../github/installations.js';
 import {
   getRepositoriesForUser,

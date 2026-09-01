@@ -1,6 +1,6 @@
 import { eq } from 'drizzle-orm';
 import { schema, type Database } from '@patchwork/db';
-import type { GitHubUserProfile } from '../github/client.js';
+import type { GitHubUserProfile } from '@patchwork/github';
 
 export interface PatchworkUser {
   id: string;

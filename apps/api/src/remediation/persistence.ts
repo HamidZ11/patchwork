@@ -1,4 +1,4 @@
-import { desc, inArray } from 'drizzle-orm';
+import { and, desc, eq, inArray } from 'drizzle-orm';
 import { schema, type Database } from '@patchwork/db';
 import type { GeneratePatchAttemptResult } from './types.js';
 
@@ -75,4 +75,56 @@ export async function getPatchAttemptsForAssessments(
     result.set(row.impactAssessmentId, list);
   }
   return result;
+}
+
+export interface PatchAttemptOwnershipRow {
+  id: string;
+  status: string;
+}
+
+/**
+ * Looks up a PatchAttempt by id, scoped to installations the given user
+ * connected -- same ownership-join pattern as getImpactAssessmentForUser,
+ * extended one hop further (patch_attempts -> impact_assessments).
+ * Returns null (never throws) if the attempt doesn't exist or isn't
+ * owned by userId -- never leaks a patch attempt id's existence to a
+ * non-owner.
+ */
+export async function getPatchAttemptForUser(
+  db: Database,
+  userId: string,
+  patchAttemptId: string,
+): Promise<PatchAttemptOwnershipRow | null> {
+  const [row] = await db
+    .select({ id: schema.patchAttempts.id, status: schema.patchAttempts.status })
+    .from(schema.patchAttempts)
+    .innerJoin(
+      schema.impactAssessments,
+      eq(schema.patchAttempts.impactAssessmentId, schema.impactAssessments.id),
+    )
+    .innerJoin(
+      schema.analysisRuns,
+      eq(schema.impactAssessments.analysisRunId, schema.analysisRuns.id),
+    )
+    .innerJoin(
+      schema.repositorySnapshots,
+      eq(schema.analysisRuns.repositorySnapshotId, schema.repositorySnapshots.id),
+    )
+    .innerJoin(
+      schema.repositories,
+      eq(schema.repositorySnapshots.repositoryId, schema.repositories.id),
+    )
+    .innerJoin(
+      schema.githubInstallations,
+      eq(schema.repositories.installationId, schema.githubInstallations.id),
+    )
+    .where(
+      and(
+        eq(schema.patchAttempts.id, patchAttemptId),
+        eq(schema.githubInstallations.connectedByUserId, userId),
+      ),
+    )
+    .limit(1);
+
+  return row ?? null;
 }

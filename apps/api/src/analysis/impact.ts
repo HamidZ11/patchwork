@@ -1,8 +1,7 @@
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { GitHubAppAuth } from '../github/auth.js';
-import type { GitHubClient } from '../github/client.js';
+import type { GitHubAppAuth, GitHubClient } from '@patchwork/github';
 import { withExtractedArchive } from './archive.js';
 import type { StripeEvidence } from './evidence/types.js';
 import { assessRuleImpact } from './impact/assess.js';

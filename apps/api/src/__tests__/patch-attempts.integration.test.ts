@@ -5,7 +5,7 @@ import { createDbClient, schema, type DbClient } from '@patchwork/db';
 import { buildApp } from '../app.js';
 import { createSession } from '../auth/sessions.js';
 import { findOrCreateUserByGitHubProfile } from '../auth/users.js';
-import type { GitHubInstallationInfo, GitHubRepository } from '../github/client.js';
+import type { GitHubInstallationInfo, GitHubRepository } from '@patchwork/github';
 import { upsertInstallationAndRepositories } from '../github/persistence.js';
 import { STRIPE_BASIL_INVOICE_SUBSCRIPTION_RULE } from '../analysis/impact/rules/stripe-basil-invoice-subscription.js';
 import { STRIPE_BASIL_RETRIEVE_UPCOMING_RULE } from '../analysis/impact/rules/stripe-basil-retrieve-upcoming.js';

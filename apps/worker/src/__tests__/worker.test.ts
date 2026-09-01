@@ -1,7 +1,9 @@
 import pino from 'pino';
 import { describe, expect, it, vi } from 'vitest';
 import type { DbClient } from '@patchwork/db';
-import { createWorker } from '../worker.js';
+import type { GitHubAppAuth, GitHubClient } from '@patchwork/github';
+import { createFakeSandboxRunner } from '../verification/__tests__/fake-sandbox-runner.js';
+import { createWorker, type WorkerDeps } from '../worker.js';
 
 function fakeDbClient(): DbClient {
   return {
@@ -11,22 +13,34 @@ function fakeDbClient(): DbClient {
   };
 }
 
+function baseDeps(overrides: Partial<WorkerDeps> = {}): WorkerDeps {
+  return {
+    db: fakeDbClient(),
+    logger: pino({ level: 'silent' }),
+    githubClient: {} as GitHubClient,
+    githubAppAuth: {} as GitHubAppAuth,
+    sandboxRunner: createFakeSandboxRunner(),
+    ...overrides,
+  };
+}
+
 describe('createWorker', () => {
   it('pings the database on start', async () => {
-    const db = fakeDbClient();
-    const worker = createWorker({ db, logger: pino({ level: 'silent' }) });
+    const deps = baseDeps();
+    const worker = createWorker(deps);
 
     await worker.start();
+    await worker.stop();
 
-    expect(db.ping).toHaveBeenCalledOnce();
+    expect(deps.db.ping).toHaveBeenCalledOnce();
   });
 
   it('closes the database on stop', async () => {
-    const db = fakeDbClient();
-    const worker = createWorker({ db, logger: pino({ level: 'silent' }) });
+    const deps = baseDeps();
+    const worker = createWorker(deps);
 
     await worker.stop();
 
-    expect(db.close).toHaveBeenCalledOnce();
+    expect(deps.db.close).toHaveBeenCalledOnce();
   });
 });

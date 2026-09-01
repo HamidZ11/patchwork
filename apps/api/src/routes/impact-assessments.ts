@@ -1,7 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import type { Database } from '@patchwork/db';
-import type { GitHubAppAuth } from '../github/auth.js';
-import type { GitHubClient } from '../github/client.js';
+import type { GitHubAppAuth, GitHubClient } from '@patchwork/github';
 import { assessAllRulesImpact } from '../analysis/impact.js';
 import {
   getAnalysisRunDetail,

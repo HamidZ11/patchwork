@@ -1,8 +1,7 @@
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { GitHubAppAuth } from '../github/auth.js';
-import type { GitHubClient } from '../github/client.js';
+import type { GitHubAppAuth, GitHubClient } from '@patchwork/github';
 import { withExtractedArchive, type ExtractedFile } from './archive.js';
 import { scanForClientVersionEvidence } from './evidence/api-version.js';
 import { resolveStripeVersions } from './evidence/lockfiles.js';

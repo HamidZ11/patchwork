@@ -1,8 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import type { Database } from '@patchwork/db';
 import { getImpactAssessmentForUser } from '../analysis/impact-persistence.js';
-import type { GitHubAppAuth } from '../github/auth.js';
-import type { GitHubClient } from '../github/client.js';
+import type { GitHubAppAuth, GitHubClient } from '@patchwork/github';
 import { generatePatchAttempt } from '../remediation/generate.js';
 import { createPatchAttempt } from '../remediation/persistence.js';
 import { findRecipeForPredicateKind } from '../remediation/registry.js';

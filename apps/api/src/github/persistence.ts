@@ -1,6 +1,6 @@
 import { eq } from 'drizzle-orm';
 import { schema, type Database } from '@patchwork/db';
-import type { GitHubInstallationInfo, GitHubRepository } from './client.js';
+import type { GitHubInstallationInfo, GitHubRepository } from '@patchwork/github';
 
 export interface StoredRepository {
   id: string;

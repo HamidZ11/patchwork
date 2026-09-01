@@ -1,5 +1,4 @@
-import type { GitHubClient } from '../github/client.js';
-import type { GitHubAppAuth } from '../github/auth.js';
+import type { GitHubAppAuth, GitHubClient } from '@patchwork/github';
 
 export interface ResolvedSnapshot {
   commitSha: string;

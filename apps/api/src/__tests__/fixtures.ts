@@ -1,8 +1,7 @@
 import { writeFile } from 'node:fs/promises';
 import type { Database, DbClient } from '@patchwork/db';
 import type { AppDeps } from '../app.js';
-import type { GitHubAppAuth } from '../github/auth.js';
-import type { GitHubClient } from '../github/client.js';
+import type { GitHubAppAuth, GitHubClient } from '@patchwork/github';
 import { buildFixtureArchive } from './build-fixture-archive.js';
 
 /**

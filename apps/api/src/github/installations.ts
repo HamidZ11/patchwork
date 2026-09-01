@@ -1,5 +1,9 @@
-import type { GitHubClient, GitHubInstallationInfo, GitHubRepository } from './client.js';
-import type { GitHubAppAuth } from './auth.js';
+import type {
+  GitHubAppAuth,
+  GitHubClient,
+  GitHubInstallationInfo,
+  GitHubRepository,
+} from '@patchwork/github';
 
 export interface InstallationSyncResult {
   installation: GitHubInstallationInfo;

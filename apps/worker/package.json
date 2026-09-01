@@ -9,15 +9,25 @@
     "start": "node dist/index.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint .",
-    "test": "vitest run"
+    "test": "vitest run",
+    "build-e2b-template": "tsx src/verification/e2b-template.ts"
   },
   "dependencies": {
+    "@patchwork/archive": "workspace:*",
     "@patchwork/config": "workspace:*",
     "@patchwork/db": "workspace:*",
+    "@patchwork/github": "workspace:*",
     "dotenv": "^16.4.7",
-    "pino": "^9.6.0"
+    "drizzle-orm": "^0.38.4",
+    "e2b": "^2.46.1",
+    "pino": "^9.6.0",
+    "semver": "^7.6.3",
+    "yaml": "^2.9.0",
+    "zod": "^3.24.1"
   },
   "devDependencies": {
+    "@types/semver": "^7.5.8",
+    "tar": "^7.5.22",
     "tsx": "^4.19.2",
     "typescript": "^5.7.3",
     "vitest": "^3.0.5"

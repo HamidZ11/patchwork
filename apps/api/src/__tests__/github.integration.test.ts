@@ -5,7 +5,7 @@ import { createDbClient, schema, type DbClient } from '@patchwork/db';
 import { buildApp } from '../app.js';
 import { createSession } from '../auth/sessions.js';
 import { findOrCreateUserByGitHubProfile } from '../auth/users.js';
-import type { GitHubInstallationInfo, GitHubRepository } from '../github/client.js';
+import type { GitHubInstallationInfo, GitHubRepository } from '@patchwork/github';
 import { fakeGitHubAppAuth, fakeGitHubClient, testAppDeps, uniqueGithubId } from './fixtures.js';
 
 function extractCookie(setCookieHeader: string | string[] | undefined, name: string): string {

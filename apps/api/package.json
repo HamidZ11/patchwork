@@ -13,9 +13,9 @@
     "benchmark": "tsx src/benchmark/cli.ts"
   },
   "dependencies": {
-    "@octokit/auth-app": "^7.1.5",
     "@patchwork/config": "workspace:*",
     "@patchwork/db": "workspace:*",
+    "@patchwork/github": "workspace:*",
     "diff": "^7.0.0",
     "dotenv": "^16.4.7",
     "drizzle-orm": "^0.38.4",

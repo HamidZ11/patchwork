@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import type { Database } from '@patchwork/db';
-import type { GitHubClient } from '../github/client.js';
+import type { GitHubClient } from '@patchwork/github';
 import { findOrCreateUserByGitHubProfile } from '../auth/users.js';
 import { createSession, deleteSession } from '../auth/sessions.js';
 import { clearCookie, getCookie, setCookie, type CookiePolicy } from '../plugins/cookies.js';
