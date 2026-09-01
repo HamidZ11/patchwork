@@ -1,7 +1,12 @@
 import { and, eq, inArray } from 'drizzle-orm';
 import { schema, type Database } from '@patchwork/db';
 import type { StripeEvidence } from './evidence/types.js';
-import type { Finding, ImpactAssessmentResult, ProviderChangeDefinition } from './impact/types.js';
+import type {
+  Finding,
+  ImpactAssessmentResult,
+  ImpactCoverage,
+  ProviderChangeDefinition,
+} from './impact/types.js';
 
 export interface AnalysisRunForImpactAssessment {
   id: string;
@@ -64,6 +69,138 @@ export async function getAnalysisRunForUser(
 
   if (!row) return null;
   return { ...row, evidence: (row.evidence as StripeEvidence | null) ?? null };
+}
+
+export interface AssessmentDetail {
+  id: string;
+  status: string;
+  reason: string;
+  coverage: ImpactCoverage;
+  findings: Finding[];
+  providerChangeTitle: string;
+  providerChangeSourceUrl: string;
+  migrationRequirement: string;
+}
+
+export interface AnalysisRunDetail {
+  id: string;
+  status: string;
+  startedAt: Date;
+  completedAt: Date | null;
+  repositoryFullName: string;
+  commitSha: string;
+  evidence: StripeEvidence | null;
+  assessments: AssessmentDetail[];
+}
+
+/**
+ * Full detail for one AnalysisRun, for the impact-detail page -- the
+ * read-only counterpart to triggering an assessment. Same ownership
+ * join/scoping as getAnalysisRunForUser (never leaks a run id's
+ * existence to a non-owner), extended with every persisted
+ * ImpactAssessment for the run: status, reason, the full per-workspace
+ * `coverage` breakdown (already collected and persisted, never returned
+ * by any route until now), findings, and each rule's ProviderChange/
+ * RuleVersion identity -- everything the UI needs to explain *why* a
+ * verdict landed where it did, not just what the verdict was.
+ */
+export async function getAnalysisRunDetail(
+  db: Database,
+  userId: string,
+  analysisRunId: string,
+): Promise<AnalysisRunDetail | null> {
+  const [run] = await db
+    .select({
+      id: schema.analysisRuns.id,
+      status: schema.analysisRuns.status,
+      startedAt: schema.analysisRuns.startedAt,
+      completedAt: schema.analysisRuns.completedAt,
+      repositoryFullName: schema.repositories.fullName,
+      commitSha: schema.repositorySnapshots.commitSha,
+      evidence: schema.analysisEvidence.evidence,
+    })
+    .from(schema.analysisRuns)
+    .innerJoin(
+      schema.repositorySnapshots,
+      eq(schema.analysisRuns.repositorySnapshotId, schema.repositorySnapshots.id),
+    )
+    .innerJoin(
+      schema.repositories,
+      eq(schema.repositorySnapshots.repositoryId, schema.repositories.id),
+    )
+    .innerJoin(
+      schema.githubInstallations,
+      eq(schema.repositories.installationId, schema.githubInstallations.id),
+    )
+    .leftJoin(
+      schema.analysisEvidence,
+      eq(schema.analysisEvidence.analysisRunId, schema.analysisRuns.id),
+    )
+    .where(
+      and(
+        eq(schema.analysisRuns.id, analysisRunId),
+        eq(schema.githubInstallations.connectedByUserId, userId),
+      ),
+    )
+    .limit(1);
+
+  if (!run) return null;
+
+  const assessmentRows = await db
+    .select({
+      id: schema.impactAssessments.id,
+      status: schema.impactAssessments.status,
+      reason: schema.impactAssessments.reason,
+      coverage: schema.impactAssessments.coverage,
+      providerChangeTitle: schema.providerChanges.title,
+      providerChangeSourceUrl: schema.providerChanges.sourceUrl,
+      migrationRequirement: schema.ruleVersions.migrationRequirement,
+    })
+    .from(schema.impactAssessments)
+    .innerJoin(
+      schema.ruleVersions,
+      eq(schema.impactAssessments.ruleVersionId, schema.ruleVersions.id),
+    )
+    .innerJoin(
+      schema.providerChanges,
+      eq(schema.ruleVersions.providerChangeId, schema.providerChanges.id),
+    )
+    .where(eq(schema.impactAssessments.analysisRunId, analysisRunId));
+
+  const assessmentIds = assessmentRows.map((row) => row.id);
+  const findingRows = assessmentIds.length
+    ? await db
+        .select()
+        .from(schema.impactFindings)
+        .where(inArray(schema.impactFindings.impactAssessmentId, assessmentIds))
+    : [];
+
+  const findingsByAssessment = new Map<string, Finding[]>();
+  for (const finding of findingRows) {
+    const list = findingsByAssessment.get(finding.impactAssessmentId) ?? [];
+    list.push({
+      workspacePath: finding.workspacePath,
+      sourceFile: finding.sourceFile,
+      line: finding.line,
+      matchedSymbol: finding.matchedSymbol,
+    });
+    findingsByAssessment.set(finding.impactAssessmentId, list);
+  }
+
+  return {
+    ...run,
+    evidence: (run.evidence as StripeEvidence | null) ?? null,
+    assessments: assessmentRows.map((row) => ({
+      id: row.id,
+      status: row.status,
+      reason: row.reason,
+      coverage: row.coverage as ImpactCoverage,
+      findings: findingsByAssessment.get(row.id) ?? [],
+      providerChangeTitle: row.providerChangeTitle,
+      providerChangeSourceUrl: row.providerChangeSourceUrl,
+      migrationRequirement: row.migrationRequirement,
+    })),
+  };
 }
 
 /**

@@ -417,4 +417,120 @@ describe('impact assessments (real database)', () => {
 
     await cleanupUser(userId);
   });
+
+  describe('GET /analysis-runs/:id (read-only detail)', () => {
+    it('returns 401 without a session', async () => {
+      const app = buildApp(testAppDeps({ db }));
+      const response = await app.inject({
+        method: 'GET',
+        url: `/analysis-runs/${crypto.randomUUID()}`,
+      });
+      expect(response.statusCode).toBe(401);
+    });
+
+    it('returns 404 for an analysis run connected by a different user, without leaking its existence', async () => {
+      const { cookie: ownerCookie, userId: ownerId } = await createAuthenticatedUser();
+      const { repositoryId } = await connectRepository(ownerId);
+      const { analysisRunId } = await triggerAnalysis(
+        ownerCookie,
+        repositoryId,
+        affectedFixtureFiles(),
+      );
+
+      const { cookie: otherCookie, userId: otherUserId } = await createAuthenticatedUser();
+      const app = buildApp(testAppDeps({ db }));
+      const response = await app.inject({
+        method: 'GET',
+        url: `/analysis-runs/${analysisRunId}`,
+        headers: { cookie: otherCookie },
+      });
+
+      expect(response.statusCode).toBe(404);
+      await cleanupUser(otherUserId);
+      await cleanupUser(ownerId);
+    });
+
+    it('returns full assessment detail, including the per-workspace coverage breakdown and migration requirement', async () => {
+      const { cookie, userId } = await createAuthenticatedUser();
+      const { repositoryId } = await connectRepository(userId);
+      const { app, analysisRunId } = await triggerAnalysis(
+        cookie,
+        repositoryId,
+        affectedFixtureFiles(),
+      );
+
+      await app.inject({
+        method: 'POST',
+        url: `/analysis-runs/${analysisRunId}/impact-assessments`,
+        headers: { cookie },
+      });
+
+      const response = await app.inject({
+        method: 'GET',
+        url: `/analysis-runs/${analysisRunId}`,
+        headers: { cookie },
+      });
+
+      expect(response.statusCode).toBe(200);
+      const body = response.json() as {
+        analysisRun: {
+          id: string;
+          status: string;
+          repositoryFullName: string;
+          commitSha: string;
+          assessments: {
+            status: string;
+            reason: string;
+            providerChangeTitle: string;
+            providerChangeSourceUrl: string;
+            migrationRequirement: string;
+            findings: { sourceFile: string; matchedSymbol: string }[];
+            coverage: {
+              schemaVersion: number;
+              workspaces: { workspacePath: string; applicability: string }[];
+            };
+          }[];
+        };
+      };
+
+      expect(body.analysisRun.id).toBe(analysisRunId);
+      expect(body.analysisRun.repositoryFullName).toBe('octocat/hello-world');
+      expect(body.analysisRun.assessments.length).toBeGreaterThanOrEqual(1);
+
+      const retrieveUpcoming = body.analysisRun.assessments.find(
+        (a) => a.providerChangeTitle === STRIPE_BASIL_RETRIEVE_UPCOMING_RULE.providerChange.title,
+      );
+      expect(retrieveUpcoming?.status).toBe('AFFECTED');
+      expect(retrieveUpcoming?.providerChangeSourceUrl).toBe(
+        STRIPE_BASIL_RETRIEVE_UPCOMING_RULE.providerChange.sourceUrl,
+      );
+      expect(retrieveUpcoming?.migrationRequirement).toBe(
+        STRIPE_BASIL_RETRIEVE_UPCOMING_RULE.providerChange.migrationRequirement,
+      );
+      expect(retrieveUpcoming?.findings).toEqual([
+        expect.objectContaining({
+          sourceFile: 'src/billing.ts',
+          matchedSymbol: 'stripe.invoices.retrieveUpcoming',
+        }),
+      ]);
+      // coverage is the per-workspace applicability breakdown persisted
+      // in the DB but never returned by any other route.
+      expect(retrieveUpcoming?.coverage.schemaVersion).toBe(1);
+      expect(retrieveUpcoming?.coverage.workspaces[0]?.applicability).toBe('APPLICABLE');
+
+      await cleanupUser(userId);
+    });
+
+    it('returns 404 for a nonexistent analysis run', async () => {
+      const { cookie, userId } = await createAuthenticatedUser();
+      const app = buildApp(testAppDeps({ db }));
+      const response = await app.inject({
+        method: 'GET',
+        url: `/analysis-runs/${crypto.randomUUID()}`,
+        headers: { cookie },
+      });
+      expect(response.statusCode).toBe(404);
+      await cleanupUser(userId);
+    });
+  });
 });

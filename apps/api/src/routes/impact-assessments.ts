@@ -4,6 +4,7 @@ import type { GitHubAppAuth } from '../github/auth.js';
 import type { GitHubClient } from '../github/client.js';
 import { assessAllRulesImpact } from '../analysis/impact.js';
 import {
+  getAnalysisRunDetail,
   getAnalysisRunForUser,
   upsertImpactAssessment,
   upsertProviderChangeAndRuleVersion,
@@ -94,6 +95,25 @@ export function registerImpactAssessmentsRoutes(
       }
 
       return reply.status(201).send({ impactAssessments: responseAssessments });
+    },
+  );
+
+  /**
+   * Read-only counterpart to the trigger route above: full detail for an
+   * already-evaluated AnalysisRun, for the impact-detail page. Never
+   * triggers a new evaluation or archive download -- only returns what's
+   * already persisted, including the per-workspace `coverage` breakdown
+   * no other route exposes.
+   */
+  app.get<{ Params: { id: string } }>(
+    '/analysis-runs/:id',
+    { preHandler: requireAuth },
+    async (request, reply) => {
+      const run = await getAnalysisRunDetail(deps.db, request.user!.id, request.params.id);
+      if (!run) {
+        return reply.status(404).send({ error: 'Not Found', message: 'Analysis run not found.' });
+      }
+      return reply.send({ analysisRun: run });
     },
   );
 }

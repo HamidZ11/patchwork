@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { ErrorBanner } from '@/components/error-banner';
 import { apiFetch, API_URL } from '@/lib/api';
@@ -124,9 +125,17 @@ export default async function RepositoriesPage({
                   key={assessment.providerChangeTitle}
                   className="mt-1 flex flex-col gap-0.5 rounded border border-zinc-200 px-2 py-1.5 dark:border-zinc-800"
                 >
-                  <span className="text-xs font-medium text-zinc-700 dark:text-zinc-300">
-                    Stripe change: {assessment.providerChangeTitle}
-                  </span>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-medium text-zinc-700 dark:text-zinc-300">
+                      Stripe change: {assessment.providerChangeTitle}
+                    </span>
+                    <Link
+                      href={`/analysis-runs/${repo.latestAnalysis?.analysisRunId ?? ''}`}
+                      className="text-xs text-zinc-500 underline decoration-zinc-300 underline-offset-2 hover:text-zinc-700 dark:text-zinc-400 dark:decoration-zinc-700 dark:hover:text-zinc-200"
+                    >
+                      View details
+                    </Link>
+                  </div>
                   <span className="text-xs text-zinc-500 dark:text-zinc-400">
                     Status: {assessment.status}
                   </span>
