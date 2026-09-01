@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import { apiFetch } from '@/lib/api';
+import { VerifySubmitButton } from '@/components/verify-submit-button';
 
 interface InstalledSdk {
   packageName: string;
@@ -40,6 +41,37 @@ interface PostconditionCheck {
   detail: string;
 }
 
+type VerificationRunStatus =
+  'PENDING' | 'RUNNING' | 'PASSED' | 'FAILED' | 'REFUSED' | 'TIMED_OUT' | 'INFRA_ERROR';
+
+interface VerificationStep {
+  sequence: number;
+  kind: string;
+  command: string;
+  status: 'PASSED' | 'FAILED' | 'TIMED_OUT' | 'SKIPPED';
+  exitCode: number | null;
+  timedOut: boolean;
+  durationMs: number | null;
+  stdoutExcerpt: string | null;
+  stderrExcerpt: string | null;
+  truncated: boolean;
+}
+
+interface VerificationRun {
+  id: string;
+  status: VerificationRunStatus;
+  failureCategory: string | null;
+  failureReason: string | null;
+  manifestVersion: string | null;
+  sandboxProvider: string | null;
+  sandboxRuntime: string | null;
+  nodeVersion: string | null;
+  nodeVersionSource: string | null;
+  packageManager: string | null;
+  createdAt: string;
+  steps: VerificationStep[];
+}
+
 interface PatchAttempt {
   id: string;
   status: 'GENERATED' | 'REFUSED' | 'FAILED';
@@ -49,6 +81,7 @@ interface PatchAttempt {
   diff: string | null;
   postconditionResult: PostconditionCheck[] | null;
   createdAt: string;
+  verificationRuns: VerificationRun[];
 }
 
 interface AssessmentDetail {
@@ -97,6 +130,12 @@ const STATUS_LABEL: Record<AssessmentDetail['status'], string> = {
 async function prepareFix(assessmentId: string, analysisRunId: string) {
   'use server';
   await apiFetch(`/impact-assessments/${assessmentId}/patch-attempts`, { method: 'POST' });
+  redirect(`/analysis-runs/${analysisRunId}`);
+}
+
+async function verifyInSandbox(patchAttemptId: string, analysisRunId: string) {
+  'use server';
+  await apiFetch(`/patch-attempts/${patchAttemptId}/verification-runs`, { method: 'POST' });
   redirect(`/analysis-runs/${analysisRunId}`);
 }
 
@@ -193,7 +232,248 @@ function DiffBlock({ diff }: { diff: string }) {
   );
 }
 
-function PatchAttemptResult({ attempt }: { attempt: PatchAttempt }) {
+const STEP_LABEL: Record<string, string> = {
+  patch_apply: 'Patch apply',
+  install: 'Install dependencies',
+  typecheck: 'Typecheck',
+  test: 'Tests',
+};
+
+function formatDuration(ms: number): string {
+  return ms < 1000 ? `${ms}ms` : `${(ms / 1000).toFixed(1)}s`;
+}
+
+const VERIFICATION_STATUS_STYLE: Record<VerificationRunStatus, { dot: string; text: string }> = {
+  PENDING: { dot: 'bg-zinc-400 dark:bg-zinc-600', text: 'text-zinc-500 dark:text-zinc-400' },
+  RUNNING: { dot: 'animate-pulse bg-slate-500', text: 'text-slate-600 dark:text-slate-400' },
+  PASSED: { dot: 'bg-emerald-500', text: 'text-emerald-700 dark:text-emerald-400' },
+  FAILED: { dot: 'bg-rose-500', text: 'text-rose-700 dark:text-rose-400' },
+  REFUSED: { dot: 'bg-zinc-400 dark:bg-zinc-600', text: 'text-zinc-500 dark:text-zinc-400' },
+  TIMED_OUT: { dot: 'bg-rose-500', text: 'text-rose-700 dark:text-rose-400' },
+  INFRA_ERROR: { dot: 'bg-rose-500', text: 'text-rose-700 dark:text-rose-400' },
+};
+
+const ACTIVE_VERIFICATION_STATUSES = new Set<VerificationRunStatus>(['PENDING', 'RUNNING']);
+
+function verificationStatusLabel(run: VerificationRun): string {
+  switch (run.status) {
+    case 'PENDING':
+      return 'Queued for runtime verification';
+    case 'RUNNING':
+      return 'Verification running';
+    case 'PASSED':
+      return 'Runtime verification passed';
+    case 'FAILED':
+      return run.failureCategory === 'PATCH_FAILURE'
+        ? 'Candidate patch could not be applied'
+        : 'Runtime verification failed';
+    case 'REFUSED':
+      return 'Runtime verification not supported for this repository';
+    case 'TIMED_OUT':
+      return 'Verification exceeded the allowed time';
+    case 'INFRA_ERROR':
+      return 'Sandbox verification could not run';
+  }
+}
+
+function StepOutputBlock({ label, text }: { label: string; text: string | null }) {
+  if (!text) return null;
+  return (
+    <div className="flex flex-col gap-0.5">
+      <span className="font-medium text-zinc-500 dark:text-zinc-400">{label}</span>
+      <pre className="overflow-x-auto rounded-md border border-zinc-200 bg-zinc-50 px-2 py-1.5 font-mono text-[11px] leading-relaxed text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400">
+        {text}
+      </pre>
+    </div>
+  );
+}
+
+function VerificationStepRow({ step }: { step: VerificationStep }) {
+  const icon = step.status === 'PASSED' ? '✓' : step.status === 'SKIPPED' ? '–' : '✗';
+  const color =
+    step.status === 'PASSED'
+      ? 'text-emerald-700 dark:text-emerald-400'
+      : step.status === 'SKIPPED'
+        ? 'text-zinc-400 dark:text-zinc-600'
+        : 'text-rose-700 dark:text-rose-400';
+  const hasOutput = step.status !== 'SKIPPED';
+
+  return (
+    <div className="flex flex-col gap-1 py-1.5 text-xs">
+      <div className="flex items-center gap-2">
+        <span className={`w-3 shrink-0 font-mono ${color}`} aria-hidden="true">
+          {icon}
+        </span>
+        <span className="text-zinc-700 dark:text-zinc-300">
+          {STEP_LABEL[step.kind] ?? step.kind}
+        </span>
+        <span className="text-zinc-400 dark:text-zinc-600">
+          {step.status === 'SKIPPED' ? 'Skipped' : step.status === 'PASSED' ? 'Passed' : 'Failed'}
+        </span>
+        {step.durationMs != null && (
+          <span className="text-zinc-400 dark:text-zinc-600">
+            {formatDuration(step.durationMs)}
+          </span>
+        )}
+        {step.exitCode != null && step.exitCode !== 0 && (
+          <span className="text-zinc-400 dark:text-zinc-600">exit {step.exitCode}</span>
+        )}
+        {step.timedOut && <span className="text-zinc-400 dark:text-zinc-600">timed out</span>}
+      </div>
+      {hasOutput && (step.stdoutExcerpt || step.stderrExcerpt) && (
+        <details className="group ml-5">
+          <summary className="cursor-pointer list-none text-zinc-400 hover:text-zinc-600 dark:text-zinc-600 dark:hover:text-zinc-300">
+            View output
+          </summary>
+          <div className="mt-1.5 flex flex-col gap-2">
+            {step.truncated && (
+              <span className="text-zinc-400 dark:text-zinc-600">
+                Output truncated by Patchwork.
+              </span>
+            )}
+            <StepOutputBlock label="stdout" text={step.stdoutExcerpt} />
+            <StepOutputBlock label="stderr" text={step.stderrExcerpt} />
+          </div>
+        </details>
+      )}
+    </div>
+  );
+}
+
+function EnvironmentDetail({ run, commitSha }: { run: VerificationRun; commitSha: string }) {
+  if (!run.sandboxProvider) return null;
+
+  const nodeSourceLabel =
+    run.nodeVersionSource === 'patchwork_default'
+      ? 'Patchwork default — no repository version declared'
+      : run.nodeVersionSource === 'repository'
+        ? 'declared by repository'
+        : null;
+
+  return (
+    <details className="group">
+      <summary className="flex cursor-pointer list-none items-center gap-1.5 text-xs font-medium text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200">
+        <ChevronIcon />
+        Environment
+      </summary>
+      <div className="mt-2 flex flex-col gap-0.5 border-l border-zinc-200 pl-3 text-xs text-zinc-500 dark:border-zinc-800 dark:text-zinc-500">
+        <span className="font-mono">{commitSha.slice(0, 7)}</span>
+        <span>
+          {run.sandboxProvider}
+          {run.sandboxRuntime && ` · ${run.sandboxRuntime}`}
+        </span>
+        {run.nodeVersion && (
+          <span>
+            Node {run.nodeVersion}
+            {nodeSourceLabel && ` (${nodeSourceLabel})`}
+          </span>
+        )}
+        {run.packageManager && <span>{run.packageManager}</span>}
+        {run.manifestVersion && <span>manifest v{run.manifestVersion}</span>}
+      </div>
+    </details>
+  );
+}
+
+function VerificationSection({
+  patchAttemptId,
+  analysisRunId,
+  commitSha,
+  verificationRuns,
+}: {
+  patchAttemptId: string;
+  analysisRunId: string;
+  commitSha: string;
+  verificationRuns: VerificationRun[];
+}) {
+  const [latest, ...earlier] = verificationRuns;
+  const isActive = latest !== undefined && ACTIVE_VERIFICATION_STATUSES.has(latest.status);
+
+  return (
+    <div className="mt-3 flex flex-col gap-2 border-t border-zinc-100 pt-3 dark:border-zinc-900">
+      <span className="text-xs font-medium text-zinc-500 dark:text-zinc-400">
+        Runtime verification
+      </span>
+
+      {!latest ? (
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-zinc-500 dark:text-zinc-400">Not yet verified</span>
+          <form action={verifyInSandbox.bind(null, patchAttemptId, analysisRunId)}>
+            <VerifySubmitButton label="Verify in sandbox" pendingLabel="Starting verification…" />
+          </form>
+        </div>
+      ) : (
+        <>
+          <div className="flex items-center gap-2">
+            <span
+              className={`h-1.5 w-1.5 shrink-0 rounded-full ${VERIFICATION_STATUS_STYLE[latest.status].dot}`}
+              aria-hidden="true"
+            />
+            <span
+              className={`text-xs font-medium ${VERIFICATION_STATUS_STYLE[latest.status].text}`}
+            >
+              {verificationStatusLabel(latest)}
+            </span>
+            {!isActive && (
+              <form action={verifyInSandbox.bind(null, patchAttemptId, analysisRunId)}>
+                <VerifySubmitButton label="Verify again" pendingLabel="Starting verification…" />
+              </form>
+            )}
+          </div>
+
+          {latest.failureReason && (
+            <span className="text-xs text-zinc-500 dark:text-zinc-500">{latest.failureReason}</span>
+          )}
+
+          {latest.steps.length > 0 && (
+            <div className="flex flex-col divide-y divide-zinc-100 dark:divide-zinc-900">
+              {latest.steps.map((step) => (
+                <VerificationStepRow key={step.sequence} step={step} />
+              ))}
+            </div>
+          )}
+
+          <EnvironmentDetail run={latest} commitSha={commitSha} />
+        </>
+      )}
+
+      {earlier.length > 0 && (
+        <details className="group">
+          <summary className="flex cursor-pointer list-none items-center gap-1.5 text-xs font-medium text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200">
+            <ChevronIcon />
+            {earlier.length} earlier run{earlier.length === 1 ? '' : 's'}
+          </summary>
+          <div className="mt-2 flex flex-col gap-1.5 border-l border-zinc-200 pl-3 dark:border-zinc-800">
+            {earlier.map((run) => (
+              <div key={run.id} className="flex items-center gap-2 text-xs">
+                <span
+                  className={`h-1.5 w-1.5 shrink-0 rounded-full ${VERIFICATION_STATUS_STYLE[run.status].dot}`}
+                  aria-hidden="true"
+                />
+                <span className={VERIFICATION_STATUS_STYLE[run.status].text}>
+                  {verificationStatusLabel(run)}
+                </span>
+                <span className="text-zinc-400 dark:text-zinc-600">
+                  {new Date(run.createdAt).toLocaleString()}
+                </span>
+              </div>
+            ))}
+          </div>
+        </details>
+      )}
+    </div>
+  );
+}
+
+function PatchAttemptResult({
+  attempt,
+  analysisRunId,
+  commitSha,
+}: {
+  attempt: PatchAttempt;
+  analysisRunId: string;
+  commitSha: string;
+}) {
   if (attempt.status === 'REFUSED') {
     return (
       <div className="mt-2 flex flex-col gap-1">
@@ -211,7 +491,7 @@ function PatchAttemptResult({ attempt }: { attempt: PatchAttempt }) {
     return (
       <div className="mt-2 flex flex-col gap-1">
         <span className="text-xs font-medium text-amber-700 dark:text-amber-400">
-          Could not generate a verified fix.
+          Could not generate a safe candidate fix.
         </span>
         {attempt.failureReason && (
           <span className="text-xs text-zinc-500 dark:text-zinc-500">{attempt.failureReason}</span>
@@ -220,17 +500,26 @@ function PatchAttemptResult({ attempt }: { attempt: PatchAttempt }) {
     );
   }
 
+  const staticChecksPassed = attempt.postconditionResult?.every((check) => check.passed) ?? true;
+
   return (
     <div className="mt-2 flex flex-col gap-2">
-      <span className="text-xs font-medium text-emerald-700 dark:text-emerald-400">
-        Verified candidate fix
-      </span>
+      <span className="text-xs font-medium text-zinc-950 dark:text-zinc-50">Candidate fix</span>
       <span className="text-xs text-zinc-500 dark:text-zinc-400">
         Changed: {attempt.changedFiles.join(', ')}
       </span>
       {attempt.diff && <DiffBlock diff={attempt.diff} />}
       {attempt.postconditionResult && attempt.postconditionResult.length > 0 && (
         <div className="flex flex-col gap-0.5">
+          <span
+            className={`text-xs font-medium ${
+              staticChecksPassed
+                ? 'text-emerald-700 dark:text-emerald-400'
+                : 'text-amber-700 dark:text-amber-400'
+            }`}
+          >
+            Static checks — {staticChecksPassed ? 'Passed' : 'Failed'}
+          </span>
           {attempt.postconditionResult.map((check) => (
             <span
               key={check.name}
@@ -245,6 +534,12 @@ function PatchAttemptResult({ attempt }: { attempt: PatchAttempt }) {
           ))}
         </div>
       )}
+      <VerificationSection
+        patchAttemptId={attempt.id}
+        analysisRunId={analysisRunId}
+        commitSha={commitSha}
+        verificationRuns={attempt.verificationRuns}
+      />
     </div>
   );
 }
@@ -252,9 +547,11 @@ function PatchAttemptResult({ attempt }: { attempt: PatchAttempt }) {
 function AssessmentBlock({
   assessment,
   analysisRunId,
+  commitSha,
 }: {
   assessment: AssessmentDetail;
   analysisRunId: string;
+  commitSha: string;
 }) {
   const style = STATUS_STYLE[assessment.status];
   const latestAttempt = assessment.patchAttempts[0];
@@ -322,7 +619,13 @@ function AssessmentBlock({
               Prepare fix
             </button>
           </form>
-          {latestAttempt && <PatchAttemptResult attempt={latestAttempt} />}
+          {latestAttempt && (
+            <PatchAttemptResult
+              attempt={latestAttempt}
+              analysisRunId={analysisRunId}
+              commitSha={commitSha}
+            />
+          )}
         </div>
       )}
     </div>
@@ -391,6 +694,7 @@ export default async function AnalysisRunPage({ params }: { params: Promise<{ id
               key={assessment.id}
               assessment={assessment}
               analysisRunId={analysisRun.id}
+              commitSha={analysisRun.commitSha}
             />
           ))
         )}

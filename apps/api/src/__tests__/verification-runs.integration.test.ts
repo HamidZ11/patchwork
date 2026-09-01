@@ -127,7 +127,7 @@ describe('verification runs (real database)', () => {
   async function createGeneratedPatchAttempt(
     cookie: string,
     repositoryId: string,
-  ): Promise<{ app: ReturnType<typeof buildApp>; patchAttemptId: string }> {
+  ): Promise<{ app: ReturnType<typeof buildApp>; patchAttemptId: string; analysisRunId: string }> {
     const githubClient = fakeGitHubClientWithArchive(affectedFixtureFiles(), {
       getBranchCommitSha: async () => 'a'.repeat(40),
     });
@@ -180,7 +180,7 @@ describe('verification runs (real database)', () => {
       throw new Error(`expected GENERATED patch attempt, got ${patchAttempt.status}`);
     }
 
-    return { app, patchAttemptId: patchAttempt.id };
+    return { app, patchAttemptId: patchAttempt.id, analysisRunId: analysisRun.id };
   }
 
   it('returns 401 without a session', async () => {
@@ -313,5 +313,319 @@ describe('verification runs (real database)', () => {
 
     await cleanupUser(otherUserId);
     await cleanupUser(userId);
+  });
+
+  describe('GET /analysis-runs/:id includes verification-run evidence', () => {
+    async function seedRun(
+      patchAttemptId: string,
+      overrides: Partial<typeof schema.verificationRuns.$inferInsert>,
+    ): Promise<string> {
+      const [row] = await db.db
+        .insert(schema.verificationRuns)
+        .values({ patchAttemptId, status: 'PENDING', ...overrides })
+        .returning({ id: schema.verificationRuns.id });
+      if (!row) throw new Error('failed to seed verification run');
+      return row.id;
+    }
+
+    async function seedStep(
+      verificationRunId: string,
+      overrides: Partial<typeof schema.verificationSteps.$inferInsert>,
+    ): Promise<void> {
+      await db.db.insert(schema.verificationSteps).values({
+        verificationRunId,
+        sequence: 1,
+        kind: 'test',
+        command: 'npm test',
+        status: 'PASSED',
+        ...overrides,
+      });
+    }
+
+    async function fetchVerificationRuns(
+      app: ReturnType<typeof buildApp>,
+      cookie: string,
+      analysisRunId: string,
+      patchAttemptId: string,
+    ) {
+      const response = await app.inject({
+        method: 'GET',
+        url: `/analysis-runs/${analysisRunId}`,
+        headers: { cookie },
+      });
+      expect(response.statusCode).toBe(200);
+      const body = response.json() as {
+        analysisRun: {
+          assessments: {
+            patchAttempts: {
+              id: string;
+              verificationRuns: {
+                id: string;
+                status: string;
+                failureCategory: string | null;
+                failureReason: string | null;
+                sandboxProvider: string | null;
+                nodeVersion: string | null;
+                nodeVersionSource: string | null;
+                packageManager: string | null;
+                createdAt: string;
+                steps: {
+                  sequence: number;
+                  kind: string;
+                  status: string;
+                  truncated: boolean;
+                  stdoutExcerpt: string | null;
+                }[];
+              }[];
+            }[];
+          }[];
+        };
+      };
+      const attempt = body.analysisRun.assessments
+        .flatMap((a) => a.patchAttempts)
+        .find((a) => a.id === patchAttemptId);
+      if (!attempt) throw new Error('patch attempt not found in response');
+      return attempt.verificationRuns;
+    }
+
+    it('reports PENDING with no steps yet', async () => {
+      const { cookie, userId } = await createAuthenticatedUser();
+      const { repositoryId } = await connectRepository(userId);
+      const { app, patchAttemptId, analysisRunId } = await createGeneratedPatchAttempt(
+        cookie,
+        repositoryId,
+      );
+      await seedRun(patchAttemptId, { status: 'PENDING' });
+
+      const runs = await fetchVerificationRuns(app, cookie, analysisRunId, patchAttemptId);
+      expect(runs).toHaveLength(1);
+      expect(runs[0]?.status).toBe('PENDING');
+      expect(runs[0]?.steps).toEqual([]);
+
+      await cleanupUser(userId);
+    });
+
+    it('reports RUNNING', async () => {
+      const { cookie, userId } = await createAuthenticatedUser();
+      const { repositoryId } = await connectRepository(userId);
+      const { app, patchAttemptId, analysisRunId } = await createGeneratedPatchAttempt(
+        cookie,
+        repositoryId,
+      );
+      await seedRun(patchAttemptId, { status: 'RUNNING', startedAt: new Date() });
+
+      const runs = await fetchVerificationRuns(app, cookie, analysisRunId, patchAttemptId);
+      expect(runs[0]?.status).toBe('RUNNING');
+
+      await cleanupUser(userId);
+    });
+
+    it('reports PASSED with per-step evidence', async () => {
+      const { cookie, userId } = await createAuthenticatedUser();
+      const { repositoryId } = await connectRepository(userId);
+      const { app, patchAttemptId, analysisRunId } = await createGeneratedPatchAttempt(
+        cookie,
+        repositoryId,
+      );
+      const runId = await seedRun(patchAttemptId, {
+        status: 'PASSED',
+        sandboxProvider: 'e2b',
+        sandboxRuntime: 'patchwork-verification-node20',
+        nodeVersion: '20',
+        nodeVersionSource: 'patchwork_default',
+        packageManager: 'npm',
+        manifestVersion: '1',
+        completedAt: new Date(),
+      });
+      await seedStep(runId, { sequence: 1, kind: 'patch_apply', status: 'PASSED' });
+      await seedStep(runId, { sequence: 2, kind: 'install', status: 'PASSED' });
+      await seedStep(runId, { sequence: 3, kind: 'typecheck', status: 'PASSED' });
+      await seedStep(runId, { sequence: 4, kind: 'test', status: 'PASSED' });
+
+      const runs = await fetchVerificationRuns(app, cookie, analysisRunId, patchAttemptId);
+      expect(runs[0]?.status).toBe('PASSED');
+      expect(runs[0]?.nodeVersionSource).toBe('patchwork_default');
+      expect(runs[0]?.steps.map((s) => s.kind)).toEqual([
+        'patch_apply',
+        'install',
+        'typecheck',
+        'test',
+      ]);
+
+      await cleanupUser(userId);
+    });
+
+    it('reports FAILED with a customer-repo-failure category and the failing step', async () => {
+      const { cookie, userId } = await createAuthenticatedUser();
+      const { repositoryId } = await connectRepository(userId);
+      const { app, patchAttemptId, analysisRunId } = await createGeneratedPatchAttempt(
+        cookie,
+        repositoryId,
+      );
+      const runId = await seedRun(patchAttemptId, {
+        status: 'FAILED',
+        failureCategory: 'CUSTOMER_REPO_FAILURE',
+        failureReason: 'one or more verification commands failed',
+        sandboxProvider: 'e2b',
+      });
+      await seedStep(runId, { sequence: 1, kind: 'patch_apply', status: 'PASSED' });
+      await seedStep(runId, { sequence: 2, kind: 'install', status: 'PASSED' });
+      await seedStep(runId, { sequence: 3, kind: 'typecheck', status: 'PASSED' });
+      await seedStep(runId, {
+        sequence: 4,
+        kind: 'test',
+        status: 'FAILED',
+        exitCode: 1,
+        stdoutExcerpt: 'FAIL src/billing.test.ts',
+      });
+
+      const runs = await fetchVerificationRuns(app, cookie, analysisRunId, patchAttemptId);
+      expect(runs[0]?.status).toBe('FAILED');
+      expect(runs[0]?.failureCategory).toBe('CUSTOMER_REPO_FAILURE');
+      expect(runs[0]?.steps.find((s) => s.kind === 'test')?.status).toBe('FAILED');
+
+      await cleanupUser(userId);
+    });
+
+    it('reports FAILED with a patch-failure category', async () => {
+      const { cookie, userId } = await createAuthenticatedUser();
+      const { repositoryId } = await connectRepository(userId);
+      const { app, patchAttemptId, analysisRunId } = await createGeneratedPatchAttempt(
+        cookie,
+        repositoryId,
+      );
+      await seedRun(patchAttemptId, {
+        status: 'FAILED',
+        failureCategory: 'PATCH_FAILURE',
+        failureReason: 'candidate patch failed to apply',
+      });
+
+      const runs = await fetchVerificationRuns(app, cookie, analysisRunId, patchAttemptId);
+      expect(runs[0]?.failureCategory).toBe('PATCH_FAILURE');
+
+      await cleanupUser(userId);
+    });
+
+    it('reports REFUSED with no sandbox/manifest evidence', async () => {
+      const { cookie, userId } = await createAuthenticatedUser();
+      const { repositoryId } = await connectRepository(userId);
+      const { app, patchAttemptId, analysisRunId } = await createGeneratedPatchAttempt(
+        cookie,
+        repositoryId,
+      );
+      await seedRun(patchAttemptId, {
+        status: 'REFUSED',
+        failureCategory: 'POLICY_REFUSAL',
+        failureReason: 'no allowlisted registry host for this package manager',
+      });
+
+      const runs = await fetchVerificationRuns(app, cookie, analysisRunId, patchAttemptId);
+      expect(runs[0]?.status).toBe('REFUSED');
+      expect(runs[0]?.sandboxProvider).toBeNull();
+
+      await cleanupUser(userId);
+    });
+
+    it('reports TIMED_OUT', async () => {
+      const { cookie, userId } = await createAuthenticatedUser();
+      const { repositoryId } = await connectRepository(userId);
+      const { app, patchAttemptId, analysisRunId } = await createGeneratedPatchAttempt(
+        cookie,
+        repositoryId,
+      );
+      await seedRun(patchAttemptId, {
+        status: 'TIMED_OUT',
+        failureCategory: 'TIMEOUT',
+        failureReason: 'a verification command exceeded its time budget',
+      });
+
+      const runs = await fetchVerificationRuns(app, cookie, analysisRunId, patchAttemptId);
+      expect(runs[0]?.status).toBe('TIMED_OUT');
+
+      await cleanupUser(userId);
+    });
+
+    it('reports INFRA_ERROR', async () => {
+      const { cookie, userId } = await createAuthenticatedUser();
+      const { repositoryId } = await connectRepository(userId);
+      const { app, patchAttemptId, analysisRunId } = await createGeneratedPatchAttempt(
+        cookie,
+        repositoryId,
+      );
+      await seedRun(patchAttemptId, {
+        status: 'INFRA_ERROR',
+        failureCategory: 'SANDBOX_INFRA_FAILURE',
+        failureReason: 'sandbox creation failed',
+      });
+
+      const runs = await fetchVerificationRuns(app, cookie, analysisRunId, patchAttemptId);
+      expect(runs[0]?.status).toBe('INFRA_ERROR');
+
+      await cleanupUser(userId);
+    });
+
+    it('orders multiple historical runs newest-first', async () => {
+      const { cookie, userId } = await createAuthenticatedUser();
+      const { repositoryId } = await connectRepository(userId);
+      const { app, patchAttemptId, analysisRunId } = await createGeneratedPatchAttempt(
+        cookie,
+        repositoryId,
+      );
+      const older = new Date(Date.now() - 60_000);
+      const newer = new Date();
+      await seedRun(patchAttemptId, { status: 'FAILED', createdAt: older });
+      await seedRun(patchAttemptId, { status: 'PASSED', createdAt: newer });
+
+      const runs = await fetchVerificationRuns(app, cookie, analysisRunId, patchAttemptId);
+      expect(runs).toHaveLength(2);
+      expect(runs[0]?.status).toBe('PASSED');
+      expect(runs[1]?.status).toBe('FAILED');
+
+      await cleanupUser(userId);
+    });
+
+    it('surfaces the truncated flag on a step', async () => {
+      const { cookie, userId } = await createAuthenticatedUser();
+      const { repositoryId } = await connectRepository(userId);
+      const { app, patchAttemptId, analysisRunId } = await createGeneratedPatchAttempt(
+        cookie,
+        repositoryId,
+      );
+      const runId = await seedRun(patchAttemptId, { status: 'FAILED' });
+      await seedStep(runId, {
+        sequence: 1,
+        kind: 'test',
+        status: 'FAILED',
+        stdoutExcerpt: 'partial output only',
+        truncated: true,
+      });
+
+      const runs = await fetchVerificationRuns(app, cookie, analysisRunId, patchAttemptId);
+      expect(runs[0]?.steps[0]?.truncated).toBe(true);
+
+      await cleanupUser(userId);
+    });
+
+    it('does not leak verification-run evidence to a different user', async () => {
+      const { cookie: ownerCookie, userId: ownerId } = await createAuthenticatedUser();
+      const { repositoryId } = await connectRepository(ownerId);
+      const { patchAttemptId, analysisRunId } = await createGeneratedPatchAttempt(
+        ownerCookie,
+        repositoryId,
+      );
+      await seedRun(patchAttemptId, { status: 'PASSED' });
+
+      const { cookie: otherCookie, userId: otherUserId } = await createAuthenticatedUser();
+      const app = buildApp(testAppDeps({ db }));
+      const response = await app.inject({
+        method: 'GET',
+        url: `/analysis-runs/${analysisRunId}`,
+        headers: { cookie: otherCookie },
+      });
+      expect(response.statusCode).toBe(404);
+
+      await cleanupUser(otherUserId);
+      await cleanupUser(ownerId);
+    });
   });
 });

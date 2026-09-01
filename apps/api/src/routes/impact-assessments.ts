@@ -11,6 +11,7 @@ import {
 import { requireAuth } from '../plugins/session.js';
 import { getPatchAttemptsForAssessments } from '../remediation/persistence.js';
 import { findRecipeForPredicateKind } from '../remediation/registry.js';
+import { getVerificationRunsForPatchAttempts } from '../verification/persistence.js';
 
 export interface ImpactAssessmentsRoutesDeps {
   db: Database;
@@ -119,6 +120,13 @@ export function registerImpactAssessmentsRoutes(
         deps.db,
         run.assessments.map((assessment) => assessment.id),
       );
+      const allPatchAttemptIds = [...patchAttemptsByAssessment.values()].flatMap((attempts) =>
+        attempts.map((attempt) => attempt.id),
+      );
+      const verificationRunsByPatchAttempt = await getVerificationRunsForPatchAttempts(
+        deps.db,
+        allPatchAttemptIds,
+      );
 
       return reply.send({
         analysisRun: {
@@ -127,7 +135,10 @@ export function registerImpactAssessmentsRoutes(
             ...assessment,
             remediationSupported:
               findRecipeForPredicateKind(assessment.predicateKind) !== undefined,
-            patchAttempts: patchAttemptsByAssessment.get(assessment.id) ?? [],
+            patchAttempts: (patchAttemptsByAssessment.get(assessment.id) ?? []).map((attempt) => ({
+              ...attempt,
+              verificationRuns: verificationRunsByPatchAttempt.get(attempt.id) ?? [],
+            })),
           })),
         },
       });
