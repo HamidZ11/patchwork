@@ -5,3 +5,8 @@ dist
 pnpm-lock.yaml
 coverage
 next-env.d.ts
+
+# vendored, externally-authored skill packs -- never reformat someone
+# else's content to fit our own style
+.agents/skills
+.claude/skills
