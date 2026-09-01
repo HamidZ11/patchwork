@@ -9,17 +9,8 @@ interface LatestAnalysisStripeSummary {
   workspacePath: string;
 }
 
-interface ImpactFinding {
-  sourceFile: string;
-  line: number;
-  matchedSymbol: string;
-}
-
 interface LatestImpactAssessment {
-  providerChangeTitle: string;
   status: string;
-  reason: string;
-  findings: ImpactFinding[];
 }
 
 interface LatestAnalysis {
@@ -40,15 +31,60 @@ interface Repository {
   latestAnalysis: LatestAnalysis | null;
 }
 
-async function analyseRepository(repositoryId: string) {
-  'use server';
-  await apiFetch(`/repositories/${repositoryId}/analyses`, { method: 'POST' });
-  redirect('/repositories');
+const STATUS_ORDER = ['AFFECTED', 'UNCERTAIN', 'NOT_AFFECTED'] as const;
+
+const STATUS_STYLE: Record<
+  (typeof STATUS_ORDER)[number],
+  { dot: string; text: string; label: string }
+> = {
+  AFFECTED: { dot: 'bg-amber-500', text: 'text-amber-700 dark:text-amber-400', label: 'affected' },
+  UNCERTAIN: {
+    dot: 'bg-slate-500',
+    text: 'text-slate-600 dark:text-slate-400',
+    label: 'uncertain',
+  },
+  NOT_AFFECTED: {
+    dot: 'bg-zinc-400 dark:bg-zinc-600',
+    text: 'text-zinc-500 dark:text-zinc-400',
+    label: 'not affected',
+  },
+};
+
+function countByStatus(assessments: LatestImpactAssessment[]): Record<string, number> {
+  const counts: Record<string, number> = { AFFECTED: 0, UNCERTAIN: 0, NOT_AFFECTED: 0 };
+  for (const assessment of assessments) {
+    if (assessment.status in counts) counts[assessment.status] += 1;
+  }
+  return counts;
 }
 
-async function checkStripeImpact(analysisRunId: string) {
+/**
+ * Analysis creation and impact assessment stay separate backend
+ * capabilities (POST /repositories/:id/analyses, then POST
+ * /analysis-runs/:id/impact-assessments) -- this only sequences the two
+ * existing calls behind one button so the user sees a single coherent
+ * action. If the second call fails, the AnalysisRun from the first call
+ * is already persisted and stays; we redirect with an honest error
+ * rather than implying the whole thing succeeded.
+ */
+async function analyseRepository(repositoryId: string) {
   'use server';
-  await apiFetch(`/analysis-runs/${analysisRunId}/impact-assessments`, { method: 'POST' });
+
+  const analyseResponse = await apiFetch(`/repositories/${repositoryId}/analyses`, {
+    method: 'POST',
+  });
+  if (!analyseResponse.ok) {
+    redirect('/repositories?error=analysis_failed');
+  }
+  const { analysisRun } = (await analyseResponse.json()) as { analysisRun: { id: string } };
+
+  const impactResponse = await apiFetch(`/analysis-runs/${analysisRun.id}/impact-assessments`, {
+    method: 'POST',
+  });
+  if (!impactResponse.ok) {
+    redirect('/repositories?error=impact_assessment_failed');
+  }
+
   redirect('/repositories');
 }
 
@@ -100,85 +136,78 @@ export default async function RepositoriesPage({
       <ErrorBanner code={error} />
 
       <ul className="flex flex-col divide-y divide-zinc-200 rounded-md border border-zinc-200 dark:divide-zinc-800 dark:border-zinc-800">
-        {repositories.map((repo) => (
-          <li key={repo.id} className="flex items-center justify-between gap-4 px-4 py-3">
-            <div className="flex flex-col gap-0.5">
-              <span className="text-sm font-medium text-zinc-950 dark:text-zinc-50">
-                {repo.fullName}
-              </span>
-              <span className="text-xs text-zinc-500 dark:text-zinc-400">
-                {repo.isPrivate ? 'Private' : 'Public'} · default branch {repo.defaultBranch}
-              </span>
-              {repo.latestAnalysis && (
-                <span className="text-xs text-zinc-500 dark:text-zinc-400">
-                  Commit {repo.latestAnalysis.commitSha.slice(0, 7)} · {repo.latestAnalysis.status}
+        {repositories.map((repo) => {
+          const { latestAnalysis } = repo;
+          const counts = latestAnalysis
+            ? countByStatus(latestAnalysis.latestImpactAssessments)
+            : null;
+
+          return (
+            <li
+              key={repo.id}
+              className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
+            >
+              <div className="flex flex-col gap-0.5">
+                <span className="text-sm font-medium text-zinc-950 dark:text-zinc-50">
+                  {repo.fullName}
                 </span>
-              )}
-              {repo.latestAnalysis?.stripe && (
                 <span className="text-xs text-zinc-500 dark:text-zinc-400">
-                  Stripe: {repo.latestAnalysis.stripe.resolvedVersion ?? 'unresolved'} (declared{' '}
-                  {repo.latestAnalysis.stripe.declaredRange})
+                  {repo.isPrivate ? 'Private' : 'Public'} · default branch {repo.defaultBranch}
                 </span>
-              )}
-              {repo.latestAnalysis?.latestImpactAssessments.map((assessment) => (
-                <div
-                  key={assessment.providerChangeTitle}
-                  className="mt-1 flex flex-col gap-0.5 rounded border border-zinc-200 px-2 py-1.5 dark:border-zinc-800"
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-xs font-medium text-zinc-700 dark:text-zinc-300">
-                      Stripe change: {assessment.providerChangeTitle}
-                    </span>
-                    <Link
-                      href={`/analysis-runs/${repo.latestAnalysis?.analysisRunId ?? ''}`}
-                      className="text-xs text-zinc-500 underline decoration-zinc-300 underline-offset-2 hover:text-zinc-700 dark:text-zinc-400 dark:decoration-zinc-700 dark:hover:text-zinc-200"
-                    >
-                      View details
-                    </Link>
-                  </div>
+                {latestAnalysis ? (
                   <span className="text-xs text-zinc-500 dark:text-zinc-400">
-                    Status: {assessment.status}
+                    {latestAnalysis.stripe &&
+                      `Stripe ${latestAnalysis.stripe.resolvedVersion ?? 'unresolved'} · `}
+                    commit {latestAnalysis.commitSha.slice(0, 7)}
+                    {latestAnalysis.status !== 'completed' && ` · ${latestAnalysis.status}`}
                   </span>
-                  {assessment.findings.map((finding) => (
-                    <span
-                      key={`${finding.sourceFile}:${finding.line}`}
-                      className="text-xs text-zinc-500 dark:text-zinc-400"
-                    >
-                      Evidence: {finding.sourceFile}:{finding.line} — {finding.matchedSymbol}
-                    </span>
-                  ))}
-                  <span className="text-xs text-zinc-500 dark:text-zinc-400">
-                    Reason: {assessment.reason}
-                  </span>
-                </div>
-              ))}
-            </div>
-            <div className="flex items-center gap-3">
-              <form action={analyseRepository.bind(null, repo.id)}>
-                <button
-                  type="submit"
-                  className="rounded-md border border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-700 transition-colors hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-900"
-                >
-                  Analyse repository
-                </button>
-              </form>
-              {repo.latestAnalysis && (
-                <form action={checkStripeImpact.bind(null, repo.latestAnalysis.analysisRunId)}>
+                ) : (
+                  <span className="text-xs text-zinc-500 dark:text-zinc-400">Not analysed yet</span>
+                )}
+                {counts &&
+                  (counts.AFFECTED > 0 || counts.UNCERTAIN > 0 || counts.NOT_AFFECTED > 0) && (
+                    <div className="mt-0.5 flex flex-wrap items-center gap-3 text-xs">
+                      {STATUS_ORDER.filter((status) => counts[status] > 0).map((status) => (
+                        <span
+                          key={status}
+                          className={`inline-flex items-center gap-1.5 ${STATUS_STYLE[status].text}`}
+                        >
+                          <span
+                            className={`h-1.5 w-1.5 rounded-full ${STATUS_STYLE[status].dot}`}
+                            aria-hidden="true"
+                          />
+                          {counts[status]} {STATUS_STYLE[status].label}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+              </div>
+
+              <div className="flex flex-wrap items-center gap-3">
+                {latestAnalysis && (
+                  <Link
+                    href={`/analysis-runs/${latestAnalysis.analysisRunId}`}
+                    className="rounded-md bg-zinc-950 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-zinc-800 dark:bg-white dark:text-zinc-950 dark:hover:bg-zinc-200"
+                  >
+                    View impact report
+                  </Link>
+                )}
+                <form action={analyseRepository.bind(null, repo.id)}>
                   <button
                     type="submit"
                     className="rounded-md border border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-700 transition-colors hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-900"
                   >
-                    Check Stripe impact
+                    Analyse repository
                   </button>
                 </form>
-              )}
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400">
-                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                Connected
-              </span>
-            </div>
-          </li>
-        ))}
+                <span className="inline-flex items-center gap-1.5 text-xs text-zinc-500 dark:text-zinc-400">
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" aria-hidden="true" />
+                  Connected
+                </span>
+              </div>
+            </li>
+          );
+        })}
       </ul>
     </main>
   );
