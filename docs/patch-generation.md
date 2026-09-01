@@ -23,6 +23,14 @@ LLM-assisted — see "Open questions" below, now partly answered for this
 one case. No GitHub write, no code execution — see
 [security.md](security.md).
 
+A `GENERATED` `PatchAttempt` can then be sent through real sandboxed
+install/typecheck/test verification (**IMPLEMENTED**, a separate concept —
+see [verification.md](verification.md)), via
+`POST /patch-attempts/:id/verification-runs`. Patch generation itself
+still performs no code execution and no GitHub write of any kind;
+verification is what actually runs the candidate patch, and it does so in
+an isolated sandbox, never inside `apps/api`/`apps/worker`.
+
 ## Principles (DECIDED, now demonstrated for one rule)
 
 - **Smallest correct migration.** A patch addresses exactly the
@@ -60,7 +68,9 @@ one case. No GitHub write, no code execution — see
 - How a `PatchAttempt` is represented before verification — answered for
   the one implemented rule: a `patch_attempts` row (unified diff + a
   structured postcondition result), never a branch or working tree — see
-  [data-model.md](data-model.md) and [verification.md](verification.md).
+  [data-model.md](data-model.md). Sandboxed verification itself
+  (**IMPLEMENTED**) consumes exactly this representation — see
+  [verification.md](verification.md).
 
 ## Deferred
 

@@ -275,10 +275,95 @@ aggregation), `apps/api/src/analysis/impact-persistence.ts`, and
 `ProviderChange`s' exact provenance, the tri-state safety policy, and the
 benchmark that measures whether the analyser generalizes across them.
 
-## Candidate domain concepts (PROPOSED — not implemented)
+- **`patch_attempts`** — one deterministic remediation attempt for an
+  `ImpactAssessment`. Audit-log style like `analysis_runs` — never
+  upserted; each `POST /impact-assessments/:id/patch-attempts` inserts a
+  new row, since a future `transformation_version` bump can legitimately
+  produce a different result for the same assessment.
+  `impact_assessment_id` references `impact_assessments.id`,
+  **`ON DELETE CASCADE`**. `transformation_kind`/`transformation_version`
+  identify the code-driven `TransformationRecipe` used (or
+  `'unsupported'`/`'n/a'` when no recipe exists for the rule).
+  `status` is `GENERATED | REFUSED | FAILED` — never a runtime-verification
+  status (see `verification_runs` below; the two are deliberately separate
+  concepts). `refusal_reason`/`failure_reason` are short, Patchwork-authored
+  strings, not raw exceptions. `changed_files` and `diff` (unified-diff
+  text, `p0`-relative, no repository copy — see
+  [security.md](security.md) on minimizing source persistence) are only
+  populated for `GENERATED`. `postcondition_result` is jsonb, one entry per
+  `VerificationExpectation` check the recipe ran (see the `ChangeRule`
+  splitting section below) — this is the **static** postcondition result,
+  not sandbox verification. See
+  [docs/patch-generation.md](patch-generation.md) and
+  `apps/api/src/remediation/persistence.ts` for the implementation.
 
-None of what follows is implemented. This section was revised following
-external technical/product research (see
+- **`verification_runs`** — one sandboxed install/typecheck/test
+  verification attempt for a `GENERATED` `PatchAttempt`. Audit-log style
+  like `patch_attempts`/`analysis_runs` — never upserted, and **never
+  automatically retried**; a worker-crash-recovered run stays whatever
+  terminal status recovery assigned it (see below), and a user must
+  explicitly request a new run. `patch_attempt_id` references
+  `patch_attempts.id`, **`ON DELETE CASCADE`**. `status` is
+  `PENDING | RUNNING | PASSED | FAILED | REFUSED | TIMED_OUT |
+INFRA_ERROR` — deliberately never collapsed to generic success/failure.
+  `failure_category` (`CUSTOMER_REPO_FAILURE | PATCH_FAILURE |
+POLICY_REFUSAL | SANDBOX_INFRA_FAILURE | TIMEOUT`) is a second,
+  independent dimension alongside `status`, not folded into it — so, e.g.,
+  two different `FAILED` runs (a failing test suite vs. a patch that
+  wouldn't apply) stay distinguishable. `failure_reason` is a short,
+  Patchwork-authored string. `manifest_version`/`manifest` (jsonb) persist
+  the exact server-generated `VerificationManifest` that drove the run,
+  for reproducibility — never accepted from client input, never containing
+  an arbitrary command field. `sandbox_provider` (currently always `'e2b'`
+  once a manifest exists), `sandbox_runtime`, `node_version`/
+  `node_version_source` (`'repository' | 'patchwork_default'` — see
+  [verification.md](verification.md) on why this distinction is recorded,
+  not just the resolved version number), and `package_manager` are
+  environment evidence, surfaced directly in the runtime verification UI.
+  `result_summary` (jsonb) is a small rollup (`stepsRun`/`stepsPassed`).
+  `claimed_by`/`claimed_at`/`lease_expires_at` implement the worker's
+  lease-based claim (see "Worker claim queue" below) — not part of the
+  run's own result, purely operational state consumed by
+  `apps/worker/src/verification/queue.ts`.
+
+- **`verification_steps`** — one command's result within a
+  `verification_run`: `sequence`, `kind`
+  (`patch_apply | install | typecheck | test`), `command` (the exact
+  argv actually run, for evidence — never a caller-suppliable field
+  anywhere upstream), `status` (`PASSED | FAILED | TIMED_OUT | SKIPPED`),
+  `exit_code`, `timed_out`, `duration_ms`. `stdout_excerpt`/
+  `stderr_excerpt` are bounded (8 KiB each, by bytes, UTF-8-boundary-safe
+  — see [verification.md](verification.md)'s "Bounded logs"), with
+  `truncated` recorded whenever a cap was hit — the API/UI never imply
+  complete logs when a cap trimmed them. `verification_run_id` references
+  `verification_runs.id`, **`ON DELETE CASCADE`**. See
+  `apps/worker/src/verification/persistence.ts` (write path, run inside
+  the sandbox) and `apps/api/src/verification/persistence.ts` (read-only
+  path for the impact-detail page) for the implementation.
+
+### Worker claim queue (IMPLEMENTED)
+
+No separate queue table or infrastructure — `verification_runs` itself is
+the queue, claimed via `SELECT ... FOR UPDATE SKIP LOCKED` inside a
+transaction (`apps/worker/src/verification/queue.ts`), matching
+[ADR-002](adr/0002-drizzle-for-postgres-access.md)'s "Postgres is the only
+datastore" stance. The `claimed_by`/`claimed_at`/`lease_expires_at`
+columns on `verification_runs` exist specifically so a worker crash can
+never leave a row `RUNNING` forever: any worker's next poll calls
+`recoverStaleClaims`, which reclaims a `RUNNING` row whose lease has
+expired as `INFRA_ERROR`/`SANDBOX_INFRA_FAILURE`. Verified with unit and
+integration tests (including a two-workers-racing-for-one-row test and a
+lease-expiry-recovery test) — not yet exercised under production-scale
+concurrent load; see [verification.md](verification.md)'s "Not implemented
+/ not proven live."
+
+## Candidate domain concepts (mixed status — see each subsection)
+
+This section began as a fully-PROPOSED candidate list; most of it has
+since been implemented, subsection by subsection, and is marked
+**CURRENT** inline where that happened — genuinely still-PROPOSED/DEFERRED
+concepts are called out explicitly rather than left ambiguous. It was also
+revised following external technical/product research (see
 [docs/adr/](adr/) for whether that research warrants its own ADR) that
 corrected two structural assumptions in the original candidate list — those
 corrections are called out explicitly below rather than silently applied.
@@ -314,6 +399,9 @@ ProviderChange      1 ── * RuleVersion        (CURRENT)
 AnalysisRun         1 ── * ImpactAssessment   (CURRENT)
 RuleVersion         1 ── * ImpactAssessment   (CURRENT)
 ImpactAssessment    1 ── * Finding            (impact_findings, CURRENT)
+ImpactAssessment    1 ── * PatchAttempt       (patch_attempts, CURRENT)
+PatchAttempt        1 ── * VerificationRun    (verification_runs, CURRENT)
+VerificationRun     1 ── * VerificationStep   (verification_steps, CURRENT)
 ```
 
 ### Version applicability is evidence, not one repository field (CURRENT for InstalledSdkEvidence/ClientVersionEvidence; correction from the original candidate model)
@@ -414,9 +502,10 @@ ProviderChange (provider_changes row)
                                     migration held via the same real
                                     TypeChecker-based engine ImpactPredicate
                                     uses, independent of the rewrite code.
-                                    Distinct from the future sandboxed
-                                    build/test VerificationRun below, which
-                                    remains entirely deferred)
+                                    Distinct from the sandboxed install/
+                                    typecheck/test VerificationRun below,
+                                    which is now CURRENT -- see
+                                    verification.md)
 ```
 
 For all four rules implemented so far, `ApplicabilityConstraint`/
@@ -497,18 +586,15 @@ normalized, cross-snapshot business entity.
 `ImpactAssessment`, `AffectedLocation`/Finding (all now CURRENT, as
 `users`, `github_installations`, `repositories`, `repository_snapshots`,
 `analysis_runs`, `provider_changes`, `rule_versions`,
-`impact_assessments`, `impact_findings` above), `PatchAttempt` (now
-CURRENT, as `patch_attempts` -- an audit-log-style table like
-`AnalysisRun`, never upserted: `impact_assessment_id`,
-`transformation_kind`/`transformation_version` (the code discriminator
-above), `status` (`GENERATED`/`REFUSED`/`FAILED`), `refusal_reason`/
-`failure_reason`, `changed_files`, `diff` (unified-diff text, never a
-repository copy), `postcondition_result` (jsonb, one entry per
-`VerificationExpectation` check)), `Dependency`, `VerificationRun`,
-`PullRequest`, `AuditEvent` (still PROPOSED -- `VerificationRun`
-specifically means the future _sandboxed build/test_ verification
-described in [verification.md](verification.md), not the static
-postcondition checks a `PatchAttempt` already carries). See
+`impact_assessments`, `impact_findings` above), `PatchAttempt` and
+`VerificationRun` (both now **CURRENT**, as `patch_attempts` and
+`verification_runs`/`verification_steps` — see the "Current" section
+above for full column detail and [verification.md](verification.md) for
+the sandboxed install/typecheck/test pipeline that produces a
+`VerificationRun`; a `VerificationRun` is distinct from the static
+postcondition checks a `PatchAttempt` already carries on its own).
+`Dependency`, `PullRequest`, `AuditEvent` remain **PROPOSED/DEFERRED** —
+no schema exists for any of them yet. See
 [CLAUDE.md](../CLAUDE.md#product) for the core workflow these will support,
 and [docs/impact-analysis.md](impact-analysis.md) for the pipeline that
 produces an `ImpactAssessment`.
@@ -539,22 +625,25 @@ produces an `ImpactAssessment`.
 
 ## Deferred
 
-`Dependency`, `VerificationRun` (the future sandboxed build/test kind),
-`PullRequest`, and `AuditEvent` (the remainder of the candidate list above,
-now that `RepositorySnapshot`, `AnalysisRun`, the evidence subset, the
-`ProviderChange`/`RuleVersion`/`ImpactAssessment`/Finding subset for four
-rules, and `PatchAttempt`/one `TransformationRecipe` are implemented)
-require their own design pass once GitHub write access is scoped. Full
-repository-content persistence remains deferred: an exact-SHA archive is
-downloaded and extracted per analysis (evidence collection, impact
-assessment, and now remediation — never reused/cached across the three,
-and never persisted between requests), but only ever to an OS temp
+`Dependency`, `PullRequest`, and `AuditEvent` (the remainder of the
+candidate list above, now that `RepositorySnapshot`, `AnalysisRun`, the
+evidence subset, the `ProviderChange`/`RuleVersion`/`ImpactAssessment`/
+Finding subset for four rules, `PatchAttempt`/one `TransformationRecipe`,
+and `VerificationRun`/`VerificationStep` are implemented) require their
+own design pass once GitHub write access is scoped. Full repository-content
+persistence remains deferred: an exact-SHA archive is downloaded and
+extracted per analysis (evidence collection, impact assessment,
+remediation, and now sandbox verification — never reused/cached across
+these, and never persisted between requests), but only ever to an OS temp
 directory deleted immediately after use
-(`apps/api/src/analysis/archive.ts`) — no source file content is ever
-persisted to PostgreSQL; a `PatchAttempt` persists only a small, bounded
-unified diff for the changed file(s), never a repository copy. Automated
-changelog ingestion, additional rules' `TransformationRecipe`/
-`VerificationExpectation` (Rules A/C/D were evaluated and found to have no
-provable-safe mechanical subset -- see impact-analysis.md#remediation),
-sandboxed build/test verification, and any GitHub write (branch, commit,
+(`apps/api/src/analysis/archive.ts`, `packages/archive/`) — no source file
+content is ever persisted to PostgreSQL; a `PatchAttempt` persists only a
+small, bounded unified diff for the changed file(s), and a
+`VerificationRun` persists only bounded log excerpts, never a repository
+copy. Automated changelog ingestion, additional rules'
+`TransformationRecipe`/`VerificationExpectation` (Rules A/C/D were
+evaluated and found to have no provable-safe mechanical subset -- see
+impact-analysis.md#remediation), build/lint verification (only
+install/typecheck/test are implemented — see
+[verification.md](verification.md)), and any GitHub write (branch, commit,
 PR) remain explicitly out of scope.
