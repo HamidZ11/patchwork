@@ -1,4 +1,4 @@
-import type { GitHubAppAuth, GitHubClient, GitHubCommitAuthor } from '@patchwork/github';
+import type { GitHubClient, GitHubCommitAuthor } from '@patchwork/github';
 
 /**
  * The GitHub App's own bot identity is the least-misleading commit
@@ -7,7 +7,11 @@ import type { GitHubAppAuth, GitHubClient, GitHubCommitAuthor } from '@patchwork
  * permission beyond what commit creation already requires. The numeric id
  * in the noreply email is the bot machine-user's own user id -- a
  * different id space than the App's own numeric App ID -- resolved via
- * `GET /users/{app-slug}[bot]`.
+ * `GET /users/{app-slug}[bot]`, unauthenticated (see GitHubClient
+ * .getBotUserId's own doc comment: confirmed live that this endpoint is
+ * public, and that an App JWT -- the only credential an App-global,
+ * not-installation-scoped lookup like this could otherwise use -- isn't
+ * valid for it anyway).
  *
  * Public, stable-per-App metadata, not a secret: resolved once (lazily,
  * on first use) and cached in memory for the life of the process, never
@@ -18,15 +22,14 @@ let cached: { appSlug: string; author: GitHubCommitAuthor } | null = null;
 let inFlight: Promise<GitHubCommitAuthor> | null = null;
 
 export async function resolveBotIdentity(
-  deps: { githubClient: GitHubClient; githubAppAuth: GitHubAppAuth },
+  githubClient: GitHubClient,
   appSlug: string,
 ): Promise<GitHubCommitAuthor> {
   if (cached && cached.appSlug === appSlug) return cached.author;
 
   if (!inFlight) {
     inFlight = (async () => {
-      const appToken = await deps.githubAppAuth.getAppToken();
-      const botUserId = await deps.githubClient.getBotUserId(appSlug, appToken);
+      const botUserId = await githubClient.getBotUserId(appSlug);
       const author: GitHubCommitAuthor = {
         name: `${appSlug}[bot]`,
         email: `${botUserId}+${appSlug}[bot]@users.noreply.github.com`,

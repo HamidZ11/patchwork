@@ -155,8 +155,19 @@ export interface GitHubClient {
     branch: string,
     installationToken: string,
   ) => Promise<GitHubPullRequestSummary[]>;
-  /** Resolves the numeric user id of the App's own bot machine-user account (`<app-slug>[bot]`) -- public metadata, stable per App, meant to be resolved once and cached, not fetched per commit. */
-  getBotUserId: (appSlug: string, token: string) => Promise<number>;
+  /**
+   * Resolves the numeric user id of the App's own bot machine-user
+   * account (`<app-slug>[bot]`) -- public metadata, stable per App,
+   * meant to be resolved once and cached, not fetched per commit.
+   * Deliberately unauthenticated: `GET /users/{username}` is a public
+   * REST endpoint (confirmed live), and App JWTs -- the only credential
+   * this App-global lookup could otherwise use, since it isn't scoped to
+   * any one installation -- aren't valid bearer tokens for general REST
+   * endpoints in the first place (only for the small set of `/app/*`
+   * management endpoints), so passing one here would fail with 401
+   * "Bad credentials", not a permissions error.
+   */
+  getBotUserId: (appSlug: string) => Promise<number>;
 }
 
 const MAX_REPOSITORY_PAGES = 50;
@@ -578,9 +589,9 @@ export function createGitHubClient(fetchImpl: typeof fetch = fetch): GitHubClien
     return data.map(toPullRequestSummary);
   }
 
-  async function getBotUserId(appSlug: string, token: string): Promise<number> {
+  async function getBotUserId(appSlug: string): Promise<number> {
     const response = await fetchImpl(`https://api.github.com/users/${appSlug}[bot]`, {
-      headers: authHeaders(token),
+      headers: { Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28' },
     });
     if (!response.ok) {
       throw await apiError('get_bot_user_failed', response);

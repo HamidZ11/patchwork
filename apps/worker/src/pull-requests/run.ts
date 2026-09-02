@@ -214,10 +214,7 @@ async function buildNewCommit(
       installationToken,
     );
 
-    const author = await resolveBotIdentity(
-      { githubClient: deps.githubClient, githubAppAuth: deps.githubAppAuth },
-      deps.appSlug,
-    );
+    const author = await resolveBotIdentity(deps.githubClient, deps.appSlug);
     const commitSha = await deps.githubClient.createCommit(
       context.repositoryOwner,
       context.repositoryName,
