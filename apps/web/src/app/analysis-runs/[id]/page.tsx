@@ -345,7 +345,7 @@ function EnvironmentDetail({ run, commitSha }: { run: VerificationRun; commitSha
 
   const nodeSourceLabel =
     run.nodeVersionSource === 'patchwork_default'
-      ? 'Patchwork default — no repository version declared'
+      ? 'Patchwork default, no repository version declared'
       : run.nodeVersionSource === 'repository'
         ? 'declared by repository'
         : null;
@@ -518,7 +518,7 @@ function PatchAttemptResult({
                 : 'text-amber-700 dark:text-amber-400'
             }`}
           >
-            Static checks — {staticChecksPassed ? 'Passed' : 'Failed'}
+            Static checks: {staticChecksPassed ? 'Passed' : 'Failed'}
           </span>
           {attempt.postconditionResult.map((check) => (
             <span

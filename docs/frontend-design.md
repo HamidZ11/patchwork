@@ -1,10 +1,26 @@
 # Frontend Design Guidance
 
+**[DESIGN.md](../DESIGN.md) is Patchwork's canonical design contract** —
+product personality, principles, anti-patterns, tokens (spacing,
+typography, color roles, radius, borders), and per-surface rules
+(navigation, tables, status, evidence presentation, motion,
+accessibility, index-vs-detail architecture). Read it first for any
+actual frontend implementation; it is binding on every screen.
+
+This document covers a narrower, adjacent topic that DESIGN.md
+deliberately doesn't duplicate: **how the two installed skill packs
+apply to Patchwork**, since neither pack was written for a dense,
+evidence-first product surface and both need real interpretation before
+their advice is usable here. Where this document's guidance and
+DESIGN.md ever appear to disagree, DESIGN.md wins — this document exists
+to serve it, not to compete with it.
+
 Two installed skill packs inform `apps/web` work — both are guidance
 layers only. Neither overrides CLAUDE.md, docs/product.md,
-docs/architecture.md, docs/security.md, API contracts, product scope, or
-existing engineering conventions. Where guidance conflicts with any of
-those, Patchwork's own docs win, silently and without exception.
+docs/architecture.md, docs/security.md, API contracts, product scope,
+DESIGN.md, or existing engineering conventions. Where guidance conflicts
+with any of those, Patchwork's own docs win, silently and without
+exception.
 
 ## The two packs
 
@@ -59,11 +75,12 @@ worth fixing, not before.
 
 ## Resolving conflicts
 
-1. CLAUDE.md, docs/product.md, docs/architecture.md, docs/security.md, API
-   contracts, and product scope always win.
+1. CLAUDE.md, docs/product.md, docs/architecture.md, docs/security.md,
+   API contracts, product scope, and DESIGN.md always win.
 2. Where Taste Skill and Emil's pack disagree on a _visual_ question
-   (density, color, shape), Taste Skill's universal anti-slop principles
-   govern — Emil's pack does not set visual identity.
+   (density, color, shape) and DESIGN.md hasn't already settled it,
+   Taste Skill's universal anti-slop principles govern — Emil's pack
+   does not set visual identity.
 3. Where Emil's pack suggests motion and it conflicts with the motion
    restraint below, the restraint below wins. When in doubt, prefer no
    animation over a defensible one — matches
