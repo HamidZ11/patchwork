@@ -854,14 +854,17 @@ finding," so the distinction is visible to whoever reads the result, not
 just enforced silently.
 
 **Postcondition checks are not `docs/verification.md`'s "verification."**
-That document's "verification" means running the customer's own build/
-test/lint in an isolated sandbox — deliberately, entirely deferred, no
-sandbox exists. What a `TransformationRecipe`'s `checkPostconditions`
+That document's "verification" means actually running install/typecheck/
+test in an isolated E2B sandbox — now **implemented** (see
+[verification.md](verification.md)), a separate concept from what's
+described here. What a `TransformationRecipe`'s `checkPostconditions`
 does is narrower and purely static: re-run the same real semantic engine
 to confirm the old pattern is gone and the replacement pattern is present
 at the expected location, assert only the expected file(s) changed, and
-assert the diff is bounded. No repository code is ever executed by either
-mechanism today.
+assert the diff is bounded. No repository code is ever executed by this
+mechanism — sandboxed verification is the one place repository code
+(install scripts, tests) actually runs, and only inside the isolated
+sandbox, never inside `apps/api`/`apps/worker`.
 
 ## Open questions
 
@@ -894,10 +897,11 @@ mechanism today.
 Additional rules beyond the four implemented, automated Stripe changelog
 ingestion, `TransformationRecipe`/`VerificationExpectation` for Rules A/C/D
 (evaluated and found to have no provable-safe mechanical subset — see
-"Remediation" above) or for any future rule, sandboxed build/test
-verification (`docs/verification.md`), any GitHub write (branch, commit,
-PR), a historical migration case for Rule D (no genuine public example
-found), expanding
+"Remediation" above) or for any future rule, any GitHub write (branch,
+commit, PR — sandboxed install/typecheck/test verification is now
+implemented, see [verification.md](verification.md), but no GitHub write
+capability exists yet), a historical migration case for Rule D (no
+genuine public example found), expanding
 the trusted stub's type surface to support `Stripe.X` namespace-style
 type annotations, broadening `call-argument-property.ts`'s lexical
 prefilter to catch cross-file data-carried usage (see "Realistic

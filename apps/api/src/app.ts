@@ -10,6 +10,7 @@ import { registerGitHubRoutes } from './routes/github.js';
 import { registerHealthRoutes } from './routes/health.js';
 import { registerImpactAssessmentsRoutes } from './routes/impact-assessments.js';
 import { registerPatchAttemptsRoutes } from './routes/patch-attempts.js';
+import { registerPullRequestAttemptsRoutes } from './routes/pull-request-attempts.js';
 import { registerReadyRoutes } from './routes/ready.js';
 import { registerVerificationRunsRoutes } from './routes/verification-runs.js';
 
@@ -86,6 +87,11 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     githubAppAuth: deps.githubAppAuth,
   });
   registerVerificationRunsRoutes(app, { db: deps.db.db });
+  registerPullRequestAttemptsRoutes(app, {
+    db: deps.db.db,
+    githubClient: deps.githubClient,
+    githubAppAuth: deps.githubAppAuth,
+  });
 
   return app;
 }

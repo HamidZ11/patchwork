@@ -6,7 +6,7 @@ import { createDbClient, schema, type DbClient } from '@patchwork/db';
 import { claimNextPendingRun, recoverStaleClaims, renewLease } from '../queue.js';
 import { processNextPendingRun } from '../process.js';
 import { createFakeSandboxRunner } from './fake-sandbox-runner.js';
-import { fakeGitHubAppAuth, fakeGitHubClientWithArchive } from './fixtures.js';
+import { fakeGitHubAppAuth, fakeGitHubClientWithArchive } from '../../__tests__/fixtures.js';
 
 const PKG = JSON.stringify({
   name: 'demo',

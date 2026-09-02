@@ -30,6 +30,7 @@ const worker = createWorker({
     clientId: workerConfig.github.clientId,
     clientSecret: workerConfig.github.clientSecret,
   }),
+  githubAppSlug: workerConfig.github.appSlug,
   sandboxRunner: createE2bSandboxRunner(workerConfig.e2bApiKey),
 });
 

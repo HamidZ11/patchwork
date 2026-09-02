@@ -17,6 +17,7 @@
     "@patchwork/config": "workspace:*",
     "@patchwork/db": "workspace:*",
     "@patchwork/github": "workspace:*",
+    "diff": "^7.0.0",
     "dotenv": "^16.4.7",
     "drizzle-orm": "^0.38.4",
     "e2b": "^2.46.1",
@@ -26,6 +27,7 @@
     "zod": "^3.24.1"
   },
   "devDependencies": {
+    "@types/diff": "^7.0.2",
     "@types/semver": "^7.5.8",
     "tar": "^7.5.22",
     "tsx": "^4.19.2",

@@ -432,3 +432,59 @@ export const verificationSteps = pgTable('verification_steps', {
   startedAt: timestamp('started_at', { withTimezone: true }),
   completedAt: timestamp('completed_at', { withTimezone: true }),
 });
+
+/**
+ * One attempt to publish a PASSED VerificationRun's already-verified
+ * PatchAttempt to GitHub as a branch + one commit + one pull request --
+ * the one place Patchwork ever writes to a customer repository. Audit-log
+ * style like PatchAttempt/VerificationRun, never upserted: a retry after
+ * failure is a new row, never a mutation of a historical result.
+ *
+ * `status` is deliberately five values (PENDING | RUNNING | OPENED |
+ * REFUSED | FAILED), not a finer workflow-state machine
+ * (CREATING_BRANCH/CREATING_COMMIT/...). The persisted fields below are
+ * NOT trusted as proof of external GitHub state on their own -- a crash
+ * can occur after GitHub successfully creates a ref/commit/PR but before
+ * this row is updated to record it -- so recovery always reconciles
+ * against live GitHub state (does the deterministic branch name already
+ * exist? does its tip match `commit_sha`? does an open PR already exist
+ * for that head?) rather than trusting `branch_name`/`commit_sha`/
+ * `github_pr_number` being populated as sufficient evidence on their own.
+ * See apps/worker/src/pull-requests/ for the reconciliation logic.
+ *
+ * `failure_category` distinguishes GITHUB_PERMISSION_FAILURE (the
+ * installation hasn't approved Contents/Pull-requests write access) from
+ * GITHUB_RULESET_FAILURE (the installation has the right permissions, but
+ * a repository ruleset rejected the specific branch name) -- different
+ * problems requiring different user action, never collapsed into one
+ * generic "GitHub write failed."
+ *
+ * claimed_by/claimed_at/lease_expires_at: identical lease pattern to
+ * verification_runs, so a worker crash mid-write can never leave a row
+ * permanently RUNNING.
+ */
+export const pullRequestAttempts = pgTable('pull_request_attempts', {
+  id: uuid('id')
+    .primaryKey()
+    .$defaultFn(() => crypto.randomUUID()),
+  patchAttemptId: uuid('patch_attempt_id')
+    .notNull()
+    .references(() => patchAttempts.id, { onDelete: 'cascade' }),
+  verificationRunId: uuid('verification_run_id')
+    .notNull()
+    .references(() => verificationRuns.id, { onDelete: 'restrict' }),
+  status: text('status').notNull(), // PENDING | RUNNING | OPENED | REFUSED | FAILED
+  failureCategory: text('failure_category'), // STALE_BASE | POLICY_REFUSAL | GITHUB_PERMISSION_FAILURE | GITHUB_RULESET_FAILURE | BRANCH_COLLISION | PATCH_APPLICATION_FAILURE | GITHUB_API_FAILURE | RATE_LIMITED
+  failureReason: text('failure_reason'),
+  baseCommitSha: text('base_commit_sha'),
+  branchName: text('branch_name'),
+  commitSha: text('commit_sha'),
+  githubPrNumber: integer('github_pr_number'),
+  githubPrUrl: text('github_pr_url'),
+  claimedBy: text('claimed_by'),
+  claimedAt: timestamp('claimed_at', { withTimezone: true }),
+  leaseExpiresAt: timestamp('lease_expires_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  startedAt: timestamp('started_at', { withTimezone: true }),
+  completedAt: timestamp('completed_at', { withTimezone: true }),
+});

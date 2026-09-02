@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createFakeSandboxRunner } from './fake-sandbox-runner.js';
-import { fakeGitHubAppAuth, fakeGitHubClientWithArchive } from './fixtures.js';
+import { fakeGitHubAppAuth, fakeGitHubClientWithArchive } from '../../__tests__/fixtures.js';
 import { runVerification } from '../run.js';
 import type { PatchAttemptForVerification } from '../persistence.js';
 import type { SandboxCommand, SandboxCommandResult } from '../sandbox-runner.js';

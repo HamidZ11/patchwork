@@ -50,6 +50,36 @@ export function fakeGitHubClient(overrides: Partial<GitHubClient> = {}): GitHubC
     downloadRepositoryArchive: async () => {
       throw new Error('downloadRepositoryArchive not stubbed for this test');
     },
+    getCommitTreeSha: async () => {
+      throw new Error('getCommitTreeSha not stubbed for this test');
+    },
+    createBlob: async () => {
+      throw new Error('createBlob not stubbed for this test');
+    },
+    createTree: async () => {
+      throw new Error('createTree not stubbed for this test');
+    },
+    createCommit: async () => {
+      throw new Error('createCommit not stubbed for this test');
+    },
+    getBranchRefSha: async () => {
+      throw new Error('getBranchRefSha not stubbed for this test');
+    },
+    createBranchRef: async () => {
+      throw new Error('createBranchRef not stubbed for this test');
+    },
+    createPullRequest: async () => {
+      throw new Error('createPullRequest not stubbed for this test');
+    },
+    getPullRequest: async () => {
+      throw new Error('getPullRequest not stubbed for this test');
+    },
+    listOpenPullRequestsForHead: async () => {
+      throw new Error('listOpenPullRequestsForHead not stubbed for this test');
+    },
+    getBotUserId: async () => {
+      throw new Error('getBotUserId not stubbed for this test');
+    },
     ...overrides,
   };
 }

@@ -7,6 +7,10 @@ export class GitHubApiError extends Error {
   constructor(
     public readonly code: string,
     public readonly status: number,
+    /** GitHub's own response `message` field, when available -- short, never a customer secret, safe to persist/surface (e.g. distinguishing a ruleset rejection from a generic validation error on a 422). */
+    public readonly details?: string,
+    /** Parsed from the response's `Retry-After` header, when present -- GitHub's secondary rate limit responses include this; callers should not retry before this many seconds have elapsed. */
+    public readonly retryAfterSeconds?: number,
   ) {
     super(`GitHub API error: ${code} (status ${status})`);
     this.name = 'GitHubApiError';
@@ -49,6 +53,23 @@ export interface GitHubRepository {
   defaultBranch: string;
 }
 
+export interface GitHubTreeEntry {
+  path: string;
+  blobSha: string;
+}
+
+export interface GitHubCommitAuthor {
+  name: string;
+  email: string;
+}
+
+export interface GitHubPullRequestSummary {
+  number: number;
+  url: string;
+  state: 'open' | 'closed';
+  merged: boolean;
+}
+
 export interface GitHubClient {
   exchangeOAuthCode: (params: {
     clientId: string;
@@ -71,6 +92,71 @@ export interface GitHubClient {
     installationToken: string,
     destinationPath: string,
   ) => Promise<void>;
+  /** The Git tree SHA a commit points at -- used as `base_tree` so a new tree only needs entries for changed files. */
+  getCommitTreeSha: (
+    owner: string,
+    name: string,
+    commitSha: string,
+    installationToken: string,
+  ) => Promise<string>;
+  /** Creates a blob from exact file content (never derived from mutable HEAD) and returns its SHA. */
+  createBlob: (
+    owner: string,
+    name: string,
+    contentBase64: string,
+    installationToken: string,
+  ) => Promise<string>;
+  /** Creates a new tree layered on `baseTreeSha`, containing only the changed-file entries; returns the new tree's SHA. */
+  createTree: (
+    owner: string,
+    name: string,
+    baseTreeSha: string,
+    entries: GitHubTreeEntry[],
+    installationToken: string,
+  ) => Promise<string>;
+  /** Creates a commit object (not yet reachable from any ref) and returns its SHA. */
+  createCommit: (
+    owner: string,
+    name: string,
+    params: { message: string; treeSha: string; parentShas: string[]; author: GitHubCommitAuthor },
+    installationToken: string,
+  ) => Promise<string>;
+  /** The tip commit SHA of `refs/heads/{branch}`, or null if that branch doesn't exist -- a 404 here is an expected, normal outcome, never an error. */
+  getBranchRefSha: (
+    owner: string,
+    name: string,
+    branch: string,
+    installationToken: string,
+  ) => Promise<string | null>;
+  /** Creates a brand-new branch ref. No force/update variant is exposed anywhere on this client -- an existing ref of the same name always fails (surfaced as GitHubApiError), never silently overwritten. */
+  createBranchRef: (
+    owner: string,
+    name: string,
+    branch: string,
+    commitSha: string,
+    installationToken: string,
+  ) => Promise<void>;
+  createPullRequest: (
+    owner: string,
+    name: string,
+    params: { title: string; body: string; head: string; base: string },
+    installationToken: string,
+  ) => Promise<GitHubPullRequestSummary>;
+  getPullRequest: (
+    owner: string,
+    name: string,
+    number: number,
+    installationToken: string,
+  ) => Promise<GitHubPullRequestSummary>;
+  /** Open PRs whose head is exactly `{owner}:{branch}` on this repository -- a defense-in-depth duplicate check alongside persisted state, never the primary mechanism. */
+  listOpenPullRequestsForHead: (
+    owner: string,
+    name: string,
+    branch: string,
+    installationToken: string,
+  ) => Promise<GitHubPullRequestSummary[]>;
+  /** Resolves the numeric user id of the App's own bot machine-user account (`<app-slug>[bot]`) -- public metadata, stable per App, meant to be resolved once and cached, not fetched per commit. */
+  getBotUserId: (appSlug: string, token: string) => Promise<number>;
 }
 
 const MAX_REPOSITORY_PAGES = 50;
@@ -256,6 +342,254 @@ export function createGitHubClient(fetchImpl: typeof fetch = fetch): GitHubClien
     }
   }
 
+  /** Best-effort extraction of GitHub's own `message` field from an error response body -- never throws, since this is only used to enrich an error we're already raising. */
+  async function errorDetails(response: Response): Promise<string | undefined> {
+    try {
+      const data = (await response.clone().json()) as { message?: string };
+      return data.message;
+    } catch {
+      return undefined;
+    }
+  }
+
+  /** Builds a GitHubApiError carrying both the response body's `message` and a parsed `Retry-After` header, when present -- the single place both are extracted, for the write-path methods that need rate-limit/ruleset classification. */
+  async function apiError(code: string, response: Response): Promise<GitHubApiError> {
+    const retryAfterHeader = response.headers.get('retry-after');
+    const retryAfterSeconds = retryAfterHeader ? Number(retryAfterHeader) : undefined;
+    return new GitHubApiError(
+      code,
+      response.status,
+      await errorDetails(response),
+      Number.isFinite(retryAfterSeconds) ? retryAfterSeconds : undefined,
+    );
+  }
+
+  async function getCommitTreeSha(
+    owner: string,
+    name: string,
+    commitSha: string,
+    installationToken: string,
+  ): Promise<string> {
+    const response = await fetchImpl(
+      `https://api.github.com/repos/${owner}/${name}/git/commits/${encodeURIComponent(commitSha)}`,
+      { headers: authHeaders(installationToken) },
+    );
+    if (!response.ok) {
+      throw await apiError('get_commit_tree_sha_failed', response);
+    }
+    const data = (await response.json()) as { tree?: { sha?: string } };
+    if (!data.tree?.sha) throw new GitHubApiError('commit_tree_sha_missing', response.status);
+    return data.tree.sha;
+  }
+
+  async function createBlob(
+    owner: string,
+    name: string,
+    contentBase64: string,
+    installationToken: string,
+  ): Promise<string> {
+    const response = await fetchImpl(`https://api.github.com/repos/${owner}/${name}/git/blobs`, {
+      method: 'POST',
+      headers: { ...authHeaders(installationToken), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content: contentBase64, encoding: 'base64' }),
+    });
+    if (!response.ok) {
+      throw await apiError('create_blob_failed', response);
+    }
+    const data = (await response.json()) as { sha?: string };
+    if (!data.sha) throw new GitHubApiError('blob_sha_missing', response.status);
+    return data.sha;
+  }
+
+  async function createTree(
+    owner: string,
+    name: string,
+    baseTreeSha: string,
+    entries: GitHubTreeEntry[],
+    installationToken: string,
+  ): Promise<string> {
+    const response = await fetchImpl(`https://api.github.com/repos/${owner}/${name}/git/trees`, {
+      method: 'POST',
+      headers: { ...authHeaders(installationToken), 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        base_tree: baseTreeSha,
+        tree: entries.map((entry) => ({
+          path: entry.path,
+          mode: '100644',
+          type: 'blob',
+          sha: entry.blobSha,
+        })),
+      }),
+    });
+    if (!response.ok) {
+      throw await apiError('create_tree_failed', response);
+    }
+    const data = (await response.json()) as { sha?: string };
+    if (!data.sha) throw new GitHubApiError('tree_sha_missing', response.status);
+    return data.sha;
+  }
+
+  async function createCommit(
+    owner: string,
+    name: string,
+    params: { message: string; treeSha: string; parentShas: string[]; author: GitHubCommitAuthor },
+    installationToken: string,
+  ): Promise<string> {
+    const response = await fetchImpl(`https://api.github.com/repos/${owner}/${name}/git/commits`, {
+      method: 'POST',
+      headers: { ...authHeaders(installationToken), 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        message: params.message,
+        tree: params.treeSha,
+        parents: params.parentShas,
+        author: params.author,
+        committer: params.author,
+      }),
+    });
+    if (!response.ok) {
+      throw await apiError('create_commit_failed', response);
+    }
+    const data = (await response.json()) as { sha?: string };
+    if (!data.sha) throw new GitHubApiError('commit_sha_missing', response.status);
+    return data.sha;
+  }
+
+  async function getBranchRefSha(
+    owner: string,
+    name: string,
+    branch: string,
+    installationToken: string,
+  ): Promise<string | null> {
+    const response = await fetchImpl(
+      `https://api.github.com/repos/${owner}/${name}/git/refs/heads/${encodeURIComponent(branch)}`,
+      { headers: authHeaders(installationToken) },
+    );
+    if (response.status === 404) return null;
+    if (!response.ok) {
+      throw await apiError('get_branch_ref_failed', response);
+    }
+    const data = (await response.json()) as { object?: { sha?: string } };
+    if (!data.object?.sha) throw new GitHubApiError('branch_ref_sha_missing', response.status);
+    return data.object.sha;
+  }
+
+  async function createBranchRef(
+    owner: string,
+    name: string,
+    branch: string,
+    commitSha: string,
+    installationToken: string,
+  ): Promise<void> {
+    const response = await fetchImpl(`https://api.github.com/repos/${owner}/${name}/git/refs`, {
+      method: 'POST',
+      headers: { ...authHeaders(installationToken), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ref: `refs/heads/${branch}`, sha: commitSha }),
+    });
+    if (!response.ok) {
+      throw await apiError('create_branch_ref_failed', response);
+    }
+  }
+
+  function toPullRequestSummary(data: {
+    number: number;
+    html_url: string;
+    state: string;
+    merged?: boolean;
+  }): GitHubPullRequestSummary {
+    return {
+      number: data.number,
+      url: data.html_url,
+      state: data.state === 'closed' ? 'closed' : 'open',
+      merged: data.merged ?? false,
+    };
+  }
+
+  async function createPullRequest(
+    owner: string,
+    name: string,
+    params: { title: string; body: string; head: string; base: string },
+    installationToken: string,
+  ): Promise<GitHubPullRequestSummary> {
+    const response = await fetchImpl(`https://api.github.com/repos/${owner}/${name}/pulls`, {
+      method: 'POST',
+      headers: { ...authHeaders(installationToken), 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        title: params.title,
+        body: params.body,
+        head: params.head,
+        base: params.base,
+      }),
+    });
+    if (!response.ok) {
+      throw await apiError('create_pull_request_failed', response);
+    }
+    return toPullRequestSummary(
+      (await response.json()) as {
+        number: number;
+        html_url: string;
+        state: string;
+        merged?: boolean;
+      },
+    );
+  }
+
+  async function getPullRequest(
+    owner: string,
+    name: string,
+    number: number,
+    installationToken: string,
+  ): Promise<GitHubPullRequestSummary> {
+    const response = await fetchImpl(
+      `https://api.github.com/repos/${owner}/${name}/pulls/${number}`,
+      { headers: authHeaders(installationToken) },
+    );
+    if (!response.ok) {
+      throw await apiError('get_pull_request_failed', response);
+    }
+    return toPullRequestSummary(
+      (await response.json()) as {
+        number: number;
+        html_url: string;
+        state: string;
+        merged?: boolean;
+      },
+    );
+  }
+
+  async function listOpenPullRequestsForHead(
+    owner: string,
+    name: string,
+    branch: string,
+    installationToken: string,
+  ): Promise<GitHubPullRequestSummary[]> {
+    const response = await fetchImpl(
+      `https://api.github.com/repos/${owner}/${name}/pulls?state=open&head=${encodeURIComponent(`${owner}:${branch}`)}`,
+      { headers: authHeaders(installationToken) },
+    );
+    if (!response.ok) {
+      throw await apiError('list_open_pull_requests_failed', response);
+    }
+    const data = (await response.json()) as {
+      number: number;
+      html_url: string;
+      state: string;
+      merged?: boolean;
+    }[];
+    return data.map(toPullRequestSummary);
+  }
+
+  async function getBotUserId(appSlug: string, token: string): Promise<number> {
+    const response = await fetchImpl(`https://api.github.com/users/${appSlug}[bot]`, {
+      headers: authHeaders(token),
+    });
+    if (!response.ok) {
+      throw await apiError('get_bot_user_failed', response);
+    }
+    const data = (await response.json()) as { id?: number };
+    if (!data.id) throw new GitHubApiError('bot_user_id_missing', response.status);
+    return data.id;
+  }
+
   return {
     exchangeOAuthCode,
     getAuthenticatedUser,
@@ -263,5 +597,15 @@ export function createGitHubClient(fetchImpl: typeof fetch = fetch): GitHubClien
     listInstallationRepositories,
     getBranchCommitSha,
     downloadRepositoryArchive,
+    getCommitTreeSha,
+    createBlob,
+    createTree,
+    createCommit,
+    getBranchRefSha,
+    createBranchRef,
+    createPullRequest,
+    getPullRequest,
+    listOpenPullRequestsForHead,
+    getBotUserId,
   };
 }

@@ -19,6 +19,7 @@ function baseDeps(overrides: Partial<WorkerDeps> = {}): WorkerDeps {
     logger: pino({ level: 'silent' }),
     githubClient: {} as GitHubClient,
     githubAppAuth: {} as GitHubAppAuth,
+    githubAppSlug: 'test-app',
     sandboxRunner: createFakeSandboxRunner(),
     ...overrides,
   };

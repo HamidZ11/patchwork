@@ -8,7 +8,10 @@ import { buildFixtureArchive } from './build-fixture-archive.js';
  * boundary -- see build-fixture-archive.ts's doc comment for why that's
  * fine for test-only code even though production GitHub auth/archive
  * logic was moved to @patchwork/github specifically to avoid duplicating
- * it.
+ * it. Shared within apps/worker by both verification/__tests__ and
+ * pull-requests/__tests__ -- moved here (from verification/__tests__)
+ * once a second module needed it, matching CLAUDE.md's "don't abstract
+ * before there's a second real use" guidance.
  */
 export function fakeGitHubClient(overrides: Partial<GitHubClient> = {}): GitHubClient {
   return {
@@ -29,6 +32,36 @@ export function fakeGitHubClient(overrides: Partial<GitHubClient> = {}): GitHubC
     },
     downloadRepositoryArchive: async () => {
       throw new Error('downloadRepositoryArchive not stubbed for this test');
+    },
+    getCommitTreeSha: async () => {
+      throw new Error('getCommitTreeSha not stubbed for this test');
+    },
+    createBlob: async () => {
+      throw new Error('createBlob not stubbed for this test');
+    },
+    createTree: async () => {
+      throw new Error('createTree not stubbed for this test');
+    },
+    createCommit: async () => {
+      throw new Error('createCommit not stubbed for this test');
+    },
+    getBranchRefSha: async () => {
+      throw new Error('getBranchRefSha not stubbed for this test');
+    },
+    createBranchRef: async () => {
+      throw new Error('createBranchRef not stubbed for this test');
+    },
+    createPullRequest: async () => {
+      throw new Error('createPullRequest not stubbed for this test');
+    },
+    getPullRequest: async () => {
+      throw new Error('getPullRequest not stubbed for this test');
+    },
+    listOpenPullRequestsForHead: async () => {
+      throw new Error('listOpenPullRequestsForHead not stubbed for this test');
+    },
+    getBotUserId: async () => {
+      throw new Error('getBotUserId not stubbed for this test');
     },
     ...overrides,
   };

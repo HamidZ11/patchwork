@@ -127,6 +127,9 @@ importers:
       '@patchwork/github':
         specifier: workspace:*
         version: link:../../packages/github
+      diff:
+        specifier: ^7.0.0
+        version: 7.0.0
       dotenv:
         specifier: ^16.4.7
         version: 16.6.1
@@ -149,6 +152,9 @@ importers:
         specifier: ^3.24.1
         version: 3.25.76
     devDependencies:
+      '@types/diff':
+        specifier: ^7.0.2
+        version: 7.0.2
       '@types/semver':
         specifier: ^7.5.8
         version: 7.8.0

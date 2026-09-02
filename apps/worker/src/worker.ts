@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { Logger } from 'pino';
 import type { DbClient } from '@patchwork/db';
 import type { GitHubAppAuth, GitHubClient } from '@patchwork/github';
+import { processNextPendingPullRequestAttempt } from './pull-requests/process.js';
 import type { SandboxRunner } from './verification/sandbox-runner.js';
 import { processNextPendingRun } from './verification/process.js';
 
@@ -12,6 +13,7 @@ export interface WorkerDeps {
   logger: Logger;
   githubClient: GitHubClient;
   githubAppAuth: GitHubAppAuth;
+  githubAppSlug: string;
   sandboxRunner: SandboxRunner;
 }
 
@@ -21,15 +23,17 @@ export interface Worker {
 }
 
 /**
- * Polls verification_runs for PENDING work every POLL_INTERVAL_MS (see
- * verification/queue.ts's claimNextPendingRun -- Postgres `SELECT ...
- * FOR UPDATE SKIP LOCKED`, not a separate queue system) and processes at
- * most one run per tick, immediately polling again if one was found
- * (drains a backlog faster than waiting a full interval between every
- * item) rather than waiting a full interval between every item.
- * Graceful shutdown waits for any in-flight run to finish persisting
- * before closing the DB connection -- SIGTERM/SIGINT during a sandbox
- * run should not corrupt that run's result.
+ * Polls verification_runs and pull_request_attempts for PENDING work
+ * every POLL_INTERVAL_MS (see verification/queue.ts's claimNextPendingRun
+ * and pull-requests/queue.ts's claimNextPendingPullRequestAttempt --
+ * Postgres `SELECT ... FOR UPDATE SKIP LOCKED` on each table, not a
+ * separate queue system) and processes at most one item per tick
+ * (verification checked first, pull-request publishing only if none was
+ * found), immediately polling again if one was found (drains a backlog
+ * faster than waiting a full interval between every item) rather than
+ * waiting a full interval between every item. Graceful shutdown waits
+ * for any in-flight item to finish persisting before closing the DB
+ * connection -- SIGTERM/SIGINT mid-run should not corrupt its result.
  */
 export function createWorker(deps: WorkerDeps): Worker {
   const workerId = `worker-${randomUUID()}`;
@@ -40,7 +44,7 @@ export function createWorker(deps: WorkerDeps): Worker {
   async function tick(): Promise<void> {
     if (stopping) return;
     try {
-      const processed = await processNextPendingRun({
+      const processedVerification = await processNextPendingRun({
         db: deps.db.db,
         githubClient: deps.githubClient,
         githubAppAuth: deps.githubAppAuth,
@@ -48,13 +52,23 @@ export function createWorker(deps: WorkerDeps): Worker {
         logger: deps.logger,
         workerId,
       });
-      if (processed && !stopping) {
+      const processedPullRequest = processedVerification
+        ? false
+        : await processNextPendingPullRequestAttempt({
+            db: deps.db.db,
+            githubClient: deps.githubClient,
+            githubAppAuth: deps.githubAppAuth,
+            appSlug: deps.githubAppSlug,
+            logger: deps.logger,
+            workerId,
+          });
+      if ((processedVerification || processedPullRequest) && !stopping) {
         inFlight = tick();
         await inFlight;
         return;
       }
     } catch (error) {
-      deps.logger.error({ err: error }, 'error while polling for verification work');
+      deps.logger.error({ err: error }, 'error while polling for worker queue work');
     }
     if (!stopping) {
       pollTimer = setTimeout(() => {

@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 const workerEnvSchema = z.object({
   GITHUB_APP_ID: z.coerce.number().int().positive(),
+  GITHUB_APP_SLUG: z.string().min(1),
   GITHUB_CLIENT_ID: z.string().min(1),
   GITHUB_CLIENT_SECRET: z.string().min(1),
   GITHUB_PRIVATE_KEY_BASE64: z.string().min(1),
@@ -11,6 +12,7 @@ const workerEnvSchema = z.object({
 export interface WorkerConfig {
   github: {
     appId: number;
+    appSlug: string;
     clientId: string;
     clientSecret: string;
     privateKey: string;
@@ -25,11 +27,14 @@ export interface WorkerConfig {
  * GitHub App fields overlap: apps/api and apps/worker are still separate
  * processes/deployables per ADR-001, each holding only the credentials it
  * needs at runtime, not a shared credential-loading module. apps/worker
- * needs GitHub App credentials for the first time in this slice --
- * verification's exact-SHA archive download requires its own short-lived
- * installation token (never persisted, never shared with apps/api's
- * process), and E2B_API_KEY exists only here: the sandbox is created and
- * destroyed entirely within apps/worker, never touched by apps/api.
+ * holds its own GitHub App credentials for short-lived installation
+ * tokens (never persisted, never shared with apps/api's process) --
+ * verification's exact-SHA archive downloads, and now the pull-request
+ * publish path's branch/commit/PR writes, both need one on demand.
+ * GITHUB_APP_SLUG resolves the App's own bot identity for commit
+ * attribution (see pull-requests/bot-identity.ts). E2B_API_KEY exists
+ * only here: the sandbox is created and destroyed entirely within
+ * apps/worker, never touched by apps/api.
  */
 export function loadWorkerConfig(source: NodeJS.ProcessEnv = process.env): WorkerConfig {
   const result = workerEnvSchema.safeParse(source);
@@ -46,6 +51,7 @@ export function loadWorkerConfig(source: NodeJS.ProcessEnv = process.env): Worke
   return {
     github: {
       appId: env.GITHUB_APP_ID,
+      appSlug: env.GITHUB_APP_SLUG,
       clientId: env.GITHUB_CLIENT_ID,
       clientSecret: env.GITHUB_CLIENT_SECRET,
       privateKey: Buffer.from(env.GITHUB_PRIVATE_KEY_BASE64, 'base64').toString('utf8'),
