@@ -489,4 +489,58 @@ describe('pull request attempts (real database)', () => {
     await cleanupUser(otherUserId);
     await cleanupUser(userId);
   });
+
+  it('GET /analysis-runs/:id includes the pull request attempt for its patch attempt', async () => {
+    const { cookie, userId } = await createAuthenticatedUser();
+    const { repositoryId } = await connectRepository(userId);
+    const { app, patchAttemptId, diff } = await createGeneratedPatchAttempt(cookie, repositoryId);
+    const verificationRunId = await seedVerificationRun(patchAttemptId, {
+      manifest: manifestFor(patchAttemptId, diff),
+    });
+
+    const createResponse = await app.inject({
+      method: 'POST',
+      url: `/verification-runs/${verificationRunId}/pull-requests`,
+      headers: { cookie },
+    });
+    const { pullRequestAttempt } = createResponse.json() as { pullRequestAttempt: { id: string } };
+
+    const [analysisRunRow] = await db.db
+      .select({ analysisRunId: schema.impactAssessments.analysisRunId })
+      .from(schema.patchAttempts)
+      .innerJoin(
+        schema.impactAssessments,
+        eq(schema.patchAttempts.impactAssessmentId, schema.impactAssessments.id),
+      )
+      .where(eq(schema.patchAttempts.id, patchAttemptId));
+    if (!analysisRunRow) throw new Error('analysis run not found for patch attempt');
+
+    const response = await app.inject({
+      method: 'GET',
+      url: `/analysis-runs/${analysisRunRow.analysisRunId}`,
+      headers: { cookie },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json() as {
+      analysisRun: {
+        assessments: {
+          patchAttempts: {
+            id: string;
+            pullRequestAttempts: { id: string; status: string; verificationRunId?: string }[];
+          }[];
+        }[];
+      };
+    };
+    const attempt = body.analysisRun.assessments
+      .flatMap((a) => a.patchAttempts)
+      .find((a) => a.id === patchAttemptId);
+    if (!attempt) throw new Error('patch attempt not found in response');
+
+    expect(attempt.pullRequestAttempts).toHaveLength(1);
+    expect(attempt.pullRequestAttempts[0]?.id).toBe(pullRequestAttempt.id);
+    expect(attempt.pullRequestAttempts[0]?.status).toBe('PENDING');
+
+    await cleanupUser(userId);
+  });
 });

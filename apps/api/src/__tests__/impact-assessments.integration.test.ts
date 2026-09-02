@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, it } from 'vitest';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { loadEnv } from '@patchwork/config';
 import { createDbClient, schema, type DbClient } from '@patchwork/db';
 import { buildApp } from '../app.js';
@@ -517,6 +517,91 @@ describe('impact assessments (real database)', () => {
       // in the DB but never returned by any other route.
       expect(retrieveUpcoming?.coverage.schemaVersion).toBe(1);
       expect(retrieveUpcoming?.coverage.workspaces[0]?.applicability).toBe('APPLICABLE');
+
+      await cleanupUser(userId);
+    });
+
+    it('reports coverage: null (never an empty-but-valid workspace list) for a legacy row whose persisted coverage predates the current shape, without disturbing its status/reason/findings', async () => {
+      const { cookie, userId } = await createAuthenticatedUser();
+      const { repositoryId } = await connectRepository(userId);
+      const { app, analysisRunId } = await triggerAnalysis(
+        cookie,
+        repositoryId,
+        affectedFixtureFiles(),
+      );
+
+      await app.inject({
+        method: 'POST',
+        url: `/analysis-runs/${analysisRunId}/impact-assessments`,
+        headers: { cookie },
+      });
+
+      const [assessmentRow] = await db.db
+        .select({ id: schema.impactAssessments.id })
+        .from(schema.impactAssessments)
+        .innerJoin(
+          schema.ruleVersions,
+          eq(schema.impactAssessments.ruleVersionId, schema.ruleVersions.id),
+        )
+        .innerJoin(
+          schema.providerChanges,
+          eq(schema.ruleVersions.providerChangeId, schema.providerChanges.id),
+        )
+        .where(
+          and(
+            eq(schema.impactAssessments.analysisRunId, analysisRunId),
+            eq(
+              schema.providerChanges.externalId,
+              STRIPE_BASIL_RETRIEVE_UPCOMING_RULE.providerChange.externalId,
+            ),
+          ),
+        );
+      if (!assessmentRow) throw new Error('assessment not found');
+
+      // Simulates a real row written by an older analyzer version, before
+      // the `workspaces` field existed on the persisted coverage shape --
+      // exactly the `{}` found live in a pre-existing dev-database row.
+      // Bypasses upsertImpactAssessment (which can only ever construct a
+      // fully-shaped ImpactCoverage) to reach the read boundary directly.
+      await db.db
+        .update(schema.impactAssessments)
+        .set({ coverage: {} })
+        .where(eq(schema.impactAssessments.id, assessmentRow.id));
+
+      const response = await app.inject({
+        method: 'GET',
+        url: `/analysis-runs/${analysisRunId}`,
+        headers: { cookie },
+      });
+
+      expect(response.statusCode).toBe(200);
+      const body = response.json() as {
+        analysisRun: {
+          assessments: {
+            id: string;
+            status: string;
+            reason: string;
+            findings: unknown[];
+            coverage: unknown;
+          }[];
+        };
+      };
+      const corrupted = body.analysisRun.assessments.find((a) => a.id === assessmentRow.id);
+      if (!corrupted) throw new Error('assessment not found in response');
+
+      // The malformed evidence detail is surfaced as an explicit null --
+      // never silently coerced to `{ workspaces: [] }`, which would read
+      // as "fully scanned, nothing found" and misrepresent genuinely
+      // unavailable evidence as a confirmed negative.
+      expect(corrupted.coverage).toBeNull();
+      // status/reason/findings are stored independently of the coverage
+      // blob (separate column/table) and must stay exactly as persisted --
+      // a malformed coverage breakdown must never flip a proven AFFECTED
+      // verdict, or drop its findings.
+      expect(corrupted.status).toBe('AFFECTED');
+      expect(corrupted.findings).toEqual([
+        expect.objectContaining({ matchedSymbol: 'stripe.invoices.retrieveUpcoming' }),
+      ]);
 
       await cleanupUser(userId);
     });

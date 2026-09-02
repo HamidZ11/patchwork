@@ -8,6 +8,7 @@ import {
   upsertImpactAssessment,
   upsertProviderChangeAndRuleVersion,
 } from '../analysis/impact-persistence.js';
+import { getPullRequestAttemptsForPatchAttempts } from '../pull-requests/persistence.js';
 import { requireAuth } from '../plugins/session.js';
 import { getPatchAttemptsForAssessments } from '../remediation/persistence.js';
 import { findRecipeForPredicateKind } from '../remediation/registry.js';
@@ -127,6 +128,10 @@ export function registerImpactAssessmentsRoutes(
         deps.db,
         allPatchAttemptIds,
       );
+      const pullRequestAttemptsByPatchAttempt = await getPullRequestAttemptsForPatchAttempts(
+        deps.db,
+        allPatchAttemptIds,
+      );
 
       return reply.send({
         analysisRun: {
@@ -138,6 +143,7 @@ export function registerImpactAssessmentsRoutes(
             patchAttempts: (patchAttemptsByAssessment.get(assessment.id) ?? []).map((attempt) => ({
               ...attempt,
               verificationRuns: verificationRunsByPatchAttempt.get(attempt.id) ?? [],
+              pullRequestAttempts: pullRequestAttemptsByPatchAttempt.get(attempt.id) ?? [],
             })),
           })),
         },

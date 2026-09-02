@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, inArray } from 'drizzle-orm';
 import { schema, type Database } from '@patchwork/db';
 
 const FORBIDDEN_PATH_PATTERNS: RegExp[] = [
@@ -262,4 +262,46 @@ export async function getPullRequestAttemptForUser(
 
 export function isActiveStatus(status: string): boolean {
   return status === 'PENDING' || status === 'RUNNING';
+}
+
+/**
+ * Every PullRequestAttempt for a set of PatchAttempts, newest first per
+ * attempt -- batched counterpart to getPullRequestAttemptsForPatchAttempt,
+ * mirroring getVerificationRunsForPatchAttempts' inArray shape exactly, for
+ * the impact-detail page (one query instead of one per patch attempt).
+ * Ownership is already enforced by the caller (getAnalysisRunDetail scopes
+ * patchAttemptIds to the requesting user's own analysis run before this is
+ * ever called), same trust boundary as getVerificationRunsForPatchAttempts.
+ */
+export async function getPullRequestAttemptsForPatchAttempts(
+  db: Database,
+  patchAttemptIds: string[],
+): Promise<Map<string, PersistedPullRequestAttempt[]>> {
+  const result = new Map<string, PersistedPullRequestAttempt[]>();
+  if (patchAttemptIds.length === 0) return result;
+
+  const rows = await db
+    .select({
+      id: schema.pullRequestAttempts.id,
+      status: schema.pullRequestAttempts.status,
+      failureCategory: schema.pullRequestAttempts.failureCategory,
+      failureReason: schema.pullRequestAttempts.failureReason,
+      branchName: schema.pullRequestAttempts.branchName,
+      commitSha: schema.pullRequestAttempts.commitSha,
+      githubPrNumber: schema.pullRequestAttempts.githubPrNumber,
+      githubPrUrl: schema.pullRequestAttempts.githubPrUrl,
+      createdAt: schema.pullRequestAttempts.createdAt,
+      completedAt: schema.pullRequestAttempts.completedAt,
+      patchAttemptId: schema.pullRequestAttempts.patchAttemptId,
+    })
+    .from(schema.pullRequestAttempts)
+    .where(inArray(schema.pullRequestAttempts.patchAttemptId, patchAttemptIds))
+    .orderBy(desc(schema.pullRequestAttempts.createdAt));
+
+  for (const { patchAttemptId, ...attempt } of rows) {
+    const list = result.get(patchAttemptId) ?? [];
+    list.push(attempt);
+    result.set(patchAttemptId, list);
+  }
+  return result;
 }

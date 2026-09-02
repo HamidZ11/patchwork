@@ -1,11 +1,12 @@
 import { and, eq, inArray } from 'drizzle-orm';
 import { schema, type Database } from '@patchwork/db';
 import type { StripeEvidence } from './evidence/types.js';
-import type {
-  Finding,
-  ImpactAssessmentResult,
-  ImpactCoverage,
-  ProviderChangeDefinition,
+import {
+  impactCoverageSchema,
+  type Finding,
+  type ImpactAssessmentResult,
+  type ImpactCoverage,
+  type ProviderChangeDefinition,
 } from './impact/types.js';
 
 export interface AnalysisRunForImpactAssessment {
@@ -158,7 +159,22 @@ export interface AssessmentDetail {
   id: string;
   status: string;
   reason: string;
-  coverage: ImpactCoverage;
+  /**
+   * Null when the persisted `coverage` JSON doesn't match the current
+   * ImpactCoverage contract (schemaVersion/archiveAcquired/
+   * sourceFilesTruncated/workspaces) -- e.g. a row written by an older
+   * analyzer version before this shape existed. `status`/`reason`/
+   * `findings` are stored independently (separate columns/table) and stay
+   * exactly as persisted regardless; only this per-workspace evidence
+   * breakdown is affected. Deliberately never defaulted to an empty-but-
+   * valid coverage object: an empty `workspaces: []` reads as "fully
+   * scanned, nothing found" (positive evidence), which would misrepresent
+   * genuinely missing/untrustworthy evidence as a confirmed negative --
+   * see CLAUDE.md's "failure to prove AFFECTED is not evidence of
+   * NOT_AFFECTED" invariant, which applies equally to a UI implying more
+   * certainty than the persisted evidence actually supports.
+   */
+  coverage: ImpactCoverage | null;
   findings: Finding[];
   providerChangeTitle: string;
   providerChangeSourceUrl: string;
@@ -275,17 +291,20 @@ export async function getAnalysisRunDetail(
   return {
     ...run,
     evidence: (run.evidence as StripeEvidence | null) ?? null,
-    assessments: assessmentRows.map((row) => ({
-      id: row.id,
-      status: row.status,
-      reason: row.reason,
-      coverage: row.coverage as ImpactCoverage,
-      findings: findingsByAssessment.get(row.id) ?? [],
-      providerChangeTitle: row.providerChangeTitle,
-      providerChangeSourceUrl: row.providerChangeSourceUrl,
-      migrationRequirement: row.migrationRequirement,
-      predicateKind: row.predicateKind,
-    })),
+    assessments: assessmentRows.map((row) => {
+      const parsedCoverage = impactCoverageSchema.safeParse(row.coverage);
+      return {
+        id: row.id,
+        status: row.status,
+        reason: row.reason,
+        coverage: parsedCoverage.success ? parsedCoverage.data : null,
+        findings: findingsByAssessment.get(row.id) ?? [],
+        providerChangeTitle: row.providerChangeTitle,
+        providerChangeSourceUrl: row.providerChangeSourceUrl,
+        migrationRequirement: row.migrationRequirement,
+        predicateKind: row.predicateKind,
+      };
+    }),
   };
 }
 

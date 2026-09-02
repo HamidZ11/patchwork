@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import { apiFetch } from '@/lib/api';
-import { VerifySubmitButton } from '@/components/verify-submit-button';
+import { FormSubmitButton } from '@/components/form-submit-button';
 
 interface InstalledSdk {
   packageName: string;
@@ -72,6 +72,31 @@ interface VerificationRun {
   steps: VerificationStep[];
 }
 
+type PullRequestAttemptStatus = 'PENDING' | 'RUNNING' | 'OPENED' | 'REFUSED' | 'FAILED';
+
+type PullRequestFailureCategory =
+  | 'STALE_BASE'
+  | 'POLICY_REFUSAL'
+  | 'GITHUB_PERMISSION_FAILURE'
+  | 'GITHUB_RULESET_FAILURE'
+  | 'BRANCH_COLLISION'
+  | 'PATCH_APPLICATION_FAILURE'
+  | 'GITHUB_API_FAILURE'
+  | 'RATE_LIMITED';
+
+interface PullRequestAttempt {
+  id: string;
+  status: PullRequestAttemptStatus;
+  failureCategory: PullRequestFailureCategory | null;
+  failureReason: string | null;
+  branchName: string | null;
+  commitSha: string | null;
+  githubPrNumber: number | null;
+  githubPrUrl: string | null;
+  createdAt: string;
+  completedAt: string | null;
+}
+
 interface PatchAttempt {
   id: string;
   status: 'GENERATED' | 'REFUSED' | 'FAILED';
@@ -82,13 +107,21 @@ interface PatchAttempt {
   postconditionResult: PostconditionCheck[] | null;
   createdAt: string;
   verificationRuns: VerificationRun[];
+  pullRequestAttempts: PullRequestAttempt[];
 }
 
 interface AssessmentDetail {
   id: string;
   status: 'AFFECTED' | 'NOT_AFFECTED' | 'UNCERTAIN';
   reason: string;
-  coverage: { workspaces: WorkspaceCoverage[] };
+  /**
+   * Null when the API couldn't validate the persisted coverage JSON
+   * against the current ImpactCoverage contract (a legacy row from an
+   * older analyzer version). Never defaulted to an empty workspace list --
+   * that would read as "fully scanned, nothing found" and misrepresent
+   * genuinely unavailable evidence as a confirmed negative.
+   */
+  coverage: { workspaces: WorkspaceCoverage[] } | null;
   findings: Finding[];
   providerChangeTitle: string;
   providerChangeSourceUrl: string;
@@ -136,6 +169,12 @@ async function prepareFix(assessmentId: string, analysisRunId: string) {
 async function verifyInSandbox(patchAttemptId: string, analysisRunId: string) {
   'use server';
   await apiFetch(`/patch-attempts/${patchAttemptId}/verification-runs`, { method: 'POST' });
+  redirect(`/analysis-runs/${analysisRunId}`);
+}
+
+async function createPullRequest(verificationRunId: string, analysisRunId: string) {
+  'use server';
+  await apiFetch(`/verification-runs/${verificationRunId}/pull-requests`, { method: 'POST' });
   redirect(`/analysis-runs/${analysisRunId}`);
 }
 
@@ -276,6 +315,149 @@ function verificationStatusLabel(run: VerificationRun): string {
   }
 }
 
+const PULL_REQUEST_STATUS_STYLE: Record<PullRequestAttemptStatus, { dot: string; text: string }> = {
+  PENDING: { dot: 'bg-zinc-400 dark:bg-zinc-600', text: 'text-zinc-500 dark:text-zinc-400' },
+  RUNNING: { dot: 'animate-pulse bg-slate-500', text: 'text-slate-600 dark:text-slate-400' },
+  OPENED: { dot: 'bg-emerald-500', text: 'text-emerald-700 dark:text-emerald-400' },
+  REFUSED: { dot: 'bg-zinc-400 dark:bg-zinc-600', text: 'text-zinc-500 dark:text-zinc-400' },
+  FAILED: { dot: 'bg-rose-500', text: 'text-rose-700 dark:text-rose-400' },
+};
+
+const ACTIVE_PULL_REQUEST_STATUSES = new Set<PullRequestAttemptStatus>(['PENDING', 'RUNNING']);
+
+function pullRequestStatusLabel(attempt: PullRequestAttempt): string {
+  switch (attempt.status) {
+    case 'PENDING':
+      return 'Queued to publish to GitHub';
+    case 'RUNNING':
+      return 'Publishing to GitHub';
+    case 'OPENED':
+      return `Pull request #${attempt.githubPrNumber} opened`;
+    case 'REFUSED':
+      return attempt.failureCategory === 'STALE_BASE'
+        ? 'Repository has changed since this fix was verified'
+        : 'Publishing not supported for this patch attempt';
+    case 'FAILED':
+      switch (attempt.failureCategory) {
+        case 'GITHUB_PERMISSION_FAILURE':
+          return 'Patchwork lacks permission to publish to this repository';
+        case 'GITHUB_RULESET_FAILURE':
+          return 'Blocked by a GitHub branch protection rule';
+        case 'BRANCH_COLLISION':
+          return 'A branch with this name already exists';
+        case 'PATCH_APPLICATION_FAILURE':
+          return 'The candidate patch could not be applied to the current branch';
+        case 'RATE_LIMITED':
+          return 'GitHub rate limit reached while publishing';
+        default:
+          return 'Publishing to GitHub failed';
+      }
+  }
+}
+
+function PullRequestSection({
+  analysisRunId,
+  latestVerificationRun,
+  pullRequestAttempts,
+}: {
+  analysisRunId: string;
+  latestVerificationRun: VerificationRun | undefined;
+  pullRequestAttempts: PullRequestAttempt[];
+}) {
+  const passedVerificationRunId =
+    latestVerificationRun?.status === 'PASSED' ? latestVerificationRun.id : null;
+  if (pullRequestAttempts.length === 0 && !passedVerificationRunId) return null;
+
+  const [latest, ...earlier] = pullRequestAttempts;
+  const isActive = latest !== undefined && ACTIVE_PULL_REQUEST_STATUSES.has(latest.status);
+  const canCreate =
+    passedVerificationRunId !== null && (!latest || (!isActive && latest.status !== 'OPENED'));
+
+  return (
+    <div className="mt-3 flex flex-col gap-2 border-t border-zinc-100 pt-3 dark:border-zinc-900">
+      <span className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Pull request</span>
+
+      {!latest ? (
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-zinc-500 dark:text-zinc-400">Not yet published</span>
+          {passedVerificationRunId && (
+            <form action={createPullRequest.bind(null, passedVerificationRunId, analysisRunId)}>
+              <FormSubmitButton label="Create pull request" pendingLabel="Publishing…" />
+            </form>
+          )}
+        </div>
+      ) : (
+        <>
+          <div className="flex items-center gap-2">
+            <span
+              className={`h-1.5 w-1.5 shrink-0 rounded-full ${PULL_REQUEST_STATUS_STYLE[latest.status].dot}`}
+              aria-hidden="true"
+            />
+            <span
+              className={`text-xs font-medium ${PULL_REQUEST_STATUS_STYLE[latest.status].text}`}
+            >
+              {latest.status === 'OPENED' && latest.githubPrUrl ? (
+                <a
+                  href={latest.githubPrUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1 hover:underline"
+                >
+                  {pullRequestStatusLabel(latest)}
+                  <ExternalLinkIcon />
+                </a>
+              ) : (
+                pullRequestStatusLabel(latest)
+              )}
+            </span>
+            {canCreate && passedVerificationRunId && (
+              <form action={createPullRequest.bind(null, passedVerificationRunId, analysisRunId)}>
+                <FormSubmitButton label="Create pull request" pendingLabel="Publishing…" />
+              </form>
+            )}
+          </div>
+
+          {latest.failureReason && (
+            <span className="text-xs text-zinc-500 dark:text-zinc-500">{latest.failureReason}</span>
+          )}
+
+          {latest.status === 'OPENED' && latest.branchName && (
+            <span className="font-mono text-xs text-zinc-500 dark:text-zinc-500">
+              {latest.branchName}
+              {latest.commitSha && ` @ ${latest.commitSha.slice(0, 7)}`}
+            </span>
+          )}
+        </>
+      )}
+
+      {earlier.length > 0 && (
+        <details className="group">
+          <summary className="flex cursor-pointer list-none items-center gap-1.5 text-xs font-medium text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200">
+            <ChevronIcon />
+            {earlier.length} earlier attempt{earlier.length === 1 ? '' : 's'}
+          </summary>
+          <div className="mt-2 flex flex-col gap-1.5 border-l border-zinc-200 pl-3 dark:border-zinc-800">
+            {earlier.map((attempt) => (
+              <div key={attempt.id} className="flex items-center gap-2 text-xs">
+                <span
+                  className={`h-1.5 w-1.5 shrink-0 rounded-full ${PULL_REQUEST_STATUS_STYLE[attempt.status].dot}`}
+                  aria-hidden="true"
+                />
+                <span className={PULL_REQUEST_STATUS_STYLE[attempt.status].text}>
+                  {pullRequestStatusLabel(attempt)}
+                </span>
+                <span className="text-zinc-400 dark:text-zinc-600">
+                  {new Date(attempt.createdAt).toLocaleString()}
+                </span>
+              </div>
+            ))}
+          </div>
+        </details>
+      )}
+    </div>
+  );
+}
+
 function StepOutputBlock({ label, text }: { label: string; text: string | null }) {
   if (!text) return null;
   return (
@@ -399,7 +581,7 @@ function VerificationSection({
         <div className="flex items-center gap-2">
           <span className="text-xs text-zinc-500 dark:text-zinc-400">Not yet verified</span>
           <form action={verifyInSandbox.bind(null, patchAttemptId, analysisRunId)}>
-            <VerifySubmitButton label="Verify in sandbox" pendingLabel="Starting verification…" />
+            <FormSubmitButton label="Verify in sandbox" pendingLabel="Starting verification…" />
           </form>
         </div>
       ) : (
@@ -416,7 +598,7 @@ function VerificationSection({
             </span>
             {!isActive && (
               <form action={verifyInSandbox.bind(null, patchAttemptId, analysisRunId)}>
-                <VerifySubmitButton label="Verify again" pendingLabel="Starting verification…" />
+                <FormSubmitButton label="Verify again" pendingLabel="Starting verification…" />
               </form>
             )}
           </div>
@@ -540,6 +722,11 @@ function PatchAttemptResult({
         commitSha={commitSha}
         verificationRuns={attempt.verificationRuns}
       />
+      <PullRequestSection
+        analysisRunId={analysisRunId}
+        latestVerificationRun={attempt.verificationRuns[0]}
+        pullRequestAttempts={attempt.pullRequestAttempts}
+      />
     </div>
   );
 }
@@ -596,7 +783,13 @@ function AssessmentBlock({
         </div>
       )}
 
-      <CoverageDetail workspaces={assessment.coverage.workspaces} />
+      {assessment.coverage ? (
+        <CoverageDetail workspaces={assessment.coverage.workspaces} />
+      ) : (
+        <span className="mt-2 block text-xs text-zinc-500 dark:text-zinc-500">
+          Coverage detail unavailable for this assessment.
+        </span>
+      )}
 
       {assessment.status === 'AFFECTED' && (
         <div className="mt-1 rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2 dark:border-zinc-800 dark:bg-zinc-900">
