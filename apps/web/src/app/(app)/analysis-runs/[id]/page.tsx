@@ -702,9 +702,9 @@ function PatchAttemptResult({
           >
             Static checks: {staticChecksPassed ? 'Passed' : 'Failed'}
           </span>
-          {attempt.postconditionResult.map((check) => (
+          {attempt.postconditionResult.map((check, index) => (
             <span
-              key={check.name}
+              key={`${index}-${check.name}`}
               className={`text-xs ${
                 check.passed
                   ? 'text-zinc-500 dark:text-zinc-400'
@@ -747,17 +747,17 @@ function AssessmentBlock({
     <div className="flex flex-col gap-2 py-4">
       <div className="flex items-center gap-2">
         <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${style.dot}`} aria-hidden="true" />
-        <span className={`text-xs font-medium ${style.text}`}>
+        <span className={`shrink-0 text-xs font-medium ${style.text}`}>
           {STATUS_LABEL[assessment.status]}
         </span>
-        <span className="text-sm font-medium text-zinc-950 dark:text-zinc-50">
+        <span className="min-w-0 text-sm font-medium text-zinc-950 dark:text-zinc-50">
           {assessment.providerChangeTitle}
         </span>
         <a
           href={assessment.providerChangeSourceUrl}
           target="_blank"
           rel="noreferrer"
-          className="text-zinc-400 hover:text-zinc-600 dark:text-zinc-600 dark:hover:text-zinc-300"
+          className="shrink-0 text-zinc-400 hover:text-zinc-600 dark:text-zinc-600 dark:hover:text-zinc-300"
           aria-label="View source"
         >
           <ExternalLinkIcon />
@@ -828,9 +828,6 @@ function AssessmentBlock({
 export default async function AnalysisRunPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
 
-  const me = await apiFetch('/auth/me');
-  if (!me.ok) redirect('/');
-
   const runResponse = await apiFetch(`/analysis-runs/${id}`);
   if (runResponse.status === 404) notFound();
   if (!runResponse.ok) {
@@ -843,7 +840,7 @@ export default async function AnalysisRunPage({ params }: { params: Promise<{ id
   );
 
   return (
-    <main className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-4 px-6 py-16">
+    <main className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-4 px-6 pt-8 pb-16">
       <div className="flex flex-col gap-1">
         <Link
           href="/repositories"

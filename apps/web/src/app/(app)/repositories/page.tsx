@@ -95,9 +95,6 @@ export default async function RepositoriesPage({
 }) {
   const { error } = await searchParams;
 
-  const me = await apiFetch('/auth/me');
-  if (!me.ok) redirect('/');
-
   const reposResponse = await apiFetch('/repositories');
   const { repositories } = reposResponse.ok
     ? ((await reposResponse.json()) as { repositories: Repository[] })
@@ -128,7 +125,7 @@ export default async function RepositoriesPage({
   }
 
   return (
-    <main className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-6 px-6 py-16">
+    <main className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-6 px-6 pt-8 pb-16">
       <h1 className="text-2xl font-semibold tracking-tight text-zinc-950 dark:text-zinc-50">
         Repositories
       </h1>
@@ -187,7 +184,7 @@ export default async function RepositoriesPage({
                 {latestAnalysis && (
                   <Link
                     href={`/analysis-runs/${latestAnalysis.analysisRunId}`}
-                    className="rounded-md bg-zinc-950 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-zinc-800 dark:bg-white dark:text-zinc-950 dark:hover:bg-zinc-200"
+                    className="rounded-md border border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-700 transition-colors hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-900"
                   >
                     View impact report
                   </Link>

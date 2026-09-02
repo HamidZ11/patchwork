@@ -169,38 +169,56 @@ present and correct.
 
 ## 5. Application shell philosophy
 
-**Current state (honest):** there is no application shell today. Each of
-the three routes (`/`, `/repositories`, `/analysis-runs/[id]`) renders a
-bare `<main>` with no persistent header, logo, or navigation. This was
-adequate for a three-screen product but stops being adequate the moment
-a second top-level surface exists (Section 33 proposes exactly that).
+**Current state:** a shell exists, implemented as `AppShell`
+(`apps/web/src/components/app-shell.tsx`), rendered by a route-group
+layout (`apps/web/src/app/(app)/layout.tsx`) that wraps `/repositories`
+and `/analysis-runs/[id]` — the two authenticated routes, moved under
+that `(app)` group specifically so they share one shell and one auth
+check. The signed-out landing page (`/`) sits outside the group and
+stays shell-less, exactly per the direction below.
 
-**Direction (binding for the next shell-introducing slice, not yet
-built):**
+**Binding shape:**
 
 - A shell is a **thin, fixed-height top bar**, not a sidebar and not a
   dashboard frame. Patchwork's own information architecture is shallow
   (Section 33) and doesn't need persistent left-nav real estate the way
   a many-section SaaS product does.
-- Contents, left to right: wordmark/logo (small, text-based is fine —
-  no logo asset exists yet), then nothing else until the far right:
-  signed-in identity (GitHub avatar + login) and a sign-out affordance.
-  No center-aligned nav links unless a second top-level section is
-  actually shipped (Section 33 decides this per-slice, not
-  speculatively).
-- Height: 48-56px, matching the Taste Skill's navigation-height
+- Contents, left to right: wordmark/logo (small, text-based — "Patchwork",
+  linked to `/repositories`; no logo asset exists yet), then nothing else
+  until the far right: signed-in identity (GitHub avatar + login) and a
+  sign-out affordance. **No center-aligned nav links today** — Repositories
+  is Patchwork's only real top-level destination, so the wordmark itself
+  is the only navigational link; a center nav with one item would be
+  decoration, not navigation. Add one back in only once a second top-level
+  section actually ships (Section 33 decides this per-slice, not
+  speculatively) — until then there is nothing for an "active route" state
+  to distinguish between.
+- Height: `h-14` (56px), matching the Taste Skill's navigation-height
   discipline scaled down for a product surface (its own cap is 80px for
   marketing navigation; a product shell should read denser than that).
 - No shadow under the bar. A single `border-b` hairline (Section 14) is
-  the only separation from content.
+  the only separation from content. The bar's background spans the full
+  viewport width; its inner content is constrained to the same
+  `max-w-2xl` column as the page body below it (Section 7), so wordmark
+  and page H1 share a left edge.
 - The shell is present on every authenticated route. The signed-out
   landing page (`/`) has no shell — it is deliberately minimal chrome,
   see Section 6.
 - Breadcrumb-style back-navigation (the existing "← Repositories" link
   pattern on the analysis-run detail page) stays **in the page content
   area**, not the shell — it's page-specific wayfinding, not global
-  navigation, and should remain exactly the small `text-xs` link style
-  already established.
+  navigation, and remains exactly the small `text-xs` link style already
+  established.
+- Responsive: the login-name text hides below `sm` (640px) — condensing
+  a secondary label before ever reaching for a hamburger, matching
+  Section 30's "no hamburger" direction — while the avatar (the real
+  identity signal) and the sign-out affordance stay visible at every
+  width.
+- Sign-out reuses `FormSubmitButton` (Section 16) with a `quiet` variant:
+  the same quiet text-link language as the Section 19 back-link, not the
+  bordered Secondary treatment — the shell's one mutation should read as
+  chrome, not as page-level content competing with real workflow actions
+  like "Analyse repository."
 
 ## 6. Layout / grid rules
 
@@ -481,14 +499,16 @@ dark:bg-white dark:text-zinc-950`, `rounded-md`, `px-5 py-2.5`,
   (Section 26), not a red button — Patchwork has no destructive actions
   in its current scope (see CLAUDE.md's "What NOT to build" for PR
   creation: no merge, no auto-merge).
-- **Pending/disabled state** (established once, in
-  `verify-submit-button.tsx`, via `useFormStatus`): label text changes
-  to a concise in-progress phrase ("Starting verification…"),
-  `disabled` + `aria-busy="true"`, `opacity-60` +
+- **Pending/disabled state** (established once, in `FormSubmitButton`,
+  `apps/web/src/components/form-submit-button.tsx`, via `useFormStatus`):
+  label text changes to a concise in-progress phrase ("Starting
+  verification…"), `disabled` + `aria-busy="true"`, `opacity-60` +
   `cursor-not-allowed`. No spinner icon, no skeleton — the label change
   alone is the feedback. This is the canonical pattern for **every**
   button that triggers a real async server action; reuse the same small
-  client component rather than re-implementing it per button.
+  client component (it takes a `variant` prop — `secondary`, the default,
+  or `quiet` for a low-emphasis chrome-level action like shell sign-out)
+  rather than re-implementing it per button.
 - Button text is always a concrete verb phrase (Verify in sandbox,
   Analyse repository, Continue with GitHub) — never "Submit," "OK," or a
   vague label.
@@ -545,20 +565,17 @@ sm:justify-between`, exactly the existing repositories-page pattern).
 
 ## 19. Navigation
 
-- **No persistent navigation exists today** (Section 5's audit). The
-  only navigational element is a small back-link
+- **The shell (Section 5) carries the one piece of global navigation**:
+  the wordmark, linked to `/repositories`. A small back-link
   (`text-xs text-zinc-500 hover:text-zinc-700`) at the top of a detail
-  screen, pointing at the index it was reached from ("← Repositories").
+  screen carries _local_ wayfinding, pointing at the index it was reached
+  from ("← Repositories"). Both coexist without conflict — they answer
+  different questions ("where else can I go" vs. "where did I come
+  from").
 - This back-link pattern is the canonical detail-screen wayfinding
   mechanism and should be reused verbatim (same classes, same "←
   {index name}" copy pattern) on every future detail screen, not
   reinvented.
-- Once a shell exists (Section 5), it carries all _global_ navigation
-  (switching between top-level sections, if a second one is ever
-  shipped); the back-link keeps carrying _local_ wayfinding (returning
-  to the specific list this detail record came from). Both can coexist
-  without conflict — they answer different questions ("where else can I
-  go" vs. "where did I come from").
 - No breadcrumb trail beyond one level exists or is currently justified
   — Patchwork's real hierarchy (Section 33) is shallow enough that a
   single back-link plus the shell's own home affordance covers it.
