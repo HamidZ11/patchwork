@@ -16,12 +16,26 @@ import type {
  * FakeSandboxRunner, never touches orchestration code.
  */
 
-function toNetworkOpts(network: NetworkAccess): {
+/** Exported solely so its live-provider-driven shape (see the allowlist branch below) can be regression-tested without a real E2B call -- otherwise this file stays the one untested real-SDK boundary by design. */
+export function toNetworkOpts(network: NetworkAccess): {
   allowInternetAccess?: boolean;
-  network?: { allowOut: string[] };
+  network?: { allowOut: string[]; denyOut: string[] };
 } {
   if (network.mode === 'deny-all') return { allowInternetAccess: false };
-  if (network.mode === 'allowlist') return { network: { allowOut: network.allowedHosts } };
+  if (network.mode === 'allowlist') {
+    // Confirmed live (2026-09) against a real sandbox creation call:
+    // E2B now requires denyOut to explicitly include ALL_TRAFFIC
+    // whenever allowOut is set -- "If allowOut is not specified, all
+    // outbound traffic is allowed" (E2B's own SDK docs), meaning
+    // allowOut alone no longer implies "deny everything else." Without
+    // this, sandbox creation is rejected outright (400: "you must
+    // include 'ALL_TRAFFIC' in deny out to block all other traffic").
+    // This is not a policy weakening -- it's the explicit statement of
+    // exactly the deny-everything-except-the-allowlist intent this
+    // network mode always meant; omitting it was silently relying on a
+    // default that no longer exists on the live provider.
+    return { network: { allowOut: network.allowedHosts, denyOut: [ALL_TRAFFIC] } };
+  }
   return {};
 }
 
