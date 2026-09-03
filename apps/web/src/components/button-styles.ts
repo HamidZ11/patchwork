@@ -1,0 +1,8 @@
+export const buttonVariantClassName = {
+  primary:
+    'inline-flex min-h-9 items-center justify-center whitespace-nowrap rounded-md border border-accent bg-accent px-3.5 py-2 text-xs font-semibold text-accent-fg transition-[background-color,border-color,opacity,transform] hover:border-accent-hover hover:bg-accent-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-fg focus-visible:ring-offset-2 focus-visible:ring-offset-canvas active:translate-y-px disabled:cursor-not-allowed disabled:opacity-60 disabled:active:translate-y-0',
+  secondary:
+    'inline-flex min-h-9 items-center justify-center whitespace-nowrap rounded-md border border-rule-strong bg-canvas px-3.5 py-2 text-xs font-semibold text-fg-secondary transition-[background-color,border-color,color,opacity,transform] hover:border-fg-faint hover:bg-surface-hover hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-fg focus-visible:ring-offset-2 focus-visible:ring-offset-canvas active:translate-y-px disabled:cursor-not-allowed disabled:opacity-60 disabled:active:translate-y-0',
+  quiet:
+    'inline-flex min-h-8 items-center justify-center whitespace-nowrap rounded-md border border-transparent px-2.5 py-1.5 text-xs font-medium text-fg-tertiary transition-[background-color,color,opacity,transform] hover:bg-surface-hover hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-fg focus-visible:ring-offset-2 focus-visible:ring-offset-canvas active:translate-y-px disabled:cursor-not-allowed disabled:opacity-60 disabled:active:translate-y-0',
+} as const;

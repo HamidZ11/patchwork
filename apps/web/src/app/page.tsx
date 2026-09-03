@@ -17,10 +17,10 @@ export default async function Home({
   return (
     <main className="flex flex-1 flex-col items-center justify-center gap-8 px-6">
       <div className="flex max-w-xl flex-col items-center gap-6 text-center">
-        <span className="text-sm font-medium uppercase tracking-widest text-zinc-500 dark:text-zinc-400">
+        <span className="text-fg-tertiary text-sm font-medium tracking-widest uppercase">
           Patchwork
         </span>
-        <h1 className="text-3xl font-semibold tracking-tight text-zinc-950 sm:text-4xl dark:text-zinc-50">
+        <h1 className="text-fg text-3xl font-semibold tracking-tight sm:text-4xl">
           API changes → affected code → verified fix
         </h1>
       </div>
@@ -29,7 +29,7 @@ export default async function Home({
 
       <a
         href={`${API_URL}/auth/github/login`}
-        className="inline-flex items-center justify-center rounded-md bg-zinc-950 px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-zinc-800 dark:bg-white dark:text-zinc-950 dark:hover:bg-zinc-200"
+        className="bg-accent-strong text-accent-strong-fg hover:bg-accent-strong-hover inline-flex items-center justify-center rounded-md px-5 py-2.5 text-sm font-medium transition-colors"
       >
         Continue with GitHub
       </a>

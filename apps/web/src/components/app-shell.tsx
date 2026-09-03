@@ -10,16 +10,10 @@ async function signOut() {
   redirect('/');
 }
 
-/**
- * The one persistent piece of chrome in the product, present on every
- * authenticated route (DESIGN.md Section 5). Deliberately just a thin top
- * bar, not a sidebar: Patchwork has exactly one top-level destination
- * today (Repositories), so the wordmark itself is the only navigational
- * link -- a center nav with a single item would be decoration, not
- * navigation, and Section 5 is explicit that center-aligned nav links
- * wait for a second real top-level section to exist. Add one back in when
- * that happens, not before.
- */
+/** The persistent authenticated chrome. It stays a thin top bar: the
+ * product has one real top-level destination, so a sidebar would invent
+ * hierarchy that does not exist. The single nav item communicates current
+ * location, while the product mark remains the route home. */
 export function AppShell({
   user,
   children,
@@ -29,28 +23,45 @@ export function AppShell({
 }) {
   return (
     <div className="flex min-h-full flex-col">
-      <header className="w-full border-b border-zinc-200 dark:border-zinc-800">
-        <div className="flex h-14 w-full items-center justify-between px-6">
-          <Link
-            href="/repositories"
-            className="text-sm font-semibold tracking-tight text-zinc-950 transition-colors hover:text-zinc-700 dark:text-zinc-50 dark:hover:text-zinc-300"
-          >
-            Patchwork
-          </Link>
+      <header className="w-full border-b border-rule bg-canvas">
+        <div className="mx-auto flex h-18 w-full max-w-6xl items-center justify-between gap-4 px-4 sm:px-6">
+          <div className="flex min-w-0 self-stretch items-center gap-3 sm:gap-7">
+            <Link
+              href="/repositories"
+              className="inline-flex shrink-0 items-center rounded-md text-lg font-semibold tracking-tight text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-fg focus-visible:ring-offset-2 focus-visible:ring-offset-canvas"
+            >
+              Patchwork
+            </Link>
 
-          <div className="flex items-center gap-3">
-            {user.avatarUrl && (
-              <Image
-                src={user.avatarUrl}
-                alt=""
-                width={24}
-                height={24}
-                className="h-6 w-6 rounded-full"
-              />
-            )}
-            <span className="hidden text-xs font-medium text-zinc-700 sm:inline dark:text-zinc-300">
-              {user.githubLogin}
-            </span>
+            <nav
+              aria-label="Primary navigation"
+              className="h-full border-l border-rule pl-3 sm:pl-7"
+            >
+              <Link
+                href="/repositories"
+                aria-current="page"
+                className="inline-flex h-full items-center border-b-2 border-fg px-1 text-sm font-semibold text-fg transition-colors hover:text-fg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-fg"
+              >
+                Repositories
+              </Link>
+            </nav>
+          </div>
+
+          <div className="flex shrink-0 items-center gap-2 sm:gap-3">
+            <div className="flex items-center gap-2 border-r border-rule pr-2 sm:pr-3">
+              {user.avatarUrl && (
+                <Image
+                  src={user.avatarUrl}
+                  alt=""
+                  width={32}
+                  height={32}
+                  className="h-8 w-8 rounded-full border border-rule"
+                />
+              )}
+              <span className="hidden text-sm font-semibold text-fg-secondary md:inline">
+                {user.githubLogin}
+              </span>
+            </div>
             <form action={signOut}>
               <FormSubmitButton label="Sign out" pendingLabel="Signing out…" variant="quiet" />
             </form>

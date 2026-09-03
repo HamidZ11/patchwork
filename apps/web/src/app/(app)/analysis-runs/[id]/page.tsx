@@ -164,9 +164,9 @@ const STATUS_ORDER: Record<AssessmentDetail['status'], number> = {
 };
 
 const STATUS_STYLE: Record<AssessmentDetail['status'], { dot: string; text: string }> = {
-  AFFECTED: { dot: 'bg-amber-500', text: 'text-amber-700 dark:text-amber-400' },
-  UNCERTAIN: { dot: 'bg-slate-500', text: 'text-slate-600 dark:text-slate-400' },
-  NOT_AFFECTED: { dot: 'bg-zinc-400 dark:bg-zinc-600', text: 'text-zinc-500 dark:text-zinc-400' },
+  AFFECTED: { dot: 'bg-mark-attention', text: 'text-attention' },
+  UNCERTAIN: { dot: 'bg-mark-indeterminate', text: 'text-indeterminate' },
+  NOT_AFFECTED: { dot: 'bg-mark-neutral', text: 'text-fg-tertiary' },
 };
 
 const STATUS_LABEL: Record<AssessmentDetail['status'], string> = {
@@ -228,20 +228,18 @@ function ChevronIcon() {
 function CoverageDetail({ workspaces }: { workspaces: WorkspaceCoverage[] }) {
   return (
     <details className="group">
-      <summary className="flex cursor-pointer list-none items-center gap-1.5 text-xs font-medium text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200">
+      <summary className="flex cursor-pointer list-none items-center gap-1.5 text-xs font-medium text-fg-tertiary hover:text-fg-secondary">
         <ChevronIcon />
         Coverage detail
       </summary>
-      <div className="mt-2 flex flex-col gap-3 border-l border-zinc-200 pl-3 dark:border-zinc-800">
+      <div className="mt-2 flex flex-col gap-3 border-l border-rule pl-3">
         {workspaces.map((workspace) => (
           <div key={workspace.workspacePath} className="flex flex-col gap-0.5 text-xs">
-            <span className="font-mono text-zinc-600 dark:text-zinc-400">
+            <span className="font-mono text-fg-tertiary">
               {workspace.workspacePath || '.'} · {workspace.applicability}
             </span>
-            <span className="text-zinc-500 dark:text-zinc-500">
-              {workspace.applicabilityReason}
-            </span>
-            <span className="text-zinc-500 dark:text-zinc-500">
+            <span className="text-fg-tertiary">{workspace.applicabilityReason}</span>
+            <span className="text-fg-tertiary">
               {workspace.sourceFilesScanned} file(s) scanned
               {workspace.filesFailedToLoad.length > 0 &&
                 ` · ${workspace.filesFailedToLoad.length} failed to load`}
@@ -249,10 +247,7 @@ function CoverageDetail({ workspaces }: { workspaces: WorkspaceCoverage[] }) {
                 ` · ${workspace.ambiguousReferences.length} ambiguous reference(s)`}
             </span>
             {workspace.ambiguousReferences.map((ref) => (
-              <span
-                key={`${ref.sourceFile}:${ref.line}`}
-                className="font-mono text-zinc-500 dark:text-zinc-500"
-              >
+              <span key={`${ref.sourceFile}:${ref.line}`} className="font-mono text-fg-tertiary">
                 Unresolved: {ref.sourceFile}:{ref.line}
               </span>
             ))}
@@ -343,29 +338,27 @@ function parseDiff(diff: string): DiffFile[] {
 }
 
 const DIFF_ROW_BG: Record<DiffLine['type'], string> = {
-  add: 'bg-emerald-50 dark:bg-emerald-950/30',
-  del: 'bg-rose-50 dark:bg-rose-950/30',
+  add: 'bg-diff-add-bg',
+  del: 'bg-diff-del-bg',
   context: '',
 };
 
 const DIFF_TEXT_COLOR: Record<DiffLine['type'], string> = {
-  add: 'text-emerald-800 dark:text-emerald-300',
-  del: 'text-rose-800 dark:text-rose-300',
-  context: 'text-zinc-600 dark:text-zinc-400',
+  add: 'text-diff-add-fg',
+  del: 'text-diff-del-fg',
+  context: 'text-fg-tertiary',
 };
 
 const DIFF_MARKER: Record<DiffLine['type'], string> = { add: '+', del: '-', context: ' ' };
 
 function DiffFileView({ file }: { file: DiffFile }) {
   return (
-    <div className="min-w-0 overflow-hidden rounded-md border border-zinc-200 dark:border-zinc-800">
-      <div className="flex items-center justify-between border-b border-zinc-200 bg-zinc-50 px-3 py-1.5 dark:border-zinc-800 dark:bg-zinc-900">
-        <span className="font-mono text-xs font-medium text-zinc-700 dark:text-zinc-300">
-          {file.path}
-        </span>
+    <div className="min-w-0 overflow-hidden rounded-md border border-rule">
+      <div className="flex items-center justify-between border-b border-rule bg-evidence px-3 py-1.5">
+        <span className="font-mono text-xs font-medium text-fg-secondary">{file.path}</span>
         <span className="font-mono text-xs">
-          <span className="text-emerald-700 dark:text-emerald-400">+{file.additions}</span>{' '}
-          <span className="text-rose-700 dark:text-rose-400">-{file.deletions}</span>
+          <span className="text-success">+{file.additions}</span>{' '}
+          <span className="text-failure">-{file.deletions}</span>
         </span>
       </div>
       <div className="overflow-x-auto">
@@ -375,15 +368,15 @@ function DiffFileView({ file }: { file: DiffFile }) {
               <Fragment key={hunkIndex}>
                 {hunkIndex > 0 && (
                   <tr aria-hidden="true">
-                    <td colSpan={3} className="h-2 border-t border-zinc-100 dark:border-zinc-900" />
+                    <td colSpan={3} className="h-2 border-t border-rule" />
                   </tr>
                 )}
                 {hunk.lines.map((line, lineIndex) => (
                   <tr key={lineIndex} className={DIFF_ROW_BG[line.type]}>
-                    <td className="select-none px-2 py-0.5 text-right text-zinc-400 dark:text-zinc-600">
+                    <td className="select-none px-2 py-0.5 text-right text-fg-faint">
                       {line.oldLine ?? ''}
                     </td>
-                    <td className="select-none px-2 py-0.5 text-right text-zinc-400 dark:text-zinc-600">
+                    <td className="select-none px-2 py-0.5 text-right text-fg-faint">
                       {line.newLine ?? ''}
                     </td>
                     <td
@@ -469,13 +462,13 @@ function formatDuration(ms: number): string {
 }
 
 const VERIFICATION_STATUS_STYLE: Record<VerificationRunStatus, { dot: string; text: string }> = {
-  PENDING: { dot: 'bg-zinc-400 dark:bg-zinc-600', text: 'text-zinc-500 dark:text-zinc-400' },
-  RUNNING: { dot: 'animate-pulse bg-slate-500', text: 'text-slate-600 dark:text-slate-400' },
-  PASSED: { dot: 'bg-emerald-500', text: 'text-emerald-700 dark:text-emerald-400' },
-  FAILED: { dot: 'bg-rose-500', text: 'text-rose-700 dark:text-rose-400' },
-  REFUSED: { dot: 'bg-zinc-400 dark:bg-zinc-600', text: 'text-zinc-500 dark:text-zinc-400' },
-  TIMED_OUT: { dot: 'bg-rose-500', text: 'text-rose-700 dark:text-rose-400' },
-  INFRA_ERROR: { dot: 'bg-rose-500', text: 'text-rose-700 dark:text-rose-400' },
+  PENDING: { dot: 'bg-mark-neutral', text: 'text-fg-tertiary' },
+  RUNNING: { dot: 'animate-pulse bg-mark-indeterminate', text: 'text-indeterminate' },
+  PASSED: { dot: 'bg-mark-success', text: 'text-success' },
+  FAILED: { dot: 'bg-mark-failure', text: 'text-failure' },
+  REFUSED: { dot: 'bg-mark-neutral', text: 'text-fg-tertiary' },
+  TIMED_OUT: { dot: 'bg-mark-failure', text: 'text-failure' },
+  INFRA_ERROR: { dot: 'bg-mark-failure', text: 'text-failure' },
 };
 
 const ACTIVE_VERIFICATION_STATUSES = new Set<VerificationRunStatus>(['PENDING', 'RUNNING']);
@@ -507,11 +500,11 @@ function verificationStatusLabel(run: VerificationRun): string {
 }
 
 const PULL_REQUEST_STATUS_STYLE: Record<PullRequestAttemptStatus, { dot: string; text: string }> = {
-  PENDING: { dot: 'bg-zinc-400 dark:bg-zinc-600', text: 'text-zinc-500 dark:text-zinc-400' },
-  RUNNING: { dot: 'animate-pulse bg-slate-500', text: 'text-slate-600 dark:text-slate-400' },
-  OPENED: { dot: 'bg-emerald-500', text: 'text-emerald-700 dark:text-emerald-400' },
-  REFUSED: { dot: 'bg-zinc-400 dark:bg-zinc-600', text: 'text-zinc-500 dark:text-zinc-400' },
-  FAILED: { dot: 'bg-rose-500', text: 'text-rose-700 dark:text-rose-400' },
+  PENDING: { dot: 'bg-mark-neutral', text: 'text-fg-tertiary' },
+  RUNNING: { dot: 'animate-pulse bg-mark-indeterminate', text: 'text-indeterminate' },
+  OPENED: { dot: 'bg-mark-success', text: 'text-success' },
+  REFUSED: { dot: 'bg-mark-neutral', text: 'text-fg-tertiary' },
+  FAILED: { dot: 'bg-mark-failure', text: 'text-failure' },
 };
 
 const ACTIVE_PULL_REQUEST_STATUSES = new Set<PullRequestAttemptStatus>(['PENDING', 'RUNNING']);
@@ -553,7 +546,7 @@ function pullRequestStatusLabel(attempt: PullRequestAttempt): string {
  * the real content for each stage, always in order. */
 function Pipeline({ children }: { children: React.ReactNode }) {
   return (
-    <div className="mt-5 flex min-w-0 flex-col gap-5 border-l-2 border-zinc-300 pl-5 dark:border-zinc-700">
+    <div className="mt-5 flex min-w-0 flex-col gap-5 border-l-2 border-rule-strong pl-5">
       {children}
     </div>
   );
@@ -562,10 +555,10 @@ function Pipeline({ children }: { children: React.ReactNode }) {
 type StageTone = 'neutral' | 'pending' | 'success' | 'failure';
 
 const STAGE_DOT_COLOR: Record<StageTone, string> = {
-  neutral: 'bg-zinc-400 dark:bg-zinc-600',
-  pending: 'animate-pulse bg-slate-500',
-  success: 'bg-emerald-500',
-  failure: 'bg-rose-500',
+  neutral: 'bg-mark-neutral',
+  pending: 'animate-pulse bg-mark-indeterminate',
+  success: 'bg-mark-success',
+  failure: 'bg-mark-failure',
 };
 
 function Stage({
@@ -583,12 +576,12 @@ function Stage({
     <div className="flex min-w-0 flex-col gap-2">
       <div className="flex items-center gap-1.5">
         <span
-          className={`h-1.5 w-1.5 shrink-0 rounded-full ${muted ? 'bg-zinc-300 dark:bg-zinc-700' : STAGE_DOT_COLOR[tone]}`}
+          className={`h-1.5 w-1.5 shrink-0 rounded-full ${muted ? 'bg-mark-neutral' : STAGE_DOT_COLOR[tone]}`}
           aria-hidden="true"
         />
         <span
-          className={`text-[11px] font-semibold tracking-wide uppercase ${
-            muted ? 'text-zinc-300 dark:text-zinc-700' : 'text-zinc-500 dark:text-zinc-400'
+          className={`text-2xs font-semibold tracking-wide uppercase ${
+            muted ? 'text-fg-faint' : 'text-fg-tertiary'
           }`}
         >
           {label}
@@ -600,7 +593,7 @@ function Stage({
 }
 
 function Blocked({ reason }: { reason: string }) {
-  return <span className="text-xs text-zinc-400 dark:text-zinc-600">{reason}</span>;
+  return <span className="text-xs text-fg-tertiary">{reason}</span>;
 }
 
 /** Each stage's dot tone mirrors that stage's own real status -- the same
@@ -658,7 +651,7 @@ function PullRequestSection({
     <div className="flex flex-col gap-2">
       {!latest ? (
         <div className="flex items-center gap-2">
-          <span className="text-xs text-zinc-500 dark:text-zinc-400">Not yet published</span>
+          <span className="text-xs text-fg-tertiary">Not yet published</span>
           {passedVerificationRunId && (
             <form action={createPullRequest.bind(null, passedVerificationRunId, analysisRunId)}>
               <FormSubmitButton
@@ -705,11 +698,11 @@ function PullRequestSection({
           </div>
 
           {latest.failureReason && (
-            <span className="text-xs text-zinc-500 dark:text-zinc-500">{latest.failureReason}</span>
+            <span className="text-xs text-fg-tertiary">{latest.failureReason}</span>
           )}
 
           {isOpened && latest.branchName && (
-            <span className="font-mono text-xs text-zinc-500 dark:text-zinc-500">
+            <span className="font-mono text-xs text-fg-tertiary">
               {latest.branchName}
               {latest.commitSha && ` @ ${latest.commitSha.slice(0, 7)}`}
             </span>
@@ -719,11 +712,11 @@ function PullRequestSection({
 
       {earlier.length > 0 && (
         <details className="group">
-          <summary className="flex cursor-pointer list-none items-center gap-1.5 text-xs font-medium text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200">
+          <summary className="flex cursor-pointer list-none items-center gap-1.5 text-xs font-medium text-fg-tertiary hover:text-fg-secondary">
             <ChevronIcon />
             {earlier.length} earlier attempt{earlier.length === 1 ? '' : 's'}
           </summary>
-          <div className="mt-2 flex flex-col gap-1.5 border-l border-zinc-200 pl-3 dark:border-zinc-800">
+          <div className="mt-2 flex flex-col gap-1.5 border-l border-rule pl-3">
             {earlier.map((attempt) => (
               <div key={attempt.id} className="flex items-center gap-2 text-xs">
                 <span
@@ -733,7 +726,7 @@ function PullRequestSection({
                 <span className={PULL_REQUEST_STATUS_STYLE[attempt.status].text}>
                   {pullRequestStatusLabel(attempt)}
                 </span>
-                <span className="text-zinc-400 dark:text-zinc-600">
+                <span className="text-fg-tertiary">
                   {new Date(attempt.createdAt).toLocaleString()}
                 </span>
               </div>
@@ -749,8 +742,8 @@ function StepOutputBlock({ label, text }: { label: string; text: string | null }
   if (!text) return null;
   return (
     <div className="flex flex-col gap-0.5">
-      <span className="font-medium text-zinc-500 dark:text-zinc-400">{label}</span>
-      <pre className="overflow-x-auto rounded-md border border-zinc-200 bg-zinc-50 px-2 py-1.5 font-mono text-[11px] leading-relaxed text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400">
+      <span className="font-medium text-fg-tertiary">{label}</span>
+      <pre className="overflow-x-auto rounded-md border border-rule bg-evidence px-2 py-1.5 font-mono text-2xs leading-relaxed text-fg-tertiary">
         {text}
       </pre>
     </div>
@@ -761,10 +754,10 @@ function VerificationStepRow({ step }: { step: VerificationStep }) {
   const icon = step.status === 'PASSED' ? '✓' : step.status === 'SKIPPED' ? '–' : '✗';
   const color =
     step.status === 'PASSED'
-      ? 'text-emerald-700 dark:text-emerald-400'
+      ? 'text-success'
       : step.status === 'SKIPPED'
-        ? 'text-zinc-400 dark:text-zinc-600'
-        : 'text-rose-700 dark:text-rose-400';
+        ? 'text-fg-tertiary'
+        : 'text-failure';
   const hasOutput = step.status !== 'SKIPPED';
   const statusText = step.notRun
     ? 'Not run'
@@ -780,34 +773,26 @@ function VerificationStepRow({ step }: { step: VerificationStep }) {
         <span className={`w-3 shrink-0 font-mono ${color}`} aria-hidden="true">
           {icon}
         </span>
-        <span
-          className={
-            step.notRun ? 'text-zinc-400 dark:text-zinc-600' : 'text-zinc-700 dark:text-zinc-300'
-          }
-        >
+        <span className={step.notRun ? 'text-fg-tertiary' : 'text-fg-secondary'}>
           {stepLabel(step)}
         </span>
-        <span className="text-zinc-400 dark:text-zinc-600">{statusText}</span>
+        <span className="text-fg-tertiary">{statusText}</span>
         {step.durationMs != null && (
-          <span className="text-zinc-400 dark:text-zinc-600">
-            {formatDuration(step.durationMs)}
-          </span>
+          <span className="text-fg-tertiary">{formatDuration(step.durationMs)}</span>
         )}
         {step.exitCode != null && step.exitCode !== 0 && (
-          <span className="text-zinc-400 dark:text-zinc-600">exit {step.exitCode}</span>
+          <span className="text-fg-tertiary">exit {step.exitCode}</span>
         )}
-        {step.timedOut && <span className="text-zinc-400 dark:text-zinc-600">timed out</span>}
+        {step.timedOut && <span className="text-fg-tertiary">timed out</span>}
       </div>
       {hasOutput && (step.stdoutExcerpt || step.stderrExcerpt) && (
         <details className="group ml-5">
-          <summary className="cursor-pointer list-none text-zinc-400 hover:text-zinc-600 dark:text-zinc-600 dark:hover:text-zinc-300">
+          <summary className="cursor-pointer list-none text-fg-tertiary hover:text-fg">
             View output
           </summary>
           <div className="mt-1.5 flex flex-col gap-2">
             {step.truncated && (
-              <span className="text-zinc-400 dark:text-zinc-600">
-                Output truncated by Patchwork.
-              </span>
+              <span className="text-fg-tertiary">Output truncated by Patchwork.</span>
             )}
             <StepOutputBlock label="stdout" text={step.stdoutExcerpt} />
             <StepOutputBlock label="stderr" text={step.stderrExcerpt} />
@@ -830,11 +815,11 @@ function EnvironmentDetail({ run, commitSha }: { run: VerificationRun; commitSha
 
   return (
     <details className="group">
-      <summary className="flex cursor-pointer list-none items-center gap-1.5 text-xs font-medium text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200">
+      <summary className="flex cursor-pointer list-none items-center gap-1.5 text-xs font-medium text-fg-tertiary hover:text-fg-secondary">
         <ChevronIcon />
         Environment
       </summary>
-      <div className="mt-2 flex flex-col gap-0.5 border-l border-zinc-200 pl-3 text-xs text-zinc-500 dark:border-zinc-800 dark:text-zinc-500">
+      <div className="mt-2 flex flex-col gap-0.5 border-l border-rule pl-3 text-xs text-fg-tertiary">
         <span className="font-mono">{commitSha.slice(0, 7)}</span>
         <span>
           {run.sandboxProvider}
@@ -874,7 +859,7 @@ function VerificationSection({
     <div className="flex flex-col gap-2">
       {!latest ? (
         <div className="flex items-center gap-2">
-          <span className="text-xs text-zinc-500 dark:text-zinc-400">Not yet verified</span>
+          <span className="text-xs text-fg-tertiary">Not yet verified</span>
           <form action={verifyInSandbox.bind(null, patchAttemptId, analysisRunId)}>
             <FormSubmitButton
               label="Verify in sandbox"
@@ -907,11 +892,11 @@ function VerificationSection({
           </div>
 
           {latest.failureReason && (
-            <span className="text-xs text-zinc-500 dark:text-zinc-500">{latest.failureReason}</span>
+            <span className="text-xs text-fg-tertiary">{latest.failureReason}</span>
           )}
 
           {displaySteps.length > 0 && (
-            <div className="flex flex-col divide-y divide-zinc-100 dark:divide-zinc-900">
+            <div className="flex flex-col divide-y divide-rule">
               {displaySteps.map((step) => (
                 <VerificationStepRow key={step.sequence} step={step} />
               ))}
@@ -924,11 +909,11 @@ function VerificationSection({
 
       {earlier.length > 0 && (
         <details className="group">
-          <summary className="flex cursor-pointer list-none items-center gap-1.5 text-xs font-medium text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200">
+          <summary className="flex cursor-pointer list-none items-center gap-1.5 text-xs font-medium text-fg-tertiary hover:text-fg-secondary">
             <ChevronIcon />
             {earlier.length} earlier run{earlier.length === 1 ? '' : 's'}
           </summary>
-          <div className="mt-2 flex flex-col gap-1.5 border-l border-zinc-200 pl-3 dark:border-zinc-800">
+          <div className="mt-2 flex flex-col gap-1.5 border-l border-rule pl-3">
             {earlier.map((run) => (
               <div key={run.id} className="flex items-center gap-2 text-xs">
                 <span
@@ -938,9 +923,7 @@ function VerificationSection({
                 <span className={VERIFICATION_STATUS_STYLE[run.status].text}>
                   {verificationStatusLabel(run)}
                 </span>
-                <span className="text-zinc-400 dark:text-zinc-600">
-                  {new Date(run.createdAt).toLocaleString()}
-                </span>
+                <span className="text-fg-tertiary">{new Date(run.createdAt).toLocaleString()}</span>
               </div>
             ))}
           </div>
@@ -976,26 +959,22 @@ function FixStageContent({
 
       {latestAttempt?.status === 'REFUSED' && (
         <div className="flex flex-col gap-1">
-          <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
+          <span className="text-xs font-medium text-fg-tertiary">
             Automatic fix not supported for this usage.
           </span>
           {latestAttempt.refusalReason && (
-            <span className="text-xs text-zinc-500 dark:text-zinc-500">
-              {latestAttempt.refusalReason}
-            </span>
+            <span className="text-xs text-fg-tertiary">{latestAttempt.refusalReason}</span>
           )}
         </div>
       )}
 
       {latestAttempt?.status === 'FAILED' && (
         <div className="flex flex-col gap-1">
-          <span className="text-xs font-medium text-amber-700 dark:text-amber-400">
+          <span className="text-xs font-medium text-attention">
             Could not generate a safe candidate fix.
           </span>
           {latestAttempt.failureReason && (
-            <span className="text-xs text-zinc-500 dark:text-zinc-500">
-              {latestAttempt.failureReason}
-            </span>
+            <span className="text-xs text-fg-tertiary">{latestAttempt.failureReason}</span>
           )}
         </div>
       )}
@@ -1038,35 +1017,29 @@ function StaticValidation({ checks }: { checks: PostconditionCheck[] }) {
     <div className="flex min-w-0 flex-col gap-2">
       <div className="flex items-center gap-1.5">
         <span
-          className={`h-1.5 w-1.5 shrink-0 rounded-full ${passed ? 'bg-emerald-500' : 'bg-amber-500'}`}
+          className={`h-1.5 w-1.5 shrink-0 rounded-full ${passed ? 'bg-mark-success' : 'bg-mark-attention'}`}
           aria-hidden="true"
         />
-        <span className="text-[11px] font-semibold tracking-wide text-zinc-500 uppercase dark:text-zinc-400">
+        <span className="text-2xs font-semibold tracking-wide text-fg-tertiary uppercase">
           Static validation
         </span>
       </div>
-      <span
-        className={`text-sm font-semibold ${passed ? 'text-emerald-700 dark:text-emerald-400' : 'text-amber-700 dark:text-amber-400'}`}
-      >
+      <span className={`text-sm font-semibold ${passed ? 'text-success' : 'text-attention'}`}>
         {passed ? 'Static validation passed' : 'Static validation failed'}
       </span>
       <div className="flex flex-col gap-2">
         {[...byFile.entries()].map(([file, fileChecks]) => (
           <div key={file} className="flex flex-col gap-0.5">
-            <span className="font-mono text-xs text-zinc-600 dark:text-zinc-400">{file}</span>
+            <span className="font-mono text-xs text-fg-tertiary">{file}</span>
             {fileChecks.map((check, index) => {
               const { note } = splitCheckDetail(check.detail);
               return (
                 <span
                   key={index}
-                  className={`pl-3 text-xs ${
-                    check.passed
-                      ? 'text-zinc-500 dark:text-zinc-400'
-                      : 'text-amber-700 dark:text-amber-400'
-                  }`}
+                  className={`pl-3 text-xs ${check.passed ? 'text-fg-tertiary' : 'text-attention'}`}
                 >
                   {check.passed ? '✓' : '✗'} {check.name}
-                  {note && <span className="text-zinc-400 dark:text-zinc-600"> · {note}</span>}
+                  {note && <span className="text-fg-tertiary"> · {note}</span>}
                 </span>
               );
             })}
@@ -1102,23 +1075,17 @@ function FindingsEvidence({ findings }: { findings: Finding[] }) {
   }
 
   return (
-    <div className="flex flex-col divide-y divide-zinc-200 rounded-md border border-zinc-200 bg-zinc-50 dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-900">
+    <div className="flex flex-col divide-y divide-rule rounded-md border border-rule bg-evidence">
       {[...byFile.entries()].map(([sourceFile, fileFindings]) => (
         <div key={sourceFile} className="flex flex-col gap-1.5 px-3 py-2">
-          <span className="font-mono text-xs font-medium text-zinc-700 dark:text-zinc-300">
-            {sourceFile}
-          </span>
+          <span className="font-mono text-xs font-medium text-fg-secondary">{sourceFile}</span>
           {fileFindings.map((finding) => (
             <div
               key={`${finding.sourceFile}:${finding.line}`}
               className="flex items-baseline gap-2 pl-3"
             >
-              <span className="w-8 shrink-0 font-mono text-xs text-zinc-400 dark:text-zinc-600">
-                :{finding.line}
-              </span>
-              <span className="font-mono text-xs text-zinc-600 dark:text-zinc-400">
-                {finding.matchedSymbol}
-              </span>
+              <span className="w-8 shrink-0 font-mono text-xs text-fg-faint">:{finding.line}</span>
+              <span className="font-mono text-xs text-fg-tertiary">{finding.matchedSymbol}</span>
             </div>
           ))}
         </div>
@@ -1184,16 +1151,14 @@ function AssessmentBlock({
   const summary = summarizeAssessment(assessment);
 
   return (
-    <div
-      className={`min-w-0 ${isAffected ? 'rounded-md bg-zinc-50 p-5 dark:bg-zinc-900/40' : 'py-5'}`}
-    >
+    <div className={`min-w-0 ${isAffected ? 'rounded-md bg-surface p-5' : 'py-5'}`}>
       <div className="flex items-center gap-2">
         <span className={`h-2 w-2 shrink-0 rounded-full ${style.dot}`} aria-hidden="true" />
         <span className={`shrink-0 text-xs font-medium ${style.text}`}>
           {STATUS_LABEL[assessment.status]}
         </span>
         <span
-          className={`min-w-0 text-zinc-950 dark:text-zinc-50 ${
+          className={`min-w-0 text-fg ${
             isAffected ? 'text-base font-semibold tracking-tight' : 'text-sm font-medium'
           }`}
         >
@@ -1203,7 +1168,7 @@ function AssessmentBlock({
           href={assessment.providerChangeSourceUrl}
           target="_blank"
           rel="noreferrer"
-          className="shrink-0 text-zinc-400 hover:text-zinc-600 dark:text-zinc-600 dark:hover:text-zinc-300"
+          className="shrink-0 text-fg-tertiary hover:text-fg"
           aria-label="View source"
         >
           <ExternalLinkIcon />
@@ -1212,11 +1177,9 @@ function AssessmentBlock({
 
       <div className="mt-2 flex flex-col gap-0.5">
         {summary.countLabel && (
-          <span className="text-xs font-medium text-zinc-700 dark:text-zinc-300">
-            {summary.countLabel}
-          </span>
+          <span className="text-xs font-medium text-fg-secondary">{summary.countLabel}</span>
         )}
-        <p className="text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">{summary.reason}</p>
+        <p className="text-xs leading-relaxed text-fg-tertiary">{summary.reason}</p>
       </div>
 
       {assessment.findings.length > 0 && (
@@ -1229,18 +1192,16 @@ function AssessmentBlock({
         {assessment.coverage ? (
           <CoverageDetail workspaces={assessment.coverage.workspaces} />
         ) : (
-          <span className="text-xs text-zinc-500 dark:text-zinc-500">
+          <span className="text-xs text-fg-tertiary">
             Coverage detail unavailable for this assessment.
           </span>
         )}
       </div>
 
       {isAffected && (
-        <div className="mt-4 flex flex-col gap-1 border-l-2 border-zinc-300 pl-3 dark:border-zinc-700">
-          <span className="text-xs font-medium text-zinc-500 dark:text-zinc-400">
-            Migration required
-          </span>
-          <p className="font-mono text-xs leading-relaxed whitespace-pre-wrap text-zinc-700 dark:text-zinc-300">
+        <div className="mt-4 flex flex-col gap-1 border-l-2 border-rule-strong pl-3">
+          <span className="text-xs font-medium text-fg-tertiary">Migration required</span>
+          <p className="font-mono text-xs leading-relaxed whitespace-pre-wrap text-fg-secondary">
             {assessment.migrationRequirement}
           </p>
         </div>
@@ -1248,15 +1209,15 @@ function AssessmentBlock({
 
       {isAffected &&
         (!assessment.remediationSupported ? (
-          <div className="mt-5 flex items-center gap-2 border-l-2 border-zinc-300 pl-5 dark:border-zinc-700">
+          <div className="mt-5 flex items-center gap-2 border-l-2 border-rule-strong pl-5">
             <span
-              className="h-1.5 w-1.5 shrink-0 rounded-full bg-zinc-400 dark:bg-zinc-600"
+              className="h-1.5 w-1.5 shrink-0 rounded-full bg-mark-neutral"
               aria-hidden="true"
             />
-            <span className="text-[11px] font-semibold tracking-wide text-zinc-500 uppercase dark:text-zinc-400">
+            <span className="text-2xs font-semibold tracking-wide text-fg-tertiary uppercase">
               Fix
             </span>
-            <span className="text-xs text-zinc-500 dark:text-zinc-400">
+            <span className="text-xs text-fg-tertiary">
               Automatic fix not available for this change.
             </span>
           </div>
@@ -1318,11 +1279,11 @@ function NotAffectedGroup({
   if (assessments.length === 0) return null;
   return (
     <details className="group py-3">
-      <summary className="flex cursor-pointer list-none items-center gap-1.5 text-xs font-medium text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200">
+      <summary className="flex cursor-pointer list-none items-center gap-1.5 text-xs font-medium text-fg-tertiary hover:text-fg-secondary">
         <ChevronIcon />
         {assessments.length} check{assessments.length === 1 ? '' : 's'} with no impact
       </summary>
-      <div className="mt-3 flex flex-col divide-y divide-zinc-100 border-l border-zinc-200 pl-4 dark:divide-zinc-900 dark:border-zinc-800">
+      <div className="mt-3 flex flex-col divide-y divide-rule border-l border-rule pl-4">
         {assessments.map((assessment) => (
           <AssessmentBlock
             key={assessment.id}
@@ -1362,7 +1323,7 @@ function ImpactSummary({ assessments }: { assessments: AssessmentDetail[] }) {
   const counts = countByStatus(assessments);
   return (
     <div className="flex flex-col gap-1.5">
-      <span className="text-base font-semibold tracking-tight text-zinc-950 dark:text-zinc-50">
+      <span className="text-base font-semibold tracking-tight text-fg">
         {impactHeadline(counts)}
       </span>
       <div className="flex flex-wrap items-center gap-4 text-xs">
@@ -1405,17 +1366,14 @@ export default async function AnalysisRunPage({ params }: { params: Promise<{ id
   return (
     <main className="mx-auto flex w-full min-w-0 max-w-4xl flex-1 flex-col gap-6 px-6 pt-8 pb-16">
       <div className="flex flex-col gap-3">
-        <Link
-          href="/repositories"
-          className="text-xs text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
-        >
+        <Link href="/repositories" className="text-xs text-fg-tertiary hover:text-fg-secondary">
           ← Repositories
         </Link>
         <div className="flex flex-col gap-1">
-          <h1 className="text-2xl font-semibold tracking-tight text-zinc-950 dark:text-zinc-50">
+          <h1 className="text-2xl font-semibold tracking-tight text-fg">
             {analysisRun.repositoryFullName}
           </h1>
-          <div className="flex flex-wrap items-center gap-2 text-xs text-zinc-500 dark:text-zinc-400">
+          <div className="flex flex-wrap items-center gap-2 text-xs text-fg-tertiary">
             <span className="font-mono">{analysisRun.commitSha.slice(0, 7)}</span>
             <span>·</span>
             <span>{analysisRun.status}</span>
@@ -1431,7 +1389,7 @@ export default async function AnalysisRunPage({ params }: { params: Promise<{ id
               {installedSdks.map((sdk) => (
                 <span
                   key={`${sdk.workspacePath}:${sdk.packageName}`}
-                  className="font-mono text-xs text-zinc-500 dark:text-zinc-400"
+                  className="font-mono text-xs text-fg-tertiary"
                 >
                   {formatSdkEvidence(sdk)}
                 </span>
@@ -1442,14 +1400,14 @@ export default async function AnalysisRunPage({ params }: { params: Promise<{ id
       </div>
 
       {assessments.length > 0 && (
-        <div className="border-t border-zinc-200 pt-6 dark:border-zinc-800">
+        <div className="border-t border-rule pt-6">
           <ImpactSummary assessments={assessments} />
         </div>
       )}
 
-      <div className="flex min-w-0 flex-col divide-y divide-zinc-200 border-t border-zinc-200 dark:divide-zinc-800 dark:border-zinc-800">
+      <div className="flex min-w-0 flex-col divide-y divide-rule border-t border-rule">
         {assessments.length === 0 ? (
-          <p className="py-6 text-sm text-zinc-500 dark:text-zinc-400">
+          <p className="py-6 text-sm text-fg-tertiary">
             No impact assessments yet for this analysis run.
           </p>
         ) : (

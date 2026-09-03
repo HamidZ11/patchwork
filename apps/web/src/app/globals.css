@@ -1,32 +1,206 @@
 @import 'tailwindcss';
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+/* ---------------------------------------------------------------------------
+   Patchwork semantic token layer.
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+   Components reference ROLES (`text-fg-secondary`, `bg-evidence`,
+   `border-rule`, `text-attention`), never raw palette steps
+   (`text-zinc-500`, `bg-zinc-50`). Before this layer existed the product
+   had three intended text tiers implemented as eleven different
+   light/dark class pairings -- `text-zinc-700 dark:text-zinc-300` and
+   `text-zinc-700 dark:text-zinc-400` both meaning "secondary",
+   `text-zinc-500 dark:text-zinc-500` and `text-zinc-500 dark:text-zinc-400`
+   both meaning "metadata" -- which is how a theme drifts without anyone
+   deciding to change it. See DESIGN.md Sections 9-12.
+
+   Every value below is stated per theme rather than derived by inverting
+   the other one: no single grey can satisfy WCAG AA against both a white
+   and a near-black canvas (the light ceiling is relative luminance
+   <= 0.183, the dark floor is >= 0.189), so a "dark theme" built by
+   flipping light-theme values necessarily fails one side. Each pair is
+   chosen for its own background and verified in both.
+   --------------------------------------------------------------------------- */
+
+:root {
+  /* Surfaces. `canvas` is the page ground; `surface` is a grouping tint for
+     a multi-part object that must read as one unit; `evidence` is the
+     ground for machine output Patchwork is quoting back (diffs, logs,
+     findings) and is deliberately a separate role from `surface` even
+     though the two coincide in this theme -- they diverge in dark.
+
+     Light canvas is a warm, slightly off-white paper tone
+     (`#faf9f6`), not pure `#ffffff` -- introduced in the /repositories
+     redesign (Slice 2) specifically to read closer to a technical
+     document than a stark white app screen. `surface`/`rule` are warmed
+     to match on the same axis so the theme reads as one deliberate
+     palette rather than a white canvas with grey tokens dropped onto it.
+     Re-verified against 4.5:1/AA for every text tier and against 3:1 for
+     rule-strong-as-a-border at this exact value before shipping (see
+     DESIGN.md Section 10) -- this is a real, checked palette choice, not
+     an eyeballed "make it cream" pass. Dark is unchanged from Slice 1. */
+  --canvas: #faf9f6;
+  --surface: #f3f1ec;
+  --surface-hover: #ece9e2;
+  --evidence: #f3f1ec;
+
+  /* Text. Three tiers carry all real content; `faint` is a fourth, narrow
+     role for true gutters (diff line numbers) and is still AA-legible. */
+  --fg: #09090b; /* 18.90:1 */
+  --fg-secondary: #3f3f46; /* 9.92:1 */
+  --fg-tertiary: #52525b; /* 7.34:1 */
+  --fg-faint: #71717a; /* 4.59:1 */
+
+  /* Rules. Structural hairlines, not state indicators -- a border that
+     ever conveys state (focus, error) must meet 3:1 on its own. */
+  --rule: #e6e2d9;
+  --rule-strong: #d6d1c4;
+
+  /* Status text (DESIGN.md Section 11). Every one of these is always
+     paired with a real label; colour never carries a status alone. */
+  --attention: #b45309; /* 5.02:1 */
+  --indeterminate: #475569; /* 7.58:1 */
+  --success: #047857; /* 5.48:1 */
+  --failure: #be123c; /* 6.29:1 */
+
+  /* Status marks (the dot). One value per role across both themes -- the
+     dot reinforces an adjacent AA-legible label rather than carrying the
+     status itself, so it is tuned for recognisability, not for text
+     contrast. */
+  --mark-attention: #f59e0b;
+  --mark-indeterminate: #64748b;
+  --mark-success: #10b981;
+  --mark-failure: #f43f5e;
+  --mark-neutral: #71717a;
+
+  /* Diff. The one place the status roles apply to code rather than state. */
+  --diff-add-bg: #ecfdf5;
+  --diff-add-fg: #065f46;
+  --diff-del-bg: #fff1f2;
+  --diff-del-fg: #9f1239;
+
+  /* Warning surface: a whole region that is itself the message. Distinct
+     from `--attention`, which colours a status label inside ordinary
+     content. */
+  --warning-surface: #fffbeb;
+  --warning-rule: #fcd34d;
+  --warning-fg: #78350f;
+
+  /* Action fills. Colourless by design (Section 10): pure contrast, never
+     an accent hue, so a control never competes with a status colour.
+     `accent` is the in-content weight; `accent-strong` is the heavier
+     landing-page weight -- a real documented distinction (Section 16),
+     not a duplicate. */
+  --accent: #18181b;
+  --accent-fg: #ffffff;
+  --accent-hover: #27272a;
+  --accent-strong: #09090b;
+  --accent-strong-fg: #ffffff;
+  --accent-strong-hover: #27272a;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --canvas: #0a0a0a;
+    --surface: #101011;
+    --surface-hover: #1b1b1d;
+    --evidence: #18181b;
+
+    --fg: #fafafa; /* 18.97:1 */
+    --fg-secondary: #d4d4d8; /* 13.40:1 */
+    --fg-tertiary: #a1a1aa; /* 7.72:1 */
+    /* Not zinc-500: on this canvas that lands at 4.10:1, under AA. Nudged
+       up until it clears, rather than shipping an illegible gutter. */
+    --fg-faint: #7c7c85; /* 4.79:1 */
+
+    --rule: #27272a;
+    --rule-strong: #3f3f46;
+
+    --attention: #fbbf24; /* 11.86:1 */
+    --indeterminate: #94a3b8; /* 7.72:1 */
+    --success: #34d399; /* 10.30:1 */
+    --failure: #fb7185; /* 7.36:1 */
+
+    --mark-attention: #f59e0b;
+    --mark-indeterminate: #64748b;
+    --mark-success: #10b981;
+    --mark-failure: #f43f5e;
+    --mark-neutral: #71717a;
+
+    --diff-add-bg: #081411;
+    --diff-add-fg: #6ee7b7;
+    --diff-del-bg: #1e090f;
+    --diff-del-fg: #fda4af;
+
+    --warning-surface: #451a03;
+    --warning-rule: #78350f;
+    --warning-fg: #fde68a;
+
+    --accent: #f4f4f5;
+    --accent-fg: #18181b;
+    --accent-hover: #ffffff;
+    --accent-strong: #ffffff;
+    --accent-strong-fg: #09090b;
+    --accent-strong-hover: #e4e4e7;
   }
 }
 
+@theme inline {
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-surface-hover: var(--surface-hover);
+  --color-evidence: var(--evidence);
+
+  --color-fg: var(--fg);
+  --color-fg-secondary: var(--fg-secondary);
+  --color-fg-tertiary: var(--fg-tertiary);
+  --color-fg-faint: var(--fg-faint);
+
+  --color-rule: var(--rule);
+  --color-rule-strong: var(--rule-strong);
+
+  --color-attention: var(--attention);
+  --color-indeterminate: var(--indeterminate);
+  --color-success: var(--success);
+  --color-failure: var(--failure);
+
+  --color-mark-attention: var(--mark-attention);
+  --color-mark-indeterminate: var(--mark-indeterminate);
+  --color-mark-success: var(--mark-success);
+  --color-mark-failure: var(--mark-failure);
+  --color-mark-neutral: var(--mark-neutral);
+
+  --color-diff-add-bg: var(--diff-add-bg);
+  --color-diff-add-fg: var(--diff-add-fg);
+  --color-diff-del-bg: var(--diff-del-bg);
+  --color-diff-del-fg: var(--diff-del-fg);
+
+  --color-warning-surface: var(--warning-surface);
+  --color-warning-rule: var(--warning-rule);
+  --color-warning-fg: var(--warning-fg);
+
+  --color-accent: var(--accent);
+  --color-accent-fg: var(--accent-fg);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-strong: var(--accent-strong);
+  --color-accent-strong-fg: var(--accent-strong-fg);
+  --color-accent-strong-hover: var(--accent-strong-hover);
+
+  /* 11px. Was four separate `text-[11px]` arbitrary values; naming it makes
+     it a scale step (micro-labels, log output) instead of a one-off. */
+  --text-2xs: 0.6875rem;
+
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
 body {
-  background: var(--background);
-  color: var(--foreground);
+  background: var(--canvas);
+  color: var(--fg);
   /* Geist Sans, loaded in layout.tsx via next/font/google and exposed as
      --font-geist-sans on <html>. Reference the real runtime custom
      property directly rather than the Tailwind v4 `@theme inline` token
      above -- `inline` intentionally does not re-emit --font-sans as a
      runtime custom property, so `var(--font-sans)` would not resolve
-     here. See DESIGN.md section 8: Geist Sans is the only UI typeface. */
+     here. See DESIGN.md Section 9: Geist Sans is the only UI typeface. */
   font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
 }

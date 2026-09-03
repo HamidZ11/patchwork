@@ -87,8 +87,23 @@ instant a real developer sees it.
 - Giant marketing-style headings inside the authenticated product
   (`text-4xl`+ hero copy on a data screen). Reserve large display type
   for the signed-out landing page only (Section 6).
-- Wrapping ordinary content regions in floating rounded cards with
-  shadows. Group with dividers and borders, not boxes (Section 14).
+- **Card soup, not surfaces themselves.** The banned thing is wrapping
+  every ordinary content region in its own floating rounded card with a
+  shadow "by default" — that reads as a generic component-library
+  template, not a designed screen. A surface (a subtle background tint,
+  a bordered container) is not itself the anti-pattern and is not
+  banned; it is one of Patchwork's real tools, already used correctly in
+  several places (`AssessmentBlock`'s `bg-surface` tint for an `AFFECTED`
+  finding, `FindingsEvidence`'s bordered evidence block, `DiffFileView`'s
+  bordered file header) — each earning it by grouping content that is
+  otherwise ambiguous, or marking the one thing on a list that most needs
+  attention. An earlier revision of this rule read as "no boxes, ever,"
+  which pushed `/repositories`' first redesign into rows that were
+  nothing but text separated by hairlines — flat, not restrained. The
+  test is not "does this have a border/background" but "does this
+  surface earn its place by doing real grouping or hierarchy work, or is
+  it decoration applied uniformly because boxes look like a product."
+  See Section 14 for the shadow-specific version of this same test.
 - Gradients of any kind, anywhere, for any reason (backgrounds, text,
   buttons, borders). Zero exceptions.
 - Pill-shaped badges as a default shape for status/metadata. Patchwork
@@ -113,11 +128,16 @@ instant a real developer sees it.
   accents, shimmer loading effects that look like a chatbot typing
   indicator. Patchwork's own output is deterministic and evidence-based;
   its UI should never visually imply otherwise.
-- Icon spam: an icon next to every label, every button, every list item
-  "for visual interest." Patchwork ships with exactly two hand-rolled
-  inline SVGs today (external-link glyph, disclosure chevron) — see
-  Section 15. An icon must earn its place by adding real information a
-  label doesn't already carry.
+- **Icon spam, not icons themselves.** The banned thing is an icon next
+  to every label, every button, every list item "for visual interest,"
+  with no information content beyond the text it sits next to. It is
+  not a cap on the total icon count in the product. Every hand-rolled
+  inline SVG Patchwork ships (external-link glyph and disclosure
+  chevron) earns its place the same way: it encodes a real affordance or
+  state that the adjacent text does not already carry — never decoration
+  applied uniformly because rows "look more finished" with an icon next
+  to everything. See Section 15 for the full icon inventory and the
+  per-icon justification.
 - Repeating the same fact in two places on one screen "for emphasis"
   (a status shown as both a badge and a full sentence restating the
   badge, a count shown as both a number and a redundant list of the same
@@ -183,24 +203,21 @@ stays shell-less, exactly per the direction below.
   dashboard frame. Patchwork's own information architecture is shallow
   (Section 33) and doesn't need persistent left-nav real estate the way
   a many-section SaaS product does.
-- Contents, left to right: wordmark/logo (small, text-based — "Patchwork",
-  linked to `/repositories`; no logo asset exists yet), then nothing else
-  until the far right: signed-in identity (GitHub avatar + login) and a
-  sign-out affordance. **No center-aligned nav links today** — Repositories
-  is Patchwork's only real top-level destination, so the wordmark itself
-  is the only navigational link; a center nav with one item would be
-  decoration, not navigation. Add one back in only once a second top-level
-  section actually ships (Section 33 decides this per-slice, not
-  speculatively) — until then there is nothing for an "active route" state
-  to distinguish between.
-- Height: `h-14` (56px), matching the Taste Skill's navigation-height
+- Contents, left to right: a confident text-only "Patchwork" wordmark linked
+  to `/repositories`; a rule-separated, full-height `Repositories` item with
+  `aria-current="page"` and a bottom rule; then signed-in identity
+  (GitHub avatar + login) and sign-out at the far right. The current-route
+  treatment names the user's location without inventing another route or
+  implying a broader navigation system. The active route is a tab-like edge,
+  not a small floating pill.
+- Height: `h-16` (64px), matching the Taste Skill's navigation-height
   discipline scaled down for a product surface (its own cap is 80px for
   marketing navigation; a product shell should read denser than that).
 - No shadow under the bar. A single `border-b` hairline (Section 14) is
   the only separation from content. The bar's background spans the full
-  viewport width; its inner content is constrained to the same
-  `max-w-2xl` column as the page body below it (Section 7), so wordmark
-  and page H1 share a left edge.
+  viewport width; its inner content uses the same `max-w-6xl` and responsive
+  gutters as the repository index, so its product identity and page H1 share
+  a deliberate grid.
 - The shell is present on every authenticated route. The signed-out
   landing page (`/`) has no shell — it is deliberately minimal chrome,
   see Section 6.
@@ -209,24 +226,27 @@ stays shell-less, exactly per the direction below.
   area**, not the shell — it's page-specific wayfinding, not global
   navigation, and remains exactly the small `text-xs` link style already
   established.
-- Responsive: the login-name text hides below `sm` (640px) — condensing
-  a secondary label before ever reaching for a hamburger, matching
-  Section 30's "no hamburger" direction — while the avatar (the real
-  identity signal) and the sign-out affordance stay visible at every
-  width.
-- Sign-out reuses `FormSubmitButton` (Section 16) with a `quiet` variant:
-  the same quiet text-link language as the Section 19 back-link, not the
-  bordered Secondary treatment — the shell's one mutation should read as
-  chrome, not as page-level content competing with real workflow actions
-  like "Analyse repository."
+- Responsive: the login name hides below `md`. The Patchwork wordmark,
+  current route, avatar, and sign-out affordance stay visible at every width,
+  so the shell condenses without a hamburger or horizontal overflow.
+- Sign-out reuses `FormSubmitButton` (Section 16) with a `quiet` variant.
+  Quiet controls still have a stable hit target, hover fill, keyboard focus
+  ring, and pressed state; "quiet" means low emphasis, not loose text.
 
 ## 6. Layout / grid rules
 
 - **No CSS grid-based multi-column dashboard layout exists or is
-  planned.** Every current screen is single-column. This stays the
-  default: reach for a second column only when two pieces of content
-  are genuinely meant to be scanned side by side (e.g., a future
-  diff-with-line-numbers view), never to fill horizontal space.
+  planned.** Every current screen is single-column top to bottom. This
+  stays the default: reach for a second page-level column only when two
+  pieces of content are genuinely meant to be scanned side by side (e.g.,
+  a future diff-with-line-numbers view), never to fill horizontal space.
+  This is a page-composition rule, not a ban on `grid` as a CSS
+  mechanism: `/repositories`' row layout uses `grid-cols-[...]` internally
+  to pin each row's identity/metadata/action regions to fixed positions
+  so the same fact aligns vertically down the whole list (Section 18) —
+  that's one single-column list of rows, each laid out with `grid`
+  instead of `flex` for alignment precision, not a dashboard-style
+  multi-column page.
 - The signed-out landing page (`/`) is the one screen allowed a
   centered, vertically-centered composition — it has exactly one job
   (explain the product in one line, offer sign-in) and should stay that
@@ -254,14 +274,19 @@ stays shell-less, exactly per the direction below.
   measure, not a technical-evidence measure. The correction: pick the
   width the page's actual content needs, per page, not a single global
   default:
-  - `max-w-2xl` (42rem / 672px) — index/list screens and short forms
-    where the content is genuinely prose-width (`/repositories` today).
-  - `max-w-4xl` (56rem / 896px) — dense evidence/detail screens carrying
-    diffs, logs, or multi-stage technical detail (`/analysis-runs/[id]`
-    today). Still a deliberate, bounded column, not full-bleed — wide
-    enough to reduce unnecessary wrapping, not so wide that line lengths
-    or diff columns become hard to scan.
-  - Do not reach for a third width without adding it here first.
+  - `max-w-2xl` (42rem / 672px) — genuinely prose-width screens: short
+    forms, single-column text, nothing wider than a paragraph measure
+    needs.
+  - `max-w-4xl` (56rem / 896px) — detail screens whose rows or blocks carry
+    real structured content rather than plain prose: dense evidence/detail
+    screens with diffs, logs, or multi-stage technical detail
+    (`/analysis-runs/[id]`).
+  - `max-w-6xl` (72rem / 1152px) — index screens whose records need three
+    stable desktop regions for identity, conclusion, and action, plus a
+    scannable evidence register below (`/repositories`). This width is
+    earned by comparable horizontal information, not by decorative empty
+    space; the layout collapses to one column below `lg`.
+  - Do not reach for another width without adding it here first.
 - A screen may still widen a specific block beyond its own page column
   when the content genuinely needs it — a wide diff, a wide log block, a
   table with many columns — via that block's own `overflow-x-auto`
@@ -332,18 +357,23 @@ variable has been fixed).
 - No serif anywhere, ever — Patchwork is not an editorial or luxury
   brand; the Taste Skill's own serif-discipline rule applies with no
   override condition met.
-- **Scale** (all values already in use, none invented):
+- **Scale** (all values already in use, none invented). `text-2xs`
+  (0.6875rem / 11px) is a named token (`--text-2xs` in `globals.css`), not
+  an arbitrary value — it replaced four identical `text-[11px]`
+  one-offs; the size itself hasn't changed, only that it's now a real
+  scale step instead of a repeated magic number:
 
-| Class                                               | Use                                                                                                                                                                     |
-| --------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `text-2xl font-semibold tracking-tight`             | Page-level H1 (e.g. "Repositories") — used exactly once per screen, never for section headers within a screen                                                           |
-| `text-base font-semibold tracking-tight`            | The single highest-priority content unit on a detail screen when it isn't the page H1 — see below                                                                       |
-| `text-sm font-semibold`                             | A stage reaching its resolved/completed state and worth more presence than an in-progress one (Section 32's "destination" moments)                                      |
-| `text-sm font-medium`                               | Primary row/item title (a repository's full name, an `UNCERTAIN`/`NOT_AFFECTED` assessment title)                                                                       |
-| `text-xs`                                           | Metadata, secondary descriptive text, timestamps, evidence detail — the majority of the product's text sits here                                                        |
-| `text-xs font-mono`                                 | Any literal value (SHA, path, symbol, command)                                                                                                                          |
-| `text-[11px] font-semibold tracking-wide uppercase` | Pipeline stage micro-labels only (Fix / Verification / Pull request — Section 32) — the one sanctioned use of small-caps tracking, never a general section-header style |
-| `text-[11px]`                                       | Command/log output text (Section 20) — a size step below `text-xs`; do not introduce a size smaller than this                                                           |
+| Class                                            | Use                                                                                                                                                                     |
+| ------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `text-3xl font-semibold tracking-tight`          | Wide index-page H1 (currently "Repositories") — used exactly once on the screen and never inside a record                                                               |
+| `text-2xl font-semibold tracking-tight`          | Narrow detail-page H1 and empty-state H1                                                                                                                                |
+| `text-base font-semibold tracking-tight`         | The single highest-priority content unit on a detail screen when it isn't the page H1 — see below                                                                       |
+| `text-sm font-semibold`                          | A stage reaching its resolved/completed state and worth more presence than an in-progress one (Section 32's "destination" moments)                                      |
+| `text-sm font-medium`                            | Primary row/item title (a repository's full name, an `UNCERTAIN`/`NOT_AFFECTED` assessment title)                                                                       |
+| `text-xs`                                        | Metadata, secondary descriptive text, timestamps, evidence detail — the majority of the product's text sits here                                                        |
+| `text-xs font-mono`                              | Any literal value (SHA, path, symbol, command)                                                                                                                          |
+| `text-2xs font-semibold tracking-wide uppercase` | Pipeline stage micro-labels only (Fix / Verification / Pull request — Section 32) — the one sanctioned use of small-caps tracking, never a general section-header style |
+| `text-2xs`                                       | Command/log output text (Section 20) — a size step below `text-xs`; do not introduce a size smaller than this                                                           |
 
 - **No display/marketing type scale** (`text-4xl`+) exists inside the
   authenticated product and must not be introduced there. It is reserved
@@ -368,31 +398,114 @@ variable has been fixed).
   — the size step itself is part of communicating that `AFFECTED` is the
   actionable case competing for the reader's attention, not a general
   upgrade for every assessment.
+
+**Conceptual role map.** The scale above grew organically, one step per
+real screen that needed it; this maps that scale onto the roles a new
+screen or section will need to reach for, so the next slice doesn't
+re-derive step sizing from scratch:
+
+| Conceptual role     | Maps to                                                              | Status                                                                                                                                                                                                                                                                                                                                                                                              |
+| ------------------- | -------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Page title          | `text-3xl` on a wide index; `text-2xl` on detail/empty screens       | Shipped                                                                                                                                                                                                                                                                                                                                                                                             |
+| Major conclusion    | `text-base font-semibold tracking-tight`                             | Shipped (the `AFFECTED` block heading, the impact-summary headline)                                                                                                                                                                                                                                                                                                                                 |
+| Section heading     | `text-sm font-semibold`                                              | **Reserved, not yet used as a heading.** Currently only used for a stage's resolved/completed moment (Section 32); no current screen has more than one flat content list under its H1. Do not invent a section-heading usage speculatively — the role exists here so the first screen that genuinely needs one (a detail screen with real sub-sections) reaches for this step instead of a new one. |
+| Object title        | `text-sm font-medium`                                                | Shipped (a repository's full name, an `UNCERTAIN`/`NOT_AFFECTED` assessment title)                                                                                                                                                                                                                                                                                                                  |
+| Body                | `text-xs`                                                            | Shipped — the majority of the product's prose sits here, by density, not size, per Section 2's principle 2                                                                                                                                                                                                                                                                                          |
+| Supporting body     | `text-xs text-fg-tertiary`                                           | Shipped (reason sentences, refusal/failure detail)                                                                                                                                                                                                                                                                                                                                                  |
+| Label / micro-label | `text-2xs font-semibold tracking-wide uppercase`                     | Shipped, narrowly (Section 32's pipeline stage labels only — see that section for why it isn't a general pattern)                                                                                                                                                                                                                                                                                   |
+| Metadata            | `text-xs font-mono text-fg-tertiary` or `text-fg-faint` for a gutter | Shipped                                                                                                                                                                                                                                                                                                                                                                                             |
+| Code / evidence     | `text-xs font-mono` (or `text-2xs font-mono` for log/command output) | Shipped                                                                                                                                                                                                                                                                                                                                                                                             |
+
+**Typeface decision for this foundation slice: Geist Sans + Geist Mono
+only, no third face.** The reference direction that motivated this slice
+raised "strong display/editorial typography for major conclusions" as a
+direction worth exploring. Deliberately not adopted here:
+
+- The two-face system already carries every role above without a gap —
+  the "big jump from `text-2xl` straight to tiny grey text" problem this
+  slice was asked to fix was, on inspection, already substantially
+  addressed by the earlier introduction of `text-base` as a deliberate
+  middle step (immediately above). What was actually missing was that
+  the roles weren't named and mapped, not that a size/weight combination
+  was missing from the scale.
+- A third, editorial/display face is a real, application-visible
+  decision that only pays for itself once a screen's composition is
+  built around it — adding one now, with no page yet designed to use it,
+  is exactly "introduce a font because a mockup used something serif-like"
+  (explicitly out of scope for this slice) rather than a decision driven
+  by a real content need.
+- **Left open, not rejected**: if a later composition slice (the
+  evidence-report / vertical-spine work this foundation is preparing for)
+  finds a genuine case where sans-at-any-weight can't carry a page's one
+  major conclusion the way an editorial numeral or headline face could,
+  that's the moment to propose a third face here — paired with the actual
+  screen that needs it, not speculatively.
 - Line height: default Tailwind `leading-relaxed` for multi-line prose
   (reasons, refusal text, migration requirements); default (no override)
   for single-line metadata.
 
 ## 10. Colour roles
 
-Patchwork's palette is **zinc neutrals + a small, fixed set of semantic
-accents** (Section 11), already correctly followed across every shipped
-screen.
+**Components reference semantic tokens, never raw Tailwind palette
+steps.** `globals.css` defines every color as a CSS custom property
+(`--fg`, `--surface`, `--attention`, …), re-exposed as Tailwind utility
+classes via `@theme inline` (`text-fg`, `bg-surface`, `text-attention`,
+…). A component writes `text-fg-secondary`, never `text-zinc-700
+dark:text-zinc-300` — the token already carries both themes, so there is
+no `dark:` variant to write at the call site at all. This was a
+correction, not a new principle: the underlying palette is unchanged
+(still zinc neutrals + the fixed semantic accents below), but before
+this layer existed, three semantically-identical tiers had drifted into
+eleven different literal light/dark class pairings across the codebase
+(`text-zinc-700 dark:text-zinc-300` and `text-zinc-700 dark:text-zinc-400`
+both meaning "secondary text," `text-zinc-500 dark:text-zinc-500` and
+`text-zinc-500 dark:text-zinc-400` both meaning "metadata") — a
+one-documented-way-to-do-a-thing violation (Section 2) that raw
+utilities alone cannot prevent, since nothing stops a second occurrence
+from picking a nearby-but-different shade. The token is the thing that's
+now impossible to get subtly wrong twice.
 
-- **Base/neutral**: `zinc` exclusively (never `gray`, `slate`, `stone`,
-  or `neutral` for backgrounds/borders/body text — `slate` is reserved
-  for one specific semantic meaning, see Section 11). Text:
-  `text-zinc-950 dark:text-zinc-50` for primary content,
-  `text-zinc-600/700 dark:text-zinc-300/400` for secondary,
-  `text-zinc-400/500 dark:text-zinc-500/600` for tertiary/metadata.
+- **Text — four tiers**, every one a token, not a shade choice made at
+  the call site:
+  - `text-fg` — primary content: the page H1, a row's primary identity,
+    a `text-base`-weight conclusion.
+  - `text-fg-secondary` — secondary content: a label with real weight,
+    body copy that isn't the primary claim.
+  - `text-fg-tertiary` — the majority of the product's text: metadata,
+    timestamps, descriptive supporting lines, most `text-xs` content.
+  - `text-fg-faint` — a fourth, narrow tier added specifically for true
+    gutters: a diff's line-number columns, a findings block's `:line`
+    marker, a pipeline stage's micro-label when the stage is blocked
+    (`muted`, Section 32). Not a general-purpose "even quieter than
+    tertiary" — reach for `tertiary` first; `faint` is for content that
+    is a position marker beside the real content, not content itself.
+  - Every tier is independently tuned per theme to clear WCAG AA (4.5:1)
+    against that theme's own canvas — see Section 31 for why this
+    replaced the earlier "just shift zinc by a fixed number of steps"
+    approach.
+- **Surfaces — three tokens**: `bg-canvas` (the page ground),
+  `bg-surface` (a grouping tint for a multi-part object that must read as
+  one unit — Section 12's `AFFECTED`-block pattern), `bg-evidence` (the
+  ground for machine output Patchwork is quoting back: a diff header, a
+  findings block, a `<pre>` output block). `surface` and `evidence`
+  currently share a value in both themes but are separate tokens because
+  they answer different questions ("this is one grouped thing" vs. "this
+  is Patchwork's own artifact") and may need to diverge once dark mode's
+  final balance is set (Section 31) — collapsing them into one token now
+  would silently re-couple two concepts that happen to look alike today.
+- **Rules — two tokens**: `border-rule` (the default hairline —
+  dividers, ordinary borders) and `border-rule-strong` (a border that
+  needs more presence: a bordered evidence block, a quoted-text left
+  rule). Never a raw `border-zinc-*` value.
 - **No decorative accent color exists.** Every color in the product is
   one of the semantic status roles in Section 11, applied only where
   that exact status is being communicated. There is no "brand blue"
   button, no purple anywhere, no arbitrary highlight color.
 - **Action colour is deliberately colourless.** Buttons use pure
-  contrast (inverted fill for primary, outline for secondary), never an
-  accent hue — see Section 16 for the exact treatment. This keeps a
-  screen's one or two interactive controls from ever competing visually
-  with a status color.
+  contrast (`bg-accent`/`bg-accent-strong`, inverted fill for primary,
+  outline for secondary), never an accent hue — see Section 16 for the
+  exact treatment. This keeps a screen's one or two interactive controls
+  from ever competing visually with a status color.
 
 ## 11. Semantic status colours
 
@@ -404,26 +517,49 @@ evidence that a documented, reused role system works. Every future
 status vocabulary must map onto these same roles rather than inventing
 a new hue.
 
-| Role                             | Colour                                                            | Meaning                                                                         | Current usages                                                                                                                                          |
-| -------------------------------- | ----------------------------------------------------------------- | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Attention**                    | `amber-500` dot / `text-amber-700 dark:text-amber-400`            | A finding that needs the developer's review; not an error, not yet resolved     | `AFFECTED` impact status                                                                                                                                |
-| **Needs review / indeterminate** | `slate-500` dot / `text-slate-600 dark:text-slate-400`            | Genuinely unresolved by evidence — Patchwork could not reach a confident answer | `UNCERTAIN` impact status; `RUNNING` verification status (paired with a subtle pulse, the one animated status treatment in the product, see Section 28) |
-| **Neutral / quiet**              | `zinc-400 dark:zinc-600` dot / `text-zinc-500 dark:text-zinc-400` | Nothing color-worthy happened, or the system correctly declined to act          | `NOT_AFFECTED` impact status; `PENDING` and `REFUSED` verification status; `SKIPPED` verification step                                                  |
-| **Success**                      | `emerald-500` dot / `text-emerald-700 dark:text-emerald-400`      | A real, positive, completed outcome                                             | "Connected" repository state; `PASSED` verification status and steps; diff addition lines                                                               |
-| **Failure**                      | `rose-500` dot / `text-rose-700 dark:text-rose-400`               | A real, negative, completed outcome                                             | `FAILED`, `TIMED_OUT`, `INFRA_ERROR` verification status; `FAILED`/`TIMED_OUT` verification steps; diff removal lines                                   |
+| Role                             | Mark (dot)              | Text token           | Meaning                                                                         | Current usages                                                                                                                                          |
+| -------------------------------- | ----------------------- | -------------------- | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Attention**                    | `bg-mark-attention`     | `text-attention`     | A finding that needs the developer's review; not an error, not yet resolved     | `AFFECTED` impact status                                                                                                                                |
+| **Needs review / indeterminate** | `bg-mark-indeterminate` | `text-indeterminate` | Genuinely unresolved by evidence — Patchwork could not reach a confident answer | `UNCERTAIN` impact status; `RUNNING` verification status (paired with a subtle pulse, the one animated status treatment in the product, see Section 28) |
+| **Neutral / quiet**              | `bg-mark-neutral`       | `text-fg-tertiary`   | Nothing color-worthy happened, or the system correctly declined to act          | `NOT_AFFECTED` impact status; `PENDING` and `REFUSED` verification status; `SKIPPED` verification step                                                  |
+| **Success**                      | `bg-mark-success`       | `text-success`       | A real, positive, completed outcome                                             | "No known impact" repository state (a completed analysis that found nothing); `PASSED` verification status and steps; diff addition lines               |
+| **Failure**                      | `bg-mark-failure`       | `text-failure`       | A real, negative, completed outcome                                             | `FAILED`, `TIMED_OUT`, `INFRA_ERROR` verification status; `FAILED`/`TIMED_OUT` verification steps; diff removal lines                                   |
+
+"Neutral" intentionally has no distinct mark/text color pair the way the
+other four do — `bg-mark-neutral` and `text-fg-tertiary` are the same
+tokens the rest of the product's quiet metadata already uses. A neutral
+status isn't a fifth hue; it's the explicit absence of one, which is
+part of what it's communicating.
+
+Each token is a CSS custom property (Section 10) tuned per theme; the
+literal hex values live only in `globals.css`, never restated here — this
+table is the role mapping, not the palette.
 
 **Rules that keep this table meaning something:**
 
-- **Emerald is reserved for genuine success/connection, never reused for
+- **Emerald is reserved for a genuine positive outcome, never reused for
   "AFFECTED."** This was a deliberate decision in an earlier slice
   (documented in `docs/frontend-design.md`'s history) specifically to
-  keep "a repo is connected" and "your code needs attention" visually
+  keep "a real, positive result" and "your code needs attention" visually
   distinct, and it must stay that way.
+- **Amendment: emerald moved off "Connected" onto "No known impact."**
+  "Connected" was the original emerald usage, but on `/repositories` it
+  stopped communicating anything the moment every row on the page was
+  connected — a dominant status color that's true 100% of the time isn't
+  a status signal. The role it was filling — "a real, positive, completed
+  outcome" — is still exactly right for a repository whose latest
+  analysis completed and found nothing: that's genuine evidence Patchwork
+  produced (a `NOT_AFFECTED`-only or empty result), not silence. Emerald
+  was repointed at that state ("No known impact") rather than retired,
+  because the role itself was never wrong, only its assignment. Plain
+  "connected, not yet analysed" now renders zinc/neutral (see
+  `not_analysed` in Section 32) since nothing color-worthy has happened
+  yet.
 - **A status never gets a color it hasn't earned.** `PENDING` and
-  `REFUSED` are both neutral/zinc, not amber or rose — neither is a
-  failure, and neither needs urgent attention the way `AFFECTED` or a
-  real `FAILED` does. Do not "warm up" a neutral status's color for
-  visual interest.
+  `REFUSED` are both neutral, not amber or rose — neither is a failure,
+  and neither needs urgent attention the way `AFFECTED` or a real
+  `FAILED` does. Do not "warm up" a neutral status's color for visual
+  interest.
 - **A dot is only ever used for a real semantic state**, never as
   decoration (matches the Taste Skill's "zero decorative status dots by
   default" rule exactly — Patchwork's existing dots all pass this test
@@ -437,10 +573,18 @@ a new hue.
   in Section 9 — size communicates "which verdict on this screen is the
   one the reader is here for" — and is the only place dot size varies;
   never introduce a third size.
-- **Diff coloring** (`+`/`-` lines: emerald/rose text, no background
-  fill) is the one place these roles apply to code rather than status —
-  same roles, same reasoning (addition = positive change, removal =
-  negative/old).
+- **Diff coloring** (`text-diff-add-fg`/`text-diff-del-fg` on a
+  `bg-diff-add-bg`/`bg-diff-del-bg` row tint) is the one place these
+  roles apply to code rather than status — same reasoning (addition =
+  positive change, removal = negative/old), distinct tokens rather than
+  a literal reuse of `success`/`failure` because a diff row background is
+  a much larger, sustained color area than a status label and needed its
+  own contrast pass against both surfaces (`bg-evidence` in the header,
+  the tinted row itself). **Correction**: this row previously read "no
+  background fill," which stopped being true once `DiffFileView` shipped
+  row backgrounds during the Analysis Detail redesign — the rule is
+  documented as it actually renders now, not as it read before that
+  screen existed.
 - When a new status vocabulary is introduced (Section 33's future PR
   status, for instance), map every value onto one of these five roles
   before shipping. If a genuinely new meaning doesn't fit any of the
@@ -451,7 +595,7 @@ a new hue.
 
 ## 12. Border usage
 
-- **`border-zinc-200 dark:border-zinc-800`** is the one border color
+- **`border-rule`** is the one border color
   used everywhere — around a bordered block (diff container, migration
   requirement box, coverage-detail rail), around a list's outer edge
   when it has one, and for every `divide-y`/`divide-x` separator.
@@ -468,12 +612,12 @@ a new hue.
   content is:**
   - **Patchwork's own artifact or finding** (a diff, a findings list, log
     output) gets a full border on all four sides plus a subtle background
-    tint (`bg-zinc-50 dark:bg-zinc-900`) — this is Patchwork asserting
+    tint (`bg-evidence`) — this is Patchwork asserting
     something it computed or produced, and reads with the same weight as
     a code block.
   - **A quotation of someone else's text** (a provider's migration
     requirement, verbatim) gets a left border only
-    (`border-l-2 border-zinc-300 dark:border-zinc-700`, no fill, no
+    (`border-l-2 border-rule-strong`, no fill, no
     right/top/bottom edge) — a lighter treatment than a full box,
     deliberately closer to a blockquote than a code block, because the
     content is being cited, not produced. Conflating the two (giving
@@ -483,7 +627,7 @@ a new hue.
     redesign — keep them distinct going forward.
   - Both are correct uses of an all-around or partial border; the
     distinction is deliberate, not inconsistent.
-- **A subtle, borderless background tint (`bg-zinc-50 dark:bg-zinc-900/40`)
+- **A subtle, borderless background tint (`bg-surface`)
   may group a multi-part object that genuinely needs to read as one
   coherent unit** — not a border, not a shadow, not a card (no distinct
   rounded-corner "floating" treatment, just a flat tonal region the
@@ -539,17 +683,28 @@ pure CSS, no JS). Both are small (`h-3 w-3`), `stroke="currentColor"`
 (inherits text color, works in both themes automatically), and
 `aria-hidden="true"` with the meaning carried by adjacent text.
 
-**This stays the default.** Patchwork's content is text and code, not a
-UI that benefits from iconography — most rows, buttons, and labels
-should have _no_ icon at all. Before adding a new icon anywhere, ask
-whether the label alone already says it; if yes, no icon. When an icon
-is genuinely justified (a new external-link-style affordance, a new
-disclosure), hand-roll a matching small inline SVG in the same stroke
-style as the existing two rather than installing a library for one or
-two more glyphs. Only reach for `pick-ui-library`'s icon recommendation
+**Most rows, buttons, and labels should still have _no_ icon at all.**
+Before adding a new icon anywhere, ask whether the label alone already
+says it, and whether it says it fast enough — if yes, no icon; if a
+reader has to parse a short sentence to get information a single
+silhouette would communicate at a glance (private vs. public, "this row
+opens something"), the icon is earning its place, not decorating. When
+an icon is genuinely justified, hand-roll a matching small inline SVG in
+the same stroke style as the existing set (`viewBox="0 0 16 16"`,
+`stroke="currentColor"`, `strokeWidth="1.5"`, `h-3 w-3`,
+`aria-hidden="true"`) rather than installing a library for one or two
+more glyphs. Only reach for `pick-ui-library`'s icon recommendation
 (Phosphor) if a screen genuinely needs enough distinct icons that
 hand-rolling stops being the smaller diff — no current or proposed
 screen meets that bar.
+
+**Current inventory** (two, each justified individually — this is the
+full list, not a sample):
+
+| Icon               | Where                                         | Why it earns its place                                                                                   |
+| ------------------ | --------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| External-link      | Provider-change source links, opened PR links | Signals "this leaves Patchwork," a real navigational fact the link text alone doesn't carry              |
+| Disclosure chevron | Every `<details>` summary                     | The only visual cue that a summary is expandable; rotates on open/close via pure CSS, carries real state |
 
 ## 16. Buttons
 
@@ -557,13 +712,13 @@ Three button treatments exist: primary, secondary, quiet.
 
 - **Primary** — two sizes, two fill strengths:
   - Landing-page sizing (`px-5 py-2.5 text-sm font-medium`,
-    `bg-zinc-950 text-white dark:bg-white dark:text-zinc-950` — the
+    `bg-accent-strong text-accent-strong-fg` — the
     strongest possible fill): the one highest-emphasis action on an
     otherwise-empty screen (sign-in, install the App). Isolated on its
     own screen, maximum contrast is correct.
-  - **In-content sizing** (`px-3 py-1.5 text-xs font-medium` — Secondary's
-    compact footprint — with a slightly softened fill,
-    `bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900`, one
+  - **In-content sizing** (`min-h-9 px-3.5 py-2 text-xs font-semibold` —
+    Secondary's compact footprint — with a slightly softened fill,
+    `bg-accent text-accent-fg`, one
     step in from pure black/white): the one obvious next action within
     an active workflow stage on a dense evidence screen (e.g.
     `/analysis-runs/[id]`'s Fix/Verification/Pull request pipeline —
@@ -585,18 +740,22 @@ Three button treatments exist: primary, secondary, quiet.
     is blocking progress, is primary; a retry of something that already
     succeeded is quiet). Historical/completed assessments correctly end
     up with zero primary buttons — there's nothing left to do.
-- **Secondary**: `border border-zinc-300 dark:border-zinc-700`,
-  transparent background, `hover:bg-zinc-50 dark:hover:bg-zinc-900`,
-  `rounded-md`, `px-3 py-1.5`, `text-xs font-medium`. The default
+- **Secondary**: `border border-rule-strong`,
+  `bg-canvas`, `hover:bg-surface-hover`,
+  `rounded-md`, `min-h-9 px-3.5 py-2`, `text-xs font-semibold`. The default
   treatment for an in-context action that isn't the current pipeline's
   frontier and isn't a low-emphasis retry either (Analyse repository has
-  no pipeline concept, so it stays Secondary always).
-- **Quiet**: no border, no fill, just `text-zinc-500 dark:text-zinc-400`
-  with a `hover:` darken — reuses the back-link's text-link language
-  (Section 19). For a low-emphasis action that isn't the workflow
+  no pipeline concept, so it stays Secondary when another primary action
+  is present).
+- **Quiet**: a transparent border and `min-h-8 px-2.5` keep a stable control
+  footprint; `hover:bg-surface-hover` and `hover:text-fg` expose interaction
+  without adding resting weight. For a low-emphasis action that isn't the workflow
   frontier: re-running something that already passed/succeeded (Verify
   again after PASSED, Prepare fix again after GENERATED), or genuinely
   chrome-level (shell sign-out).
+- Every treatment is `inline-flex` and ships the same visible keyboard focus
+  ring, disabled treatment, and one-pixel pressed translation. A button must
+  remain unmistakably interactive even when it is low emphasis.
 - **No filled-color button exists for any status/semantic action** (no
   green "Verify" button, no red "Delete" button) — the primary/secondary/
   quiet hierarchy above is about emphasis, never about color. A
@@ -628,13 +787,12 @@ built.
 
 - Label above the input, never placeholder-as-label (matches the Taste
   Skill's mandatory rule).
-- `text-xs font-medium text-zinc-700 dark:text-zinc-300` for the label,
-  matching the product's existing secondary-text weight.
-- Input border: same `border-zinc-300 dark:border-zinc-700` as a
-  secondary button, `rounded-md`, `focus:` state uses a visible ring in
-  the neutral foreground color (`focus:ring-2 focus:ring-zinc-950
-dark:focus:ring-zinc-50`) — never a colored focus ring, consistent
-  with Section 10's "no decorative accent" rule.
+- `text-xs font-medium text-fg-secondary` for the label, matching the
+  product's existing secondary-text weight.
+- Input border: same `border-rule-strong` as a secondary button,
+  `rounded-md`, `focus:` state uses a visible ring in the neutral
+  foreground token (`focus:ring-2 focus:ring-fg`) — never a colored focus
+  ring, consistent with Section 10's "no decorative accent" rule.
 - Error text below the input, in the failure role color (Section 11:
   rose), as a short specific sentence — never a generic "Invalid input."
 - Helper text, if present, in tertiary zinc, above the error slot.
@@ -654,10 +812,40 @@ dark:focus:ring-zinc-50`) — never a colored focus ring, consistent
   screen needs this yet; when one does, use a real `<table>` with
   `<thead>`, not a div-grid impersonating one — semantics matter for
   accessibility and for the reader's ability to scan a column.
-- A list row's internal layout: primary label + secondary metadata
-  stacked (`flex flex-col gap-0.5`), with any actions/status aligned to
-  the row's trailing edge (`sm:flex-row sm:items-center
-sm:justify-between`, exactly the existing repositories-page pattern).
+- **A repository is one bordered ledger object, not a generic card and
+  not a loose row.** `RepositoryLedger` uses a thin rule and the existing
+  `rounded-md` radius to make identity, verdict, snapshot, and action read
+  as one record. The surface earns its boundary because the record can
+  contain a nested provider-change register; it has no shadow or
+  decorative elevation. Other top-level collections still default to
+  `border-t` plus `divide-y` unless their records have the same genuine
+  multi-region grouping need.
+- **Every repository keeps the same three-region header.** At `sm`, CSS
+  Grid aligns repository identity, primary conclusion, and action across
+  records. Below `sm`, those regions stack in document order. This shared
+  outer primitive is what makes affected and clear repositories visibly
+  related even though their evidence density differs.
+- **Asymmetric weight comes from evidence, not a different container.**
+  `affected` and `uncertain` records append a provider-change register
+  containing only real change titles, assessment status, and confirmed
+  finding counts. `clear`, `failed`, and `not_analysed` records stop after
+  the snapshot rail because they have no affected or uncertain changes
+  to enumerate. The outer record and its hierarchy do not change.
+- **Repository status stays inside the content, never on the container.**
+  The record border remains neutral; a dot and explicit status label carry
+  the state beside the conclusion. This keeps status from turning the whole
+  record into an alert and preserves one border language across both themes.
+- **Navigation has one explicit target.** Repository identity remains
+  plain identity text; "View impact report" is the sole report link and
+  uses the documented Primary button treatment. "Analyse again" uses the
+  outlined Secondary treatment beside it. This avoids duplicate click targets while
+  making the next step unmistakable.
+- **Provider changes use evidence rows, not a spreadsheet facade.** A compact
+  section header frames the count; each divided row leads with the change
+  title, keeps status adjacent beneath it, and right-aligns confirmed usage
+  metadata. The rows stay visually static because they are evidence, not
+  click targets; there are no filters, tags, sorting controls, or row-level
+  actions to imply capabilities Patchwork does not have.
 - Long lists (Section 4.9 of the Taste Skill flags this for marketing
   pages) are less of a concern here — Patchwork's lists are inherently
   bounded (a user's connected repositories, the ~4 registered rules'
@@ -669,9 +857,10 @@ sm:justify-between`, exactly the existing repositories-page pattern).
 
 ## 19. Navigation
 
-- **The shell (Section 5) carries the one piece of global navigation**:
-  the wordmark, linked to `/repositories`. A small back-link
-  (`text-xs text-zinc-500 hover:text-zinc-700`) at the top of a detail
+- **The shell (Section 5) carries global navigation**: the product mark and
+  wordmark link home to `/repositories`, while the single active
+  `Repositories` item states the current section. A small back-link
+  (`text-xs text-fg-tertiary hover:text-fg`) at the top of a detail
   screen carries _local_ wayfinding, pointing at the index it was reached
   from ("← Repositories"). Both coexist without conflict — they answer
   different questions ("where else can I go" vs. "where did I come
@@ -695,7 +884,7 @@ sm:justify-between`, exactly the existing repositories-page pattern).
   The corrected shape, per changed file (parsed from the real unified
   diff Patchwork already produces — see `parseDiff` in
   `analysis-runs/[id]/page.tsx`):
-  - A header bar (`bg-zinc-50 dark:bg-zinc-900`, bordered) naming the
+  - A header bar (`bg-evidence`, bordered) naming the
     file path plus a real `+N -M` addition/deletion count — file identity
     is the primary grouping key, exactly like the diff's own `Index:`
     structure.
@@ -707,8 +896,8 @@ sm:justify-between`, exactly the existing repositories-page pattern).
     (additions show only the new number, deletions only the old),
     matching how GitHub's own diff view reads.
   - Row background — not just text color — carries add/delete state:
-    `bg-emerald-50 dark:bg-emerald-950/30` for additions,
-    `bg-rose-50 dark:bg-rose-950/30` for deletions, transparent for
+    `bg-diff-add-bg` for additions,
+    `bg-diff-del-bg` for deletions, transparent for
     context. Deliberately restrained (a wash, not a saturated fill) —
     readable without becoming visually loud.
   - Multiple hunks in one file get a plain hairline divider between them;
@@ -812,7 +1001,7 @@ No illustration, no icon.
 - A **secondary** empty state (a screen that has some context but the
   specific thing being viewed is empty — e.g. "No impact assessments
   yet for this analysis run," already shipped inline on the detail
-  page) stays small, in-flow, `text-sm text-zinc-500`, no special
+  page) stays small, in-flow, `text-sm text-fg-tertiary`, no special
   treatment beyond that — it does not need its own centered composition
   the way a whole-screen empty state does, because the surrounding page
   chrome already gives the reader context.
@@ -872,10 +1061,9 @@ that must never be visually blurred together (Section 34):
    a pass or a fail.
 
 - A **user-facing error banner** (the existing `ErrorBanner` component,
-  triggered by a redirect `?error=` code) stays: amber border/background
-  (`border-amber-300 bg-amber-50 dark:border-amber-900
-dark:bg-amber-950`), `text-amber-900 dark:text-amber-200`, one plain
-  sentence, no icon. Amber here (distinct from Section 11's amber
+  triggered by a redirect `?error=` code) stays: `border-warning-rule
+bg-warning-surface`, `text-warning-fg`, one plain sentence, no icon.
+  Amber here (distinct from Section 11's amber
   "Attention" role for impact status) specifically communicates
   "something about _your action_ didn't complete" — a transient,
   page-level notice, not a persisted record's status, which is why it's
@@ -920,8 +1108,8 @@ as a bigger version of a disclosure.
 ## 27. Interaction behaviour
 
 - Every interactive row/link/button gets a hover state
-  (`hover:bg-zinc-50 dark:hover:bg-zinc-900` for rows/backgrounds,
-  `hover:text-zinc-700 dark:hover:text-zinc-200` for text-only links),
+  (`hover:bg-surface-hover` for rows/backgrounds,
+  `hover:text-fg` for text-only links),
   and a visible focus state for keyboard users (browser default focus
   ring is acceptable; do not suppress `:focus-visible` outlines anywhere
   in the product).
@@ -1028,25 +1216,52 @@ for>`/implicit wrapping, error text programmatically associated via
 
 ## 31. Dark-mode principles
 
-- **Every screen already correctly pairs a light and dark Tailwind class
-  for every color decision** — this discipline is real and must be
-  maintained for every new class added anywhere in the product; a
-  light-only or dark-only color value is a bug, not a stylistic choice.
+- **Every color decision is a token (Section 10), defined once per
+  theme in `globals.css`** — a component never writes a `dark:` variant
+  of its own; the token already carries both themes. A light-only or
+  dark-only color value on a component is a bug, not a stylistic choice.
 - Dark mode currently follows `prefers-color-scheme` only — **no manual
   theme toggle exists**. This is an accepted, deliberate gap for the
   current product stage, not an oversight; a toggle is reasonable future
   scope but not part of this design foundation and should not be added
   speculatively.
-- Dark-mode values are not a separate palette invented per-component —
-  they are the same zinc/status roles at their existing shade offsets
-  (roughly one step lighter for text, one step darker for backgrounds,
-  matching what's already shipped: `zinc-950`↔`zinc-50`,
-  `zinc-200`↔`zinc-800`, `amber-700`↔`amber-400`, etc.). Any new color
-  usage should follow the same offset pattern already established rather
-  than picking dark-mode shades ad hoc.
+- **Correction: each theme's token values are chosen independently
+  against that theme's own canvas, not derived by shifting the other
+  theme's value by a fixed number of palette steps.** The previous
+  version of this rule ("the same roles at their existing shade offsets,
+  roughly one step lighter for text, one step darker for backgrounds")
+  was a reasonable-sounding heuristic that turns out not to hold: no
+  single grey clears WCAG AA (4.5:1) against both a white canvas and a
+  near-black one — the light-mode ceiling is a relative luminance of
+  about 0.183, the dark-mode floor is about 0.189, and those don't
+  overlap. Computing real contrast ratios for the shipped pairings during
+  this slice found several that had drifted under AA — `zinc-400
+dark:zinc-600` (2.56:1 in _both_ themes), `zinc-500 dark:zinc-500`
+  (4.10:1 in dark) — not because anyone chose them for that reason, but
+  because "shift by one step" has no mechanism to notice when it stops
+  being enough. Every token in `globals.css` is now verified per theme
+  independently (text tokens against 4.5:1, non-text marks/borders
+  against 3:1) rather than assumed correct because it "matches" its
+  partner. This does not mean the two themes may look unrelated — they
+  still express the same roles in the same relative order (canvas
+  darkest→lightest text runs the same direction in both) — only that the
+  literal numbers are tuned, not mirrored.
 - No separate dark-mode-only decorative treatment (no dark-mode-only
   glow, no dark-mode-only gradient) — the two themes differ only in
   which end of the neutral/status scale they sit on, never in kind.
+- **Light canvas is a warm off-white (`#faf9f6`), not pure `#ffffff`** —
+  acted on during the `/repositories` redesign (Slice 2), which is the
+  rebalance this section previously left open. `surface`/`rule` moved
+  with it onto the same warm axis (`#f3f1ec`/`#e6e2d9`) so the theme
+  reads as one deliberately warmed palette, not a white canvas with grey
+  structural tokens dropped onto it unchanged. Every text tier was
+  re-verified against 4.5:1 at the new canvas value before shipping (see
+  Section 10) — this is a checked palette choice, not an eyeballed "make
+  it cream" pass. **Dark is intentionally untouched by this** — it still
+  uses the values Slice 1 established. Both themes remain maintained to
+  the same contrast bar; this section's own principle (independent
+  per-theme tuning, not mirrored values) is exactly what makes it safe to
+  advance one theme's palette without the other by construction.
 
 ## 32. Product-specific Patchwork patterns
 
@@ -1085,7 +1300,7 @@ touch the same concepts.
   assessment's own remediation pipeline uses `Pipeline`/`Stage`
   (`analysis-runs/[id]/page.tsx`): one continuous `border-l-2` rail runs
   down the left edge connecting all three stages, with a small
-  micro-label (`text-[11px] font-semibold tracking-wide uppercase`) at
+  micro-label (`text-2xs font-semibold tracking-wide uppercase`) at
   the top of each. This is the one place a small-caps tracked label is
   used in the product — a deliberate, narrow exception to the Taste
   Skill's eyebrow-restraint rule, justified because that rule targets
@@ -1117,7 +1332,7 @@ touch the same concepts.
   `analysis-runs/[id]/page.tsx`). This lets a reader read the health of
   the whole pipeline — which stage passed, which is stuck — without
   opening any of it, purely from three dots on the rail; text alone at
-  `text-[11px]` was too quiet to serve as a real landmark while scanning.
+  `text-2xs` was too quiet to serve as a real landmark while scanning.
 - **Static validation and runtime verification share one visual grammar
   without becoming the same operation.** Both are evidence answering
   "why trust this patch," so both use the identical shape — a status dot
@@ -1152,6 +1367,77 @@ remaining Invoice.subscription access(es)"`); `StaticValidation` splits
   match. This is presentation, not a new claim: every future screen that
   shows a `reason` string must reconstruct from structured fields the
   same way, never print the raw analyzer string in product copy.
+- **A repository's row-level status is its impact state, not its
+  connection state.** `computeImpactState` (`repositories/page.tsx`)
+  derives one of five states from the repository's `latestAnalysis` —
+  `affected` (amber), `uncertain` (slate), `clear` (emerald), `failed`
+  (rose), or `not_analysed` (zinc) — and that state, not "Connected," is
+  what renders as the ledger's dot + label. The count-driven conclusion
+  sits directly below it. "Connected" is true for every record on this
+  screen once a repository is added, so it stopped being a status signal;
+  impact state is the thing that actually varies and that a developer is
+  scanning the page to find. See Section 11's amendment for where the
+  emerald role moved as a consequence.
+- **No persisted "analysis running" row state exists, and none is
+  faked.** `analysis_runs.status` is only ever written as `completed` or
+  `failed` — the create-then-assess flow is synchronous end to end, so
+  there is no interim state to render on page load. A pending indicator
+  can only ever be `FormSubmitButton`'s own transient client-side label
+  during the in-flight request, never a row treatment a reloaded page
+  could show. Do not add a `running`/`pending` `ImpactState` variant
+  unless the backend actually starts persisting one.
+- **An index list's default order may be a fixed, non-configurable
+  priority when the screen has no sort control** — `IMPACT_STATE_PRIORITY`
+  orders `/repositories` affected → uncertain → failed → not_analysed →
+  clear. This is not the "premature sorting feature" Section 3 warns
+  against (no control, no user choice, nothing to build a UI for) — it's
+  a deliberate default so the rows needing attention lead the list as
+  repository count grows, matching this section's own "scan → identify
+  attention → act" job for an index screen.
+- **A navigational `Link` that must look like a button reuses the same
+  button classes as a real mutation button, never a second copy.**
+  `buttonVariantClassName` (exported from `form-submit-button.tsx`) is
+  the single source for the primary/secondary/quiet button treatment;
+  `FormSubmitButton` uses it for real `'use server'` mutations, and a
+  plain `<Link>` (e.g. "View impact report," which navigates rather than
+  mutates and so has no `useFormStatus` pending state) uses the same
+  exported classnames directly. One documented button system, not one
+  for forms and a hand-copied lookalike for links.
+- **A per-record conclusion sentence reuses an existing screen's proven
+  phrasing formula rather than being extracted into a shared helper on
+  its first reuse.** `repositoryConclusion` (`repositories/page.tsx`)
+  computes the same real, count-driven sentence shape
+  `/analysis-runs/[id]`'s `impactHeadline` already proved correct ("N
+  changes affect this repository" / "N changes could not be confirmed"),
+  independently implemented rather than imported. Two small,
+  independently-evolving product-copy strings across two screens don't
+  yet justify a shared module (CLAUDE.md's "don't introduce abstractions
+  for hypothetical future requirements") — extract a shared helper the
+  moment a third screen needs the same formula, not before.
+- **Real, already-persisted fields can sit unused in a route's response
+  for a while — check the actual payload before assuming a screen's
+  current fields are all there is.** `latestAnalysis.startedAt` /
+  `completedAt` were fetched by `GET /repositories` from the first
+  version of this route but never rendered; the `/repositories` Slice 2
+  redesign found them via a live payload inspection and used them for a
+  real "analysed 2 hours ago" (`formatRelativeTime`, `Intl.RelativeTimeFormat`)
+  — no backend change, no new field, just a real value that was already
+  being sent and silently dropped. Before deciding a screen "doesn't have
+  the data" for something, fetch the real response and check.
+- **An index row may enumerate individual real record titles, not only a
+  rolled-up count — title + count is a distinct, permitted density tier,
+  still short of "full evidence."** Section 33's "index rows never show
+  full reasoning, full findings, or full evidence inline" rule stays
+  intact: `ProviderChanges` never prints a `reason` string, a
+  `file:line` finding, or coverage detail. What it does show — each real
+  `providerChangeTitle` plus (for `AFFECTED`) a real `findings.length`
+  count — is genuinely index-appropriate: a title is identity-level
+  information about a change, not its evidence, and Slice 2's own design
+  requirement (region D, "impact information") explicitly asked for this
+  once the route was confirmed to already return it. This tier exists
+  specifically for a repository whose report is rich enough to enumerate
+  (`affected`/`uncertain`); `clear`/`not_analysed`/`failed` ledgers stop
+  after the shared snapshot rail.
 
 ## 33. Index-screen vs. detail-screen rules
 
@@ -1171,11 +1457,15 @@ rule, not a preference:**
 - An **index screen** (`/repositories` today) shows one row per record,
   with just enough summary to let the reader decide what to open next:
   a rolled-up status count, a short evidence fragment (resolved SDK
-  version), a primary action. It never shows full reasoning, full
-  findings, or full evidence inline — that's what the detail screen is
-  for. If an index row is growing prose (a full reason sentence, a full
-  finding list), that content has leaked from the wrong layer and should
-  move to the detail screen.
+  version), a primary action — and, where a record genuinely has several
+  real sub-records worth naming individually, each one's _title_ plus a
+  rolled-up count (Section 32's `ProviderChanges` pattern: each real
+  `providerChangeTitle` plus a findings count, never that change's
+  `reason` sentence or its `file:line` findings). It never shows full
+  reasoning, full findings, or full evidence inline — that's what the
+  detail screen is for. If an index row is growing prose (a full reason
+  sentence, a full finding list), that content has leaked from the wrong
+  layer and should move to the detail screen.
 - A **detail screen** (`/analysis-runs/[id]` today) shows everything
   about the one record it represents: full reasoning, every finding,
   every disclosure, every static and runtime check, and (soon) PR

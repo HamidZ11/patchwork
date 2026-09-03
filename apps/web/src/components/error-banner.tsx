@@ -16,7 +16,7 @@ export function ErrorBanner({ code }: { code?: string }) {
   if (!code) return null;
 
   return (
-    <div className="w-full max-w-md rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200">
+    <div className="border-warning-rule bg-warning-surface text-warning-fg w-full max-w-md rounded-md border px-4 py-3 text-sm">
       {ERROR_MESSAGES[code] ?? DEFAULT_MESSAGE}
     </div>
   );
