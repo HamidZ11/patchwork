@@ -221,11 +221,11 @@ stays shell-less, exactly per the direction below.
 - The shell is present on every authenticated route. The signed-out
   landing page (`/`) has no shell — it is deliberately minimal chrome,
   see Section 6.
-- Breadcrumb-style back-navigation (the existing "← Repositories" link
-  pattern on the analysis-run detail page) stays **in the page content
-  area**, not the shell — it's page-specific wayfinding, not global
-  navigation, and remains exactly the small `text-xs` link style already
-  established.
+- Breadcrumb navigation (the `Repositories / {owner}/{repo}` trail on the
+  analysis-run detail page) stays **in the page content area**, not the
+  shell — it's page-specific wayfinding, not global navigation, and
+  remains the small `text-xs` link style already established. See
+  Section 19 for its exact shape.
 - Responsive: the login name hides below `md`. The Patchwork wordmark,
   current route, avatar, and sign-out affordance stay visible at every width,
   so the shell condenses without a hamburger or horizontal overflow.
@@ -277,15 +277,21 @@ stays shell-less, exactly per the direction below.
   - `max-w-2xl` (42rem / 672px) — genuinely prose-width screens: short
     forms, single-column text, nothing wider than a paragraph measure
     needs.
-  - `max-w-4xl` (56rem / 896px) — detail screens whose rows or blocks carry
-    real structured content rather than plain prose: dense evidence/detail
-    screens with diffs, logs, or multi-stage technical detail
-    (`/analysis-runs/[id]`).
-  - `max-w-6xl` (72rem / 1152px) — index screens whose records need three
-    stable desktop regions for identity, conclusion, and action, plus a
-    scannable evidence register below (`/repositories`). This width is
-    earned by comparable horizontal information, not by decorative empty
-    space; the layout collapses to one column below `lg`.
+  - `max-w-4xl` (56rem / 896px) — single-column detail screens carrying
+    real structured content rather than plain prose (diffs, logs,
+    multi-stage technical detail) with no secondary column. No current
+    screen sits here; kept as the correct choice for a future evidence
+    screen that needs that density and nothing beside it.
+  - `max-w-6xl` (72rem / 1152px) — the product's main authenticated width,
+    earned by comparable horizontal information rather than decorative
+    empty space: an index whose records need stable identity / conclusion
+    / action regions (`/repositories`), or a report whose run-level
+    metadata strip and selector rows both read as scannable rows
+    (`/analysis-runs/[id]`). Multi-region layouts collapse to one column
+    below `lg`. `/analysis-runs/[id]` moved up from `4xl` and stayed there
+    after its rail was replaced by the top selector (Section 19): the
+    width is now carried by the 4-up metadata strip and the selector, not
+    by a second column.
   - Do not reach for another width without adding it here first.
 - A screen may still widen a specific block beyond its own page column
   when the content genuinely needs it — a wide diff, a wide log block, a
@@ -363,17 +369,17 @@ variable has been fixed).
   one-offs; the size itself hasn't changed, only that it's now a real
   scale step instead of a repeated magic number:
 
-| Class                                            | Use                                                                                                                                                                     |
-| ------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `text-3xl font-semibold tracking-tight`          | Wide index-page H1 (currently "Repositories") — used exactly once on the screen and never inside a record                                                               |
-| `text-2xl font-semibold tracking-tight`          | Narrow detail-page H1 and empty-state H1                                                                                                                                |
-| `text-base font-semibold tracking-tight`         | The single highest-priority content unit on a detail screen when it isn't the page H1 — see below                                                                       |
-| `text-sm font-semibold`                          | A stage reaching its resolved/completed state and worth more presence than an in-progress one (Section 32's "destination" moments)                                      |
-| `text-sm font-medium`                            | Primary row/item title (a repository's full name, an `UNCERTAIN`/`NOT_AFFECTED` assessment title)                                                                       |
-| `text-xs`                                        | Metadata, secondary descriptive text, timestamps, evidence detail — the majority of the product's text sits here                                                        |
-| `text-xs font-mono`                              | Any literal value (SHA, path, symbol, command)                                                                                                                          |
-| `text-2xs font-semibold tracking-wide uppercase` | Pipeline stage micro-labels only (Fix / Verification / Pull request — Section 32) — the one sanctioned use of small-caps tracking, never a general section-header style |
-| `text-2xs`                                       | Command/log output text (Section 20) — a size step below `text-xs`; do not introduce a size smaller than this                                                           |
+| Class                                            | Use                                                                                                                                                                                                                 |
+| ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `text-3xl font-semibold tracking-tight`          | Wide index-page H1 (currently "Repositories") — used exactly once on the screen and never inside a record                                                                                                           |
+| `text-2xl font-semibold tracking-tight`          | Narrow detail-page H1 and empty-state H1                                                                                                                                                                            |
+| `text-base font-semibold tracking-tight`         | The single highest-priority content unit on a detail screen when it isn't the page H1 — see below                                                                                                                   |
+| `text-sm font-semibold`                          | A stage reaching its resolved/completed state and worth more presence than an in-progress one (Section 32's "destination" moments)                                                                                  |
+| `text-sm font-medium`                            | Primary row/item title (a repository's full name, an `UNCERTAIN`/`NOT_AFFECTED` assessment title)                                                                                                                   |
+| `text-xs`                                        | Metadata, secondary descriptive text, timestamps, evidence detail — the majority of the product's text sits here                                                                                                    |
+| `text-xs font-mono`                              | Any literal value (SHA, path, symbol, command)                                                                                                                                                                      |
+| `text-2xs font-semibold tracking-wide uppercase` | Evidence-chain stage labels only (01 External change … 07 Pull request — Section 32), plus the rail's own "Assessments" label — the one sanctioned use of small-caps tracking, never a general section-header style |
+| `text-2xs`                                       | Command/log output text (Section 20) — a size step below `text-xs`; do not introduce a size smaller than this                                                                                                       |
 
 - **No display/marketing type scale** (`text-4xl`+) exists inside the
   authenticated product and must not be introduced there. It is reserved
@@ -859,19 +865,65 @@ built.
 
 - **The shell (Section 5) carries global navigation**: the product mark and
   wordmark link home to `/repositories`, while the single active
-  `Repositories` item states the current section. A small back-link
-  (`text-xs text-fg-tertiary hover:text-fg`) at the top of a detail
-  screen carries _local_ wayfinding, pointing at the index it was reached
-  from ("← Repositories"). Both coexist without conflict — they answer
-  different questions ("where else can I go" vs. "where did I come
-  from").
-- This back-link pattern is the canonical detail-screen wayfinding
-  mechanism and should be reused verbatim (same classes, same "←
-  {index name}" copy pattern) on every future detail screen, not
-  reinvented.
-- No breadcrumb trail beyond one level exists or is currently justified
-  — Patchwork's real hierarchy (Section 33) is shallow enough that a
-  single back-link plus the shell's own home affordance covers it.
+  `Repositories` item states the current section. A small breadcrumb
+  (`text-xs`) at the top of a detail screen carries _local_ wayfinding,
+  naming the path that reached it. Both coexist without conflict — they
+  answer different questions ("where else can I go" vs. "where am I
+  within this section").
+- **Correction: a detail screen uses a real breadcrumb, not the "←
+  {index name}" back-link.** The earlier rule made the back-link
+  canonical and explicitly rejected breadcrumbs on the grounds that the
+  hierarchy was too shallow to need one. That reasoning held while the
+  detail screen's own `h1` was the only statement of what you were
+  looking at; it stopped holding once `/analysis-runs/[id]` became a
+  report about a repository, where "which repository does this analysis
+  belong to" is context the reader needs continuously, not a one-time
+  "where did I come from". The breadcrumb (`Repositories / {owner}/{repo}`,
+  `text-xs`, the index segment a link, the current segment mono and
+  unlinked) states the real two-level path `Repository → Analysis` while
+  still carrying the back-link's return affordance in its first segment.
+  Keep it to the real hierarchy — Patchwork has no third level to add.
+- **Correction, replacing the anchor rail: a page holding several peer
+  records of the same kind selects one at a time rather than stacking them
+  all.** An earlier revision gave `/analysis-runs/[id]` a left `AnalysisRail`
+  of same-page `#assessment-{id}` anchors beside every assessment report
+  rendered in full, one after another. Anchoring was honest but the model
+  was wrong: four complete evidence chains concatenated read as one
+  enormous repetitive document, and the rail's only job was helping you
+  survive a length it was itself contributing to. Replaced by
+  `AssessmentSelector` — a compact list at the top of the page where
+  selecting a change replaces the open report. The rules that keep it
+  honest:
+  - **Selector rows carry real per-record evidence, not just a label.**
+    Each row shows its ordinal, the real `providerChangeTitle`, the verdict
+    (dot + text, never colour alone), and an evidence count **only where
+    that count is unambiguous** — an AFFECTED change with confirmed
+    findings. An UNCERTAIN row reads simply "Uncertain": printing "0
+    confirmed usages" there would assert negative evidence the backend
+    never concluded, collapsing the UNCERTAIN/NOT_AFFECTED distinction the
+    truth model exists to protect (Section 34).
+  - **One open at a time, never an accordion.** Exactly one report is
+    mounted; selecting another replaces it. Multiple simultaneously-open
+    reports would recreate the length problem this replaced.
+  - **The default selection is computed on the server and is
+    deterministic**: first AFFECTED, else first UNCERTAIN, else first
+    NOT_AFFECTED. Never client-side, never dependent on incidental array
+    order.
+  - **Proper ARIA tabs, vertical orientation.** `role="tablist"` +
+    `role="tab"` + `role="tabpanel"`, roving `tabIndex` (selected `0`, rest
+    `-1`), Arrow/Home/End moving selection and focus together. Automatic
+    activation is correct here specifically because every panel is already
+    in the page payload — there is nothing to fetch, so arrowing through
+    cannot trigger a slow load. The panel takes no `tabIndex` because it
+    always contains focusable content.
+  - **The selected state never rests on colour alone**: a surface fill, a
+    `border-l-2` accent, and a weight change together, plus
+    `aria-selected` for assistive tech.
+  - **Every record is selectable, including the quiet ones.** NOT_AFFECTED
+    assessments are rows in the same selector rather than a separate
+    collapsed group — the selector's job is showing every tracked change,
+    and splitting the list by verdict made the quiet ones harder to reach
+    than the loud ones for no truth-preserving reason.
 
 ## 20. Code / diff presentation
 
@@ -1295,52 +1347,71 @@ touch the same concepts.
   screen until the backend capability it calls is real and shipped
   (matches this session's own sequencing — the PR-creation backend
   shipped before any frontend surface for it exists, deliberately).
-- **The Fix → Verification → Pull request pipeline is a connected
-  sequence, shown as one, not three unrelated sections.** Each `AFFECTED`
-  assessment's own remediation pipeline uses `Pipeline`/`Stage`
-  (`analysis-runs/[id]/page.tsx`): one continuous `border-l-2` rail runs
-  down the left edge connecting all three stages, with a small
-  micro-label (`text-2xs font-semibold tracking-wide uppercase`) at
-  the top of each. This is the one place a small-caps tracked label is
-  used in the product — a deliberate, narrow exception to the Taste
-  Skill's eyebrow-restraint rule, justified because that rule targets
-  _decorative_ labels repeated above every section on a marketing page;
-  here the same three labels (Fix, Verification, Pull request) name
-  Patchwork's actual, fixed workflow stages, used consistently and only
-  in this one structural role — not proliferated as a generic "section
-  header" pattern elsewhere.
-- **Every stage in that pipeline is always shown, including ones that
-  haven't started.** A stage that can't happen yet because an earlier one
-  hasn't completed (Verification before a fix is generated, Pull request
-  before verification has passed) renders as a real row, dimmed, saying
-  what it's waiting for ("Requires a candidate fix" / "Requires a passed
-  verification") — never omitted from the DOM. Seeing the whole shape of
-  the pipeline, including its blocked stages, is what lets a reader
-  understand "we're stuck at Fix, nothing downstream has run" at a
-  glance, which is the same "never let an absence read as silence"
-  reasoning behind Section 34's NOT RUN rule, applied to whole stages
-  rather than individual verification steps.
-- **At most one primary-weight action per pipeline instance** — see
+- **An assessment is rendered as a seven-stage evidence chain, and the
+  chain belongs to one assessment — never to the analysis run.** Each
+  `AssessmentReport` (`analysis-runs/[id]/page.tsx`) renders `ChainSection`s
+  numbered `01 External change` → `02 Applicability` → `03 Code impact` →
+  `04 Migration` → `05 Candidate patch` → `06 Verification` →
+  `07 Pull request`. This **supersedes the earlier `Pipeline`/`Stage`
+  pair**, which expressed only the last three of those seven as a
+  `border-l-2` rail: the chain is the same "shown as one connected
+  sequence, not unrelated sections" idea widened to the whole proof, so a
+  reader follows "upstream change → why it applies here → where → what to
+  do → what we proved" as one narrative instead of an evidence blob
+  followed by a separate remediation rail. A run holds N assessments (one
+  per registered rule), each with its own complete chain — which is
+  precisely why the page selects **one assessment at a time** (Section 19)
+  rather than presenting the seven stages as a page-level structure.
+- **A stage number is a fixed identity, never a position counter.** `05`
+  always means Candidate patch on every assessment. A stage that cannot
+  exist for a given assessment is omitted entirely, so a chain truncates
+  (`01–03` for `NOT_AFFECTED`, `01–04` plus an unavailable note for an
+  `AFFECTED` change with no supported remediation) but never renumbers to
+  close the gap. Renumbering would make "05" mean something different per
+  assessment and quietly imply a stage happened that never existed.
+- **A stage dot appears only where a real backend status backs it.**
+  `ChainSection`'s `tone` is optional and an omitted tone renders **no
+  dot at all**, rather than a neutral one. Stages 01–04 are evidence
+  Patchwork is presenting, not operations with a status, so they carry no
+  dot; 05/06/07 map their real status onto `success` / `failure` /
+  `pending` / `neutral` via the existing `*StageTone` helpers (`neutral`
+  covers both "not started yet" and a policy REFUSED). A dot is never
+  decoration standing in for evidence the system does not have.
+- **Every stage that can exist is always shown, including blocked ones.**
+  Once remediation is supported for a change, Verification and Pull
+  request render as real sections even before a fix exists, saying what
+  they are waiting for ("Requires a candidate fix" / "Requires a passed
+  verification") — never omitted from the DOM. Seeing the whole shape,
+  including blocked stages, is what lets a reader understand "we're stuck
+  at Candidate patch, nothing downstream has run" at a glance — the same
+  "never let an absence read as silence" reasoning behind Section 34's
+  NOT RUN rule, applied to whole stages. This is distinct from the
+  truncation rule above: a stage is omitted only when it _cannot_ apply
+  (no supported remediation at all), never merely because it hasn't
+  happened yet.
+- **At most one primary-weight action per assessment chain** — see
   Section 16's corrected Buttons rule for the exact mechanical decision
   (which stage is the genuine frontier) behind this.
-- **Each pipeline stage carries its own small status dot** (`h-1.5 w-1.5`,
-  the same five semantic roles as everywhere else — Section 11), placed
-  directly before its micro-label. Fix/Verification/Pull request each map
-  their own real status onto `success` (emerald) / `failure` (rose) /
-  `pending` (slate, pulsing) / `neutral` (zinc, both "not started yet" and
-  a policy REFUSED — see the `*StageTone` helpers in
-  `analysis-runs/[id]/page.tsx`). This lets a reader read the health of
-  the whole pipeline — which stage passed, which is stuck — without
-  opening any of it, purely from three dots on the rail; text alone at
-  `text-2xs` was too quiet to serve as a real landmark while scanning.
+- **The seven stage labels are the sanctioned small-caps eyebrow, and
+  they are not headings.** `text-2xs font-semibold tracking-wide uppercase`
+  remains the one sanctioned use of small-caps tracking (Section 9) — a
+  deliberate, narrow exception to the Taste Skill's eyebrow-restraint
+  rule, justified because that rule targets _decorative_ labels repeated
+  above every section of a marketing page, whereas these seven name
+  Patchwork's actual fixed workflow stages. They render as `<p>`, not
+  `<h3>`: the assessment's provider-change title inside section 01 is the
+  article's only `h2`, so promoting the labels to `h3` would put an `h3`
+  ahead of it in document order and break heading sequence. Each
+  `<section>` carries `aria-label={label}` instead, so the region is still
+  announced with a name.
 - **Static validation and runtime verification share one visual grammar
   without becoming the same operation.** Both are evidence answering
   "why trust this patch," so both use the identical shape — a status dot
   - uppercase micro-label, then a `text-sm font-semibold` colored summary
-    sentence, then grouped detail — but static validation is **not** a
-    fourth `Pipeline`/`Stage` rail entry; it renders nested inside the Fix
-    stage, immediately under the diff, because it is evidence _about_ the
-    fix artifact, not an independent pipeline step. The label itself keeps
+    sentence, then grouped detail — but static validation is **not** an
+    eighth `ChainSection`; it renders nested inside `05 Candidate patch`,
+    immediately under the diff, because it is evidence _about_ the fix
+    artifact, not an independent chain stage. The label itself keeps
     the distinction explicit ("Static validation" vs. "Runtime
     verification" in Verification's own summary sentence) — never just
     "Validation" for one and "Verification" for the other, which would
@@ -1470,7 +1541,7 @@ rule, not a preference:**
   about the one record it represents: full reasoning, every finding,
   every disclosure, every static and runtime check, and (soon) PR
   status. It is reached from exactly one index row and always carries
-  the Section 19 back-link to that index.
+  the Section 19 breadcrumb naming that index.
 - **Which concepts get their own route vs. stay a section of an
   existing detail screen** is decided by whether the concept has its
   own independent identity and lifecycle a user would want to

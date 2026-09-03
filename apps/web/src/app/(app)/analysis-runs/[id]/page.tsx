@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import { apiFetch } from '@/lib/api';
 import { FormSubmitButton } from '@/components/form-submit-button';
+import { AssessmentSelector, type AssessmentTab } from './assessment-selector';
 
 interface InstalledSdk {
   packageName: string;
@@ -461,6 +462,22 @@ function formatDuration(ms: number): string {
   return ms < 1000 ? `${ms}ms` : `${(ms / 1000).toFixed(1)}s`;
 }
 
+/** Prefers `completedAt` (when the run actually finished) over `startedAt`;
+ * both `completed` and `failed` runs are terminal writes carrying a real
+ * `completedAt`, so `startedAt` is a defensive fallback only. Intentionally
+ * a local copy of `/repositories`' identical helper rather than a shared
+ * import: two small formatters across two pages don't yet justify a shared
+ * module, and that page is out of scope for this slice. */
+function formatRelativeTime(startedAt: string, completedAt: string | null): string {
+  const when = new Date(completedAt ?? startedAt).getTime();
+  const diffMinutes = Math.round((when - Date.now()) / 60_000);
+  const rtf = new Intl.RelativeTimeFormat('en', { numeric: 'auto' });
+  if (Math.abs(diffMinutes) < 60) return rtf.format(diffMinutes, 'minute');
+  const diffHours = Math.round(diffMinutes / 60);
+  if (Math.abs(diffHours) < 24) return rtf.format(diffHours, 'hour');
+  return rtf.format(Math.round(diffHours / 24), 'day');
+}
+
 const VERIFICATION_STATUS_STYLE: Record<VerificationRunStatus, { dot: string; text: string }> = {
   PENDING: { dot: 'bg-mark-neutral', text: 'text-fg-tertiary' },
   RUNNING: { dot: 'animate-pulse bg-mark-indeterminate', text: 'text-indeterminate' },
@@ -539,19 +556,6 @@ function pullRequestStatusLabel(attempt: PullRequestAttempt): string {
   }
 }
 
-/** The Fix -> Verification -> Pull request pipeline for one AFFECTED
- * assessment, connected by one continuous left rail so the sequence reads
- * as a single artifact rather than three unrelated sections separated by
- * hairlines. Not a stepper: no numbered nodes, no click-to-navigate, just
- * the real content for each stage, always in order. */
-function Pipeline({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="mt-5 flex min-w-0 flex-col gap-5 border-l-2 border-rule-strong pl-5">
-      {children}
-    </div>
-  );
-}
-
 type StageTone = 'neutral' | 'pending' | 'success' | 'failure';
 
 const STAGE_DOT_COLOR: Record<StageTone, string> = {
@@ -561,34 +565,62 @@ const STAGE_DOT_COLOR: Record<StageTone, string> = {
   failure: 'bg-mark-failure',
 };
 
-function Stage({
+/**
+ * One numbered link in an assessment's evidence chain: External change ->
+ * Applicability -> Code impact -> Migration -> Candidate patch ->
+ * Verification -> Pull request. Replaces the earlier `Pipeline`/`Stage`
+ * pair, which expressed only the last three of those seven as a connected
+ * rail; the chain is the same idea widened to the whole proof, so the
+ * reader can follow "upstream change -> why it applies -> where -> what to
+ * do -> what we proved" as one sequence instead of an evidence blob
+ * followed by a separate remediation rail.
+ *
+ * The number is a fixed identity per stage, never a position counter: a
+ * stage that cannot exist for this assessment is omitted, so the sequence
+ * truncates (01-04 for a change with no supported fix) but never
+ * renumbers, and "05" always means Candidate patch on every assessment.
+ * `tone` is only passed where a real backend status exists -- an omitted
+ * tone renders no dot at all rather than a neutral one, so a dot is never
+ * decoration standing in for evidence Patchwork does not have.
+ */
+function ChainSection({
+  number,
   label,
-  tone = 'neutral',
+  tone,
   muted,
   children,
 }: {
+  number: string;
   label: string;
   tone?: StageTone;
   muted?: boolean;
   children: React.ReactNode;
 }) {
   return (
-    <div className="flex min-w-0 flex-col gap-2">
-      <div className="flex items-center gap-1.5">
-        <span
-          className={`h-1.5 w-1.5 shrink-0 rounded-full ${muted ? 'bg-mark-neutral' : STAGE_DOT_COLOR[tone]}`}
-          aria-hidden="true"
-        />
-        <span
-          className={`text-2xs font-semibold tracking-wide uppercase ${
-            muted ? 'text-fg-faint' : 'text-fg-tertiary'
-          }`}
-        >
-          {label}
-        </span>
+    <section
+      aria-label={label}
+      className="grid gap-x-5 gap-y-3 border-t border-rule pt-5 first:border-t-0 first:pt-0 sm:grid-cols-[2.5rem_minmax(0,1fr)]"
+    >
+      <span aria-hidden="true" className="font-mono text-2xs tabular-nums text-fg-faint sm:pt-0.5">
+        {number}
+      </span>
+      <div className="min-w-0">
+        {/* An eyebrow, deliberately not a heading: the assessment's provider-change
+            title inside section 01 is the article's only `h2`, so promoting these
+            seven labels to `h3` would put an `h3` before it in document order.
+            `aria-label` on the section above already gives the region its name. */}
+        <p className="flex items-center gap-1.5 text-2xs font-semibold tracking-wide uppercase">
+          {tone && (
+            <span
+              className={`h-1.5 w-1.5 shrink-0 rounded-full ${muted ? 'bg-mark-neutral' : STAGE_DOT_COLOR[tone]}`}
+              aria-hidden="true"
+            />
+          )}
+          <span className={muted ? 'text-fg-faint' : 'text-fg-tertiary'}>{label}</span>
+        </p>
+        <div className="mt-3 min-w-0">{children}</div>
       </div>
-      {children}
-    </div>
+    </section>
   );
 }
 
@@ -1001,8 +1033,8 @@ function splitCheckDetail(detail: string): { file: string; note: string | null }
  * 32) -- but static validation never runs code (Patchwork's own
  * deterministic checks against the transformation) while Verification
  * (below) is real sandboxed execution. Keeping the distinct label and
- * keeping this un-nested in the Fix stage rather than its own Pipeline
- * stage is what keeps that difference visible. */
+ * keeping this nested inside `05 Candidate patch` rather than giving it
+ * its own ChainSection is what keeps that difference visible. */
 function StaticValidation({ checks }: { checks: PostconditionCheck[] }) {
   const passed = checks.every((check) => check.passed);
   const byFile = new Map<string, PostconditionCheck[]>();
@@ -1135,7 +1167,17 @@ function summarizeAssessment(assessment: AssessmentDetail): AssessmentSummary {
   };
 }
 
-function AssessmentBlock({
+/**
+ * One provider change rendered as its own evidence chain. The seven stages
+ * are a property of a single assessment, not of the analysis run: a run
+ * holds N assessments (one per registered rule), and each carries its own
+ * upstream change, applicability verdict, findings, migration text, patch
+ * attempt, verification and PR. Stages truncate honestly rather than
+ * rendering placeholders -- 04-07 only exist once a change is AFFECTED,
+ * and 06/07 only once remediation is actually supported for it, matching
+ * the pre-existing conditions exactly.
+ */
+function AssessmentReport({
   assessment,
   analysisRunId,
   commitSha,
@@ -1151,86 +1193,93 @@ function AssessmentBlock({
   const summary = summarizeAssessment(assessment);
 
   return (
-    <div className={`min-w-0 ${isAffected ? 'rounded-md bg-surface p-5' : 'py-5'}`}>
-      <div className="flex items-center gap-2">
-        <span className={`h-2 w-2 shrink-0 rounded-full ${style.dot}`} aria-hidden="true" />
-        <span className={`shrink-0 text-xs font-medium ${style.text}`}>
-          {STATUS_LABEL[assessment.status]}
-        </span>
-        <span
-          className={`min-w-0 text-fg ${
-            isAffected ? 'text-base font-semibold tracking-tight' : 'text-sm font-medium'
-          }`}
-        >
-          {assessment.providerChangeTitle}
-        </span>
-        <a
-          href={assessment.providerChangeSourceUrl}
-          target="_blank"
-          rel="noreferrer"
-          className="shrink-0 text-fg-tertiary hover:text-fg"
-          aria-label="View source"
-        >
-          <ExternalLinkIcon />
-        </a>
-      </div>
-
-      <div className="mt-2 flex flex-col gap-0.5">
-        {summary.countLabel && (
-          <span className="text-xs font-medium text-fg-secondary">{summary.countLabel}</span>
-        )}
-        <p className="text-xs leading-relaxed text-fg-tertiary">{summary.reason}</p>
-      </div>
-
-      {assessment.findings.length > 0 && (
-        <div className="mt-3">
-          <FindingsEvidence findings={assessment.findings} />
-        </div>
-      )}
-
-      <div className="mt-2">
-        {assessment.coverage ? (
-          <CoverageDetail workspaces={assessment.coverage.workspaces} />
-        ) : (
-          <span className="text-xs text-fg-tertiary">
-            Coverage detail unavailable for this assessment.
+    <article
+      className={`flex min-w-0 flex-col gap-5 ${
+        isAffected ? 'rounded-md bg-surface p-5 sm:p-6' : 'py-1'
+      }`}
+    >
+      <ChainSection number="01" label="External change">
+        <div className="flex min-w-0 flex-col gap-2.5">
+          <span
+            className={`inline-flex w-fit items-center gap-1.5 text-xs font-semibold ${style.text}`}
+          >
+            <span className={`h-2 w-2 shrink-0 rounded-full ${style.dot}`} aria-hidden="true" />
+            {STATUS_LABEL[assessment.status]}
           </span>
-        )}
-      </div>
+          <h2
+            className={`min-w-0 text-fg ${
+              isAffected
+                ? 'text-xl leading-7 font-semibold tracking-tight'
+                : 'text-base leading-6 font-semibold tracking-tight'
+            }`}
+          >
+            {assessment.providerChangeTitle}
+          </h2>
+          <a
+            href={assessment.providerChangeSourceUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex w-fit items-center gap-1 text-xs text-fg-tertiary hover:text-fg"
+          >
+            Provider changelog
+            <ExternalLinkIcon />
+          </a>
+        </div>
+      </ChainSection>
+
+      <ChainSection number="02" label="Applicability">
+        <div className="flex min-w-0 flex-col gap-3">
+          <p className="text-sm leading-6 text-fg-secondary">{summary.reason}</p>
+          {assessment.coverage ? (
+            <CoverageDetail workspaces={assessment.coverage.workspaces} />
+          ) : (
+            <span className="text-xs text-fg-tertiary">
+              Coverage detail unavailable for this assessment.
+            </span>
+          )}
+        </div>
+      </ChainSection>
+
+      <ChainSection number="03" label="Code impact">
+        <div className="flex min-w-0 flex-col gap-3">
+          {summary.countLabel ? (
+            <span className="text-sm font-medium text-fg-secondary">{summary.countLabel}</span>
+          ) : (
+            <span className="text-xs text-fg-tertiary">No confirmed usages recorded.</span>
+          )}
+          {assessment.findings.length > 0 && <FindingsEvidence findings={assessment.findings} />}
+        </div>
+      </ChainSection>
 
       {isAffected && (
-        <div className="mt-4 flex flex-col gap-1 border-l-2 border-rule-strong pl-3">
-          <span className="text-xs font-medium text-fg-tertiary">Migration required</span>
-          <p className="font-mono text-xs leading-relaxed whitespace-pre-wrap text-fg-secondary">
-            {assessment.migrationRequirement}
-          </p>
-        </div>
+        <ChainSection number="04" label="Migration">
+          <div className="flex flex-col gap-1 border-l-2 border-rule-strong pl-3">
+            <p className="font-mono text-xs leading-relaxed whitespace-pre-wrap text-fg-secondary">
+              {assessment.migrationRequirement}
+            </p>
+          </div>
+        </ChainSection>
       )}
 
       {isAffected &&
         (!assessment.remediationSupported ? (
-          <div className="mt-5 flex items-center gap-2 border-l-2 border-rule-strong pl-5">
-            <span
-              className="h-1.5 w-1.5 shrink-0 rounded-full bg-mark-neutral"
-              aria-hidden="true"
-            />
-            <span className="text-2xs font-semibold tracking-wide text-fg-tertiary uppercase">
-              Fix
-            </span>
+          <ChainSection number="05" label="Candidate patch" tone="neutral">
             <span className="text-xs text-fg-tertiary">
               Automatic fix not available for this change.
             </span>
-          </div>
+          </ChainSection>
         ) : (
-          <Pipeline>
-            <Stage label="Fix" tone={fixStageTone(latestAttempt)}>
+          <>
+            <ChainSection number="05" label="Candidate patch" tone={fixStageTone(latestAttempt)}>
               <FixStageContent
                 assessment={assessment}
                 analysisRunId={analysisRunId}
                 latestAttempt={latestAttempt}
               />
-            </Stage>
-            <Stage
+            </ChainSection>
+
+            <ChainSection
+              number="06"
               label="Verification"
               tone={verificationStageTone(latestAttempt?.verificationRuns[0])}
               muted={!isGenerated}
@@ -1245,8 +1294,10 @@ function AssessmentBlock({
               ) : (
                 <Blocked reason="Requires a candidate fix" />
               )}
-            </Stage>
-            <Stage
+            </ChainSection>
+
+            <ChainSection
+              number="07"
               label="Pull request"
               tone={pullRequestStageTone(latestAttempt?.pullRequestAttempts[0])}
               muted={!isGenerated}
@@ -1260,40 +1311,10 @@ function AssessmentBlock({
               ) : (
                 <Blocked reason="Requires a candidate fix" />
               )}
-            </Stage>
-          </Pipeline>
+            </ChainSection>
+          </>
         ))}
-    </div>
-  );
-}
-
-function NotAffectedGroup({
-  assessments,
-  analysisRunId,
-  commitSha,
-}: {
-  assessments: AssessmentDetail[];
-  analysisRunId: string;
-  commitSha: string;
-}) {
-  if (assessments.length === 0) return null;
-  return (
-    <details className="group py-3">
-      <summary className="flex cursor-pointer list-none items-center gap-1.5 text-xs font-medium text-fg-tertiary hover:text-fg-secondary">
-        <ChevronIcon />
-        {assessments.length} check{assessments.length === 1 ? '' : 's'} with no impact
-      </summary>
-      <div className="mt-3 flex flex-col divide-y divide-rule border-l border-rule pl-4">
-        {assessments.map((assessment) => (
-          <AssessmentBlock
-            key={assessment.id}
-            assessment={assessment}
-            analysisRunId={analysisRunId}
-            commitSha={commitSha}
-          />
-        ))}
-      </div>
-    </details>
+    </article>
   );
 }
 
@@ -1319,12 +1340,27 @@ function impactHeadline(counts: Record<AssessmentDetail['status'], number>): str
   return 'No changes affect this repository';
 }
 
+/** The status whose colour the run-level conclusion takes -- the same
+ * precedence `impactHeadline` already uses to choose its sentence, so the
+ * headline's wording and its colour can never disagree. */
+function headlineStatus(
+  counts: Record<AssessmentDetail['status'], number>,
+): AssessmentDetail['status'] {
+  if (counts.AFFECTED > 0) return 'AFFECTED';
+  if (counts.UNCERTAIN > 0) return 'UNCERTAIN';
+  return 'NOT_AFFECTED';
+}
+
 function ImpactSummary({ assessments }: { assessments: AssessmentDetail[] }) {
   const counts = countByStatus(assessments);
+  const tone = STATUS_STYLE[headlineStatus(counts)];
   return (
-    <div className="flex flex-col gap-1.5">
-      <span className="text-base font-semibold tracking-tight text-fg">
-        {impactHeadline(counts)}
+    <div className="flex flex-col gap-2">
+      <span className="inline-flex items-center gap-2">
+        <span className={`h-2 w-2 shrink-0 rounded-full ${tone.dot}`} aria-hidden="true" />
+        <span className="text-xl leading-7 font-semibold tracking-tight text-fg">
+          {impactHeadline(counts)}
+        </span>
       </span>
       <div className="flex flex-wrap items-center gap-4 text-xs">
         {(['AFFECTED', 'UNCERTAIN', 'NOT_AFFECTED'] as const)
@@ -1346,6 +1382,99 @@ function ImpactSummary({ assessments }: { assessments: AssessmentDetail[] }) {
   );
 }
 
+/** Mirrors `/repositories`' snapshot strip so an analysis reads as the same
+ * product one level deeper: a label/value row of the exact code state the
+ * conclusions above refer to. Every value is real; entries with no backing
+ * data are omitted rather than rendered empty. */
+function RunMetadata({
+  analysisRun,
+  installedSdks,
+}: {
+  analysisRun: AnalysisRunDetail;
+  installedSdks: InstalledSdk[];
+}) {
+  const singleSdk = installedSdks.length === 1 ? installedSdks[0] : null;
+  const items = [
+    { label: 'Snapshot', value: analysisRun.commitSha.slice(0, 7) },
+    ...(singleSdk
+      ? [
+          {
+            label: `${singleSdk.packageName === 'stripe' ? 'Stripe' : singleSdk.packageName} SDK`,
+            value: singleSdk.resolvedVersion ?? singleSdk.declaredRange,
+          },
+        ]
+      : []),
+    { label: 'Analysis', value: analysisRun.status },
+    {
+      label: 'Analysed',
+      value: formatRelativeTime(analysisRun.startedAt, analysisRun.completedAt),
+    },
+  ];
+
+  return (
+    <div className="flex flex-col gap-4">
+      <dl className="grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-4 sm:gap-y-0">
+        {items.map((item) => (
+          <div key={item.label} className="min-w-0">
+            <dt className="text-2xs font-semibold text-fg-tertiary">{item.label}</dt>
+            <dd className="mt-1 truncate font-mono text-xs text-fg-secondary" title={item.value}>
+              {item.value}
+            </dd>
+          </div>
+        ))}
+      </dl>
+
+      {/* Preserved from the previous revision: with more than one installed SDK
+          there is no single "the" version, so each workspace's evidence is listed
+          in full rather than collapsed into one misleading strip value. */}
+      {installedSdks.length > 1 && (
+        <div className="flex flex-col gap-0.5">
+          {installedSdks.map((sdk) => (
+            <span
+              key={`${sdk.workspacePath}:${sdk.packageName}`}
+              className="font-mono text-xs text-fg-tertiary"
+            >
+              {formatSdkEvidence(sdk)}
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The evidence count shown beside a verdict in the selector. Deliberately
+ * null unless the number is both real and unambiguous: only an AFFECTED
+ * assessment with confirmed findings gets one. An UNCERTAIN change reads
+ * simply "Uncertain" -- printing "0 confirmed usages" there would read as
+ * negative evidence Patchwork never concluded, which is exactly the
+ * AFFECTED/NOT_AFFECTED confusion the truth model exists to prevent.
+ */
+function selectorEvidenceLabel(assessment: AssessmentDetail): string | null {
+  if (assessment.status !== 'AFFECTED') return null;
+  const count = assessment.findings.length;
+  if (count === 0) return null;
+  return `${count} confirmed usage${count === 1 ? '' : 's'}`;
+}
+
+/**
+ * The assessment selected when the page first renders, chosen on the
+ * server so it is identical on every load and in every client: the first
+ * AFFECTED change, else the first UNCERTAIN, else the first NOT_AFFECTED.
+ * Computed explicitly rather than leaning on `STATUS_ORDER` having already
+ * sorted the list -- the two agree today, but an ordering change should
+ * not silently move the default selection.
+ */
+function defaultSelectedAssessment(assessments: AssessmentDetail[]): AssessmentDetail | undefined {
+  const byPriority: AssessmentDetail['status'][] = ['AFFECTED', 'UNCERTAIN', 'NOT_AFFECTED'];
+  for (const status of byPriority) {
+    const match = assessments.find((assessment) => assessment.status === status);
+    if (match) return match;
+  }
+  return assessments[0];
+}
+
 export default async function AnalysisRunPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
 
@@ -1356,78 +1485,67 @@ export default async function AnalysisRunPage({ params }: { params: Promise<{ id
   }
   const { analysisRun } = (await runResponse.json()) as { analysisRun: AnalysisRunDetail };
 
+  // The pre-existing product ordering rule, unchanged: AFFECTED first, then
+  // UNCERTAIN, then NOT_AFFECTED. Every assessment is now a selector row --
+  // NOT_AFFECTED changes are no longer split into a separate collapsed
+  // group, since the selector's whole job is showing every tracked change.
   const assessments = [...analysisRun.assessments].sort(
     (a, b) => STATUS_ORDER[a.status] - STATUS_ORDER[b.status],
   );
-  const visibleAssessments = assessments.filter((a) => a.status !== 'NOT_AFFECTED');
-  const notAffectedAssessments = assessments.filter((a) => a.status === 'NOT_AFFECTED');
   const installedSdks = analysisRun.evidence?.installedSdks ?? [];
 
+  // Each report is rendered here, on the server, and handed to the client
+  // selector as an already-built element. Every `'use server'` action inside
+  // it is therefore bound server-side against that assessment's own stable
+  // id -- selection never rebinds an action, it only swaps which prepared
+  // element occupies the panel.
+  const assessmentTabs: AssessmentTab[] = assessments.map((assessment) => ({
+    id: assessment.id,
+    title: assessment.providerChangeTitle,
+    statusLabel: STATUS_LABEL[assessment.status],
+    statusDotClassName: STATUS_STYLE[assessment.status].dot,
+    statusTextClassName: STATUS_STYLE[assessment.status].text,
+    evidenceLabel: selectorEvidenceLabel(assessment),
+    report: (
+      <AssessmentReport
+        assessment={assessment}
+        analysisRunId={analysisRun.id}
+        commitSha={analysisRun.commitSha}
+      />
+    ),
+  }));
+  const defaultSelectedId = defaultSelectedAssessment(assessments)?.id ?? '';
+
   return (
-    <main className="mx-auto flex w-full min-w-0 max-w-4xl flex-1 flex-col gap-6 px-6 pt-8 pb-16">
-      <div className="flex flex-col gap-3">
-        <Link href="/repositories" className="text-xs text-fg-tertiary hover:text-fg-secondary">
-          ← Repositories
-        </Link>
-        <div className="flex flex-col gap-1">
+    <main className="mx-auto flex w-full min-w-0 max-w-6xl flex-1 flex-col gap-8 px-4 pt-10 pb-16 sm:px-6 lg:pt-12">
+      <div className="flex flex-col gap-6 border-b border-rule pb-7">
+        <nav aria-label="Breadcrumb">
+          <ol className="flex flex-wrap items-center gap-1.5 text-xs text-fg-tertiary">
+            <li>
+              <Link href="/repositories" className="hover:text-fg">
+                Repositories
+              </Link>
+            </li>
+            <li aria-hidden="true">/</li>
+            <li className="font-mono text-fg-secondary">{analysisRun.repositoryFullName}</li>
+          </ol>
+        </nav>
+
+        <div className="flex flex-col gap-3">
           <h1 className="text-2xl font-semibold tracking-tight text-fg">
             {analysisRun.repositoryFullName}
           </h1>
-          <div className="flex flex-wrap items-center gap-2 text-xs text-fg-tertiary">
-            <span className="font-mono">{analysisRun.commitSha.slice(0, 7)}</span>
-            <span>·</span>
-            <span>{analysisRun.status}</span>
-            {installedSdks.length === 1 && (
-              <>
-                <span>·</span>
-                <span>{formatSdkEvidence(installedSdks[0])}</span>
-              </>
-            )}
-          </div>
-          {installedSdks.length > 1 && (
-            <div className="flex flex-col gap-0.5">
-              {installedSdks.map((sdk) => (
-                <span
-                  key={`${sdk.workspacePath}:${sdk.packageName}`}
-                  className="font-mono text-xs text-fg-tertiary"
-                >
-                  {formatSdkEvidence(sdk)}
-                </span>
-              ))}
-            </div>
-          )}
+          {assessments.length > 0 && <ImpactSummary assessments={assessments} />}
         </div>
+
+        <RunMetadata analysisRun={analysisRun} installedSdks={installedSdks} />
       </div>
 
-      {assessments.length > 0 && (
-        <div className="border-t border-rule pt-6">
-          <ImpactSummary assessments={assessments} />
-        </div>
+      {assessments.length === 0 ? (
+        <p className="text-sm text-fg-tertiary">No impact assessments yet for this analysis run.</p>
+      ) : (
+        <AssessmentSelector items={assessmentTabs} defaultSelectedId={defaultSelectedId} />
       )}
-
-      <div className="flex min-w-0 flex-col divide-y divide-rule border-t border-rule">
-        {assessments.length === 0 ? (
-          <p className="py-6 text-sm text-fg-tertiary">
-            No impact assessments yet for this analysis run.
-          </p>
-        ) : (
-          <>
-            {visibleAssessments.map((assessment) => (
-              <AssessmentBlock
-                key={assessment.id}
-                assessment={assessment}
-                analysisRunId={analysisRun.id}
-                commitSha={analysisRun.commitSha}
-              />
-            ))}
-            <NotAffectedGroup
-              assessments={notAffectedAssessments}
-              analysisRunId={analysisRun.id}
-              commitSha={analysisRun.commitSha}
-            />
-          </>
-        )}
-      </div>
     </main>
   );
 }
