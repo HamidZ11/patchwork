@@ -244,27 +244,48 @@ stays shell-less, exactly per the direction below.
 
 ## 7. Width / container rules
 
-- **`max-w-2xl` (42rem / 672px) is the standard content column** for
-  every authenticated screen today, and stays the default for new
-  screens of similar density (an index list, an assessment detail). This
-  is deliberately narrower than a typical dashboard's full-bleed layout —
-  it keeps line length readable for the dense prose (reasons, refusal
-  text, migration requirements) mixed in among the structured data.
-- A screen may widen beyond `max-w-2xl` only when the content genuinely
-  needs it — a wide diff, a wide log block, a table with many columns.
-  Even then, widen the specific block (via its own `overflow-x-auto`
-  container, matching the existing diff-block pattern), not the whole
-  page shell. The page's outer column stays `max-w-2xl` so prose and
-  metadata don't stretch to unreadable line lengths.
+- **Content width is a per-page decision, not one universal constant.**
+  An earlier version of this rule fixed every authenticated screen to
+  `max-w-2xl`; that was correct for `/repositories` (a short identity +
+  metadata list) but was actively hurting `/analysis-runs/[id]` once that
+  screen carried its real content: diffs, verification step lists,
+  quoted migration text, and multi-line evidence rows all wrapped harder
+  than they needed to, for no readability benefit — 672px is a prose
+  measure, not a technical-evidence measure. The correction: pick the
+  width the page's actual content needs, per page, not a single global
+  default:
+  - `max-w-2xl` (42rem / 672px) — index/list screens and short forms
+    where the content is genuinely prose-width (`/repositories` today).
+  - `max-w-4xl` (56rem / 896px) — dense evidence/detail screens carrying
+    diffs, logs, or multi-stage technical detail (`/analysis-runs/[id]`
+    today). Still a deliberate, bounded column, not full-bleed — wide
+    enough to reduce unnecessary wrapping, not so wide that line lengths
+    or diff columns become hard to scan.
+  - Do not reach for a third width without adding it here first.
+- A screen may still widen a specific block beyond its own page column
+  when the content genuinely needs it — a wide diff, a wide log block, a
+  table with many columns — via that block's own `overflow-x-auto`
+  container (matching the existing diff-block pattern), not by widening
+  the whole page.
+- The shell's top bar (Section 5) is **full-bleed, independent of any
+  page's content width** — its own inner content uses `px-6` padding
+  only, no `max-w` constraint. This is a deliberate decoupling: the shell
+  is shared across every authenticated route, and hardcoding it to
+  whichever page happens to be narrowest (`/repositories`'s old
+  `max-w-2xl` match) is exactly the kind of one-page-shaped assumption
+  that broke the moment a second page legitimately needed a different
+  width. A real top bar not lining up pixel-for-pixel with a narrower
+  page's content column below it is normal (GitHub's and Vercel's own
+  bars do this) and not worth re-coupling for.
 - Horizontal page padding is `px-6` at every breakpoint on narrow
   content; do not add responsive padding steps until a screen actually
   needs them (none has, yet).
-- Vertical rhythm: `py-16` top/bottom padding on the outer `<main>` for
-  index/landing screens, matching what's shipped. Detail screens that
-  are entered from a link (not landed on directly as often) may use a
-  slightly tighter top padding once one exists with a real back-link
-  header — no detail screen has diverged from `py-16` yet, so this
-  isn't a live inconsistency, just a documented allowance.
+- Vertical rhythm: `py-16` bottom padding on the outer `<main>` for
+  every authenticated screen. Top padding is `py-16` on index/landing
+  screens without a shell above them, and `pt-8` on screens that sit
+  inside the shell (Section 5) — the shell's own bar already supplies
+  the "you've arrived" framing a full `py-16` top gap was otherwise
+  compensating for.
 
 ## 8. Spacing system
 
@@ -280,7 +301,7 @@ default scale directly, applied with a consistent semantic rhythm:
 | `gap-6`           | Between major page-level sections (page header, evidence strip, the assessments list)                                                                        |
 | `py-3` – `py-4`   | Vertical padding for one row in a `divide-y` list                                                                                                            |
 | `px-3` – `px-4`   | Horizontal padding for a bordered block (diff container, migration-requirement box)                                                                          |
-| `py-16`           | Outer page vertical padding (Section 7)                                                                                                                      |
+| `py-16` / `pt-8`  | Outer page vertical padding: `py-16` both edges outside the shell, `pt-8` top (`pb-16` stays) inside it (Section 7)                                          |
 
 **Rule, not just table**: spacing steps up in roughly this sequence as
 content groups get less related to each other (`0.5 → 1.5 → 2 → 3 → 4 →
@@ -313,23 +334,40 @@ variable has been fixed).
   override condition met.
 - **Scale** (all values already in use, none invented):
 
-| Class                                   | Use                                                                                                                                |
-| --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| `text-2xl font-semibold tracking-tight` | Page-level H1 (e.g. "Repositories") — used exactly once per screen, never for section headers within a screen                      |
-| `text-sm font-medium`                   | Primary row/item title (a repository's full name, a provider-change title, a section label like "Runtime verification")            |
-| `text-xs`                               | Metadata, secondary descriptive text, timestamps, evidence detail — the majority of the product's text sits here                   |
-| `text-xs font-mono`                     | Any literal value (SHA, path, symbol, command)                                                                                     |
-| `text-[11px]`                           | Command/log output text (Section 20) — the one place a size smaller than `text-xs` is used; do not introduce a third step below it |
+| Class                                               | Use                                                                                                                                                                     |
+| --------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `text-2xl font-semibold tracking-tight`             | Page-level H1 (e.g. "Repositories") — used exactly once per screen, never for section headers within a screen                                                           |
+| `text-base font-semibold tracking-tight`            | The single highest-priority content unit on a detail screen when it isn't the page H1 — see below                                                                       |
+| `text-sm font-semibold`                             | A stage reaching its resolved/completed state and worth more presence than an in-progress one (Section 32's "destination" moments)                                      |
+| `text-sm font-medium`                               | Primary row/item title (a repository's full name, an `UNCERTAIN`/`NOT_AFFECTED` assessment title)                                                                       |
+| `text-xs`                                           | Metadata, secondary descriptive text, timestamps, evidence detail — the majority of the product's text sits here                                                        |
+| `text-xs font-mono`                                 | Any literal value (SHA, path, symbol, command)                                                                                                                          |
+| `text-[11px] font-semibold tracking-wide uppercase` | Pipeline stage micro-labels only (Fix / Verification / Pull request — Section 32) — the one sanctioned use of small-caps tracking, never a general section-header style |
+| `text-[11px]`                                       | Command/log output text (Section 20) — a size step below `text-xs`; do not introduce a size smaller than this                                                           |
 
 - **No display/marketing type scale** (`text-4xl`+) exists inside the
   authenticated product and must not be introduced there. It is reserved
   for the signed-out landing page's single headline, capped at
   `text-3xl sm:text-4xl` as already shipped — do not grow it further.
-- **Weight carries hierarchy more than size does.** The jump from
-  `text-sm` to `text-sm font-medium` to `text-sm font-semibold` is
-  Patchwork's primary hierarchy tool at the row level; reaching for a
-  larger size instead of a heavier weight is usually wrong at this
-  density.
+- **Weight carries hierarchy more than size does, at the row/section
+  level.** The jump from `text-sm` to `text-sm font-medium` to
+  `text-sm font-semibold` remains Patchwork's primary hierarchy tool for
+  ordinary rows and section labels.
+- **`text-base` is a deliberate, narrow exception to that rule, added for
+  one specific reason.** Piling every distinction onto weight alone broke
+  down on `/analysis-runs/[id]`: an `AFFECTED` `ProviderChange` title —
+  the single thing the whole page exists to answer "does this affect me"
+  about — was sitting at the exact same `text-sm font-medium` register as
+  every secondary label around it, so nothing on the page visually
+  outranked anything else. `text-base font-semibold tracking-tight` (one
+  step above `text-sm`, one below the page H1) is reserved for exactly
+  this: the one content unit a detail screen is fundamentally _about_,
+  used once per instance of that unit (once per `AFFECTED` assessment
+  block here), never for a plain section label or a row in a list of
+  peers. `UNCERTAIN`/`NOT_AFFECTED` titles stay at `text-sm font-medium`
+  — the size step itself is part of communicating that `AFFECTED` is the
+  actionable case competing for the reader's attention, not a general
+  upgrade for every assessment.
 - Line height: default Tailwind `leading-relaxed` for multi-line prose
   (reasons, refusal text, migration requirements); default (no override)
   for single-line metadata.
@@ -390,6 +428,15 @@ a new hue.
   decoration (matches the Taste Skill's "zero decorative status dots by
   default" rule exactly — Patchwork's existing dots all pass this test
   already; keep it that way).
+- **Two dot sizes, tiered by what the dot is the verdict on**: `h-2 w-2`
+  for a primary content unit's own status (an assessment block's
+  AFFECTED/UNCERTAIN/NOT_AFFECTED verdict — the thing a detail screen is
+  about); `h-1.5 w-1.5` for a secondary status nested inside that
+  content (a verification run's status, a PR attempt's status, an
+  individual step). This mirrors the `text-base`/`text-sm` title tiering
+  in Section 9 — size communicates "which verdict on this screen is the
+  one the reader is here for" — and is the only place dot size varies;
+  never introduce a third size.
 - **Diff coloring** (`+`/`-` lines: emerald/rose text, no background
   fill) is the one place these roles apply to code rather than status —
   same roles, same reasoning (addition = positive change, removal =
@@ -417,14 +464,42 @@ a new hue.
   the repository list and the assessment list, and is the default for
   any future list (verification steps, PR history, future repository
   detail sections). See Section 18 for the full list-vs-table contract.
-- A single standalone block of evidence (a diff, a migration-requirement
-  quote, environment metadata) gets a full border on all four sides plus
-  a subtle background tint (`bg-zinc-50 dark:bg-zinc-900`) to visually
-  separate it from surrounding prose — this is the one case an
-  all-around border is correct, because the content genuinely is a
-  distinct quoted/literal block, not a repeated list item.
-- Never use a border to fake elevation (a bordered box with a shadow to
-  look like a floating card) — see Section 14.
+- **Two distinct standalone-block treatments, chosen by whose claim the
+  content is:**
+  - **Patchwork's own artifact or finding** (a diff, a findings list, log
+    output) gets a full border on all four sides plus a subtle background
+    tint (`bg-zinc-50 dark:bg-zinc-900`) — this is Patchwork asserting
+    something it computed or produced, and reads with the same weight as
+    a code block.
+  - **A quotation of someone else's text** (a provider's migration
+    requirement, verbatim) gets a left border only
+    (`border-l-2 border-zinc-300 dark:border-zinc-700`, no fill, no
+    right/top/bottom edge) — a lighter treatment than a full box,
+    deliberately closer to a blockquote than a code block, because the
+    content is being cited, not produced. Conflating the two (giving
+    Stripe's migration text the same heavy box as Patchwork's own diff)
+    was found to blur "what the provider says" and "what Patchwork did"
+    into visually the same category during the `/analysis-runs/[id]`
+    redesign — keep them distinct going forward.
+  - Both are correct uses of an all-around or partial border; the
+    distinction is deliberate, not inconsistent.
+- **A subtle, borderless background tint (`bg-zinc-50 dark:bg-zinc-900/40`)
+  may group a multi-part object that genuinely needs to read as one
+  coherent unit** — not a border, not a shadow, not a card (no distinct
+  rounded-corner "floating" treatment, just a flat tonal region the
+  content sits inside). Used for an `AFFECTED` assessment block on
+  `/analysis-runs/[id]` (status, reason, evidence, migration requirement,
+  and its Fix/Verification/Pull request pipeline all belong to one
+  provider change, and "avoid cards" was, on its own, producing a page
+  where nothing signaled that grouping — a flat stream of hairline-
+  separated fragments that happened to be adjacent). Apply this
+  selectively, matching the content's actual priority: an `AFFECTED`
+  assessment gets the tint, `UNCERTAIN` and `NOT_AFFECTED` stay on the
+  plain page background — the tint itself is part of what communicates
+  "this one needs your attention," not a default for every grouped
+  region.
+- Never use a border, or this background tint, to fake elevation (paired
+  with a shadow to look like a floating card) — see Section 14.
 
 ## 13. Radius system
 
@@ -478,27 +553,57 @@ screen meets that bar.
 
 ## 16. Buttons
 
-Exactly two button treatments exist:
+Three button treatments exist: primary, secondary, quiet.
 
-- **Primary** (one per screen, maximum): `bg-zinc-950 text-white
-dark:bg-white dark:text-zinc-950`, `rounded-md`, `px-5 py-2.5`,
-  `text-sm font-medium`, `transition-colors` on hover only. Reserved for
-  the one highest-emphasis action on a screen (sign-in, install the App)
-  — not every "main" button on every screen needs to be primary; most
-  in-page actions are already appropriately secondary.
+- **Primary** — two sizes, two fill strengths:
+  - Landing-page sizing (`px-5 py-2.5 text-sm font-medium`,
+    `bg-zinc-950 text-white dark:bg-white dark:text-zinc-950` — the
+    strongest possible fill): the one highest-emphasis action on an
+    otherwise-empty screen (sign-in, install the App). Isolated on its
+    own screen, maximum contrast is correct.
+  - **In-content sizing** (`px-3 py-1.5 text-xs font-medium` — Secondary's
+    compact footprint — with a slightly softened fill,
+    `bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900`, one
+    step in from pure black/white): the one obvious next action within
+    an active workflow stage on a dense evidence screen (e.g.
+    `/analysis-runs/[id]`'s Fix/Verification/Pull request pipeline —
+    Section 32). The softened fill is deliberate — the landing page's
+    full-contrast fill, dropped into a screen that's otherwise entirely
+    zinc-toned muted text and hairlines, read as an imported component
+    rather than part of the same system; one step in keeps it clearly
+    the strongest surface on the screen without that jump. **Corrects an
+    earlier version of this rule**, which capped Primary at "one per
+    screen, maximum" and left every in-content action — including the
+    actual next step a user needs to take — Secondary. On a
+    single-workflow screen that's right; on a screen with several
+    independent assessments, each mid-pipeline at a different stage, it
+    left the page with no visible priority at all. The corrected rule:
+    **at most one primary-weight action per active pipeline instance**,
+    decided mechanically by which stage is the genuine frontier (see the
+    `fixButtonVariant`-style helpers in `analysis-runs/[id]/page.tsx` —
+    no patch attempt yet, or a fix/verification/publish that failed and
+    is blocking progress, is primary; a retry of something that already
+    succeeded is quiet). Historical/completed assessments correctly end
+    up with zero primary buttons — there's nothing left to do.
 - **Secondary**: `border border-zinc-300 dark:border-zinc-700`,
   transparent background, `hover:bg-zinc-50 dark:hover:bg-zinc-900`,
-  `rounded-md`, `px-3 py-1.5`, `text-xs font-medium`. This is the
-  workhorse button for in-context actions (Analyse repository, Prepare
-  fix, Verify in sandbox, Create pull request) — smaller and quieter
-  than primary by design, since these live inside dense content, not at
-  the top of an empty screen.
+  `rounded-md`, `px-3 py-1.5`, `text-xs font-medium`. The default
+  treatment for an in-context action that isn't the current pipeline's
+  frontier and isn't a low-emphasis retry either (Analyse repository has
+  no pipeline concept, so it stays Secondary always).
+- **Quiet**: no border, no fill, just `text-zinc-500 dark:text-zinc-400`
+  with a `hover:` darken — reuses the back-link's text-link language
+  (Section 19). For a low-emphasis action that isn't the workflow
+  frontier: re-running something that already passed/succeeded (Verify
+  again after PASSED, Prepare fix again after GENERATED), or genuinely
+  chrome-level (shell sign-out).
 - **No filled-color button exists for any status/semantic action** (no
-  green "Verify" button, no red "Delete" button). A destructive or
-  high-stakes action, if one is ever added, gets a confirmation step
-  (Section 26), not a red button — Patchwork has no destructive actions
-  in its current scope (see CLAUDE.md's "What NOT to build" for PR
-  creation: no merge, no auto-merge).
+  green "Verify" button, no red "Delete" button) — the primary/secondary/
+  quiet hierarchy above is about emphasis, never about color. A
+  destructive or high-stakes action, if one is ever added, gets a
+  confirmation step (Section 26), not a red button — Patchwork has no
+  destructive actions in its current scope (see CLAUDE.md's "What NOT to
+  build" for PR creation: no merge, no auto-merge).
 - **Pending/disabled state** (established once, in `FormSubmitButton`,
   `apps/web/src/components/form-submit-button.tsx`, via `useFormStatus`):
   label text changes to a concise in-progress phrase ("Starting
@@ -506,9 +611,8 @@ dark:bg-white dark:text-zinc-950`, `rounded-md`, `px-5 py-2.5`,
   `cursor-not-allowed`. No spinner icon, no skeleton — the label change
   alone is the feedback. This is the canonical pattern for **every**
   button that triggers a real async server action; reuse the same small
-  client component (it takes a `variant` prop — `secondary`, the default,
-  or `quiet` for a low-emphasis chrome-level action like shell sign-out)
-  rather than re-implementing it per button.
+  client component (`variant` prop: `primary` | `secondary`, the default
+  | `quiet`) rather than re-implementing it per button.
 - Button text is always a concrete verb phrase (Verify in sandbox,
   Analyse repository, Continue with GitHub) — never "Submit," "OK," or a
   vague label.
@@ -583,27 +687,54 @@ sm:justify-between`, exactly the existing repositories-page pattern).
 ## 20. Code / diff presentation
 
 - **All code, diffs, and literal values are `font-mono`.** No exception.
-- **Diffs**: a single `<pre>` block, `overflow-x-auto`, bordered
-  (Section 12's standalone-block treatment), each line its own `<div>`
-  colored by prefix (`+`/`-`/`@@`/`---`+`+++` all have distinct existing
-  treatments — see `diffLineClassName` in
-  `analysis-runs/[id]/page.tsx`). No syntax highlighting beyond this
-  diff-prefix coloring — Patchwork's diffs are small, targeted, and
-  reviewed as a whole, not browsed like a file; full syntax highlighting
-  would be disproportionate machinery for the size of change Patchwork
-  ever produces (CLAUDE.md's "smallest correct migration" principle
-  extends to the UI's own complexity budget).
-- **Command/log output**: same `<pre>`, `overflow-x-auto`, bordered
-  block, `text-[11px]` (Section 9's smallest step) since raw
-  stdout/stderr is denser and less structured than a diff.
+- **Diffs are a real per-file, line-numbered table — treated as a
+  first-class product artifact, not `<pre>{text}</pre>`.** An earlier
+  version of this rule specified a single `<pre>` block with each line
+  its own color-prefixed `<div>`; that read as a terminal dump, not
+  evidence, and was corrected during the `/analysis-runs/[id]` redesign.
+  The corrected shape, per changed file (parsed from the real unified
+  diff Patchwork already produces — see `parseDiff` in
+  `analysis-runs/[id]/page.tsx`):
+  - A header bar (`bg-zinc-50 dark:bg-zinc-900`, bordered) naming the
+    file path plus a real `+N -M` addition/deletion count — file identity
+    is the primary grouping key, exactly like the diff's own `Index:`
+    structure.
+  - Below it, a real `<table>` (this is exactly the "genuinely tabular,
+    many comparable-column rows" case Section 18 already reserves a real
+    table for): an old-line-number column, a new-line-number column, and
+    a content column carrying the `+`/`-`/` ` marker inline with the
+    code. Only one of the two line-number columns is populated per row
+    (additions show only the new number, deletions only the old),
+    matching how GitHub's own diff view reads.
+  - Row background — not just text color — carries add/delete state:
+    `bg-emerald-50 dark:bg-emerald-950/30` for additions,
+    `bg-rose-50 dark:bg-rose-950/30` for deletions, transparent for
+    context. Deliberately restrained (a wash, not a saturated fill) —
+    readable without becoming visually loud.
+  - Multiple hunks in one file get a plain hairline divider between them;
+    multiple changed files render as separate, clearly separated blocks
+    (`gap-3` between them), never merged into one table.
+  - **Hand-rolled, not a dependency** (evaluated and rejected): the
+    unified-diff format Patchwork produces is simple enough to parse
+    directly (an `Index:`/`@@ -a,b +c,d @@` grammar), and every existing
+    diff-rendering library either assumes a browser runtime this
+    server-rendered page doesn't have or ships its own opinionated CSS
+    that would fight this document's zinc palette rather than extend it.
+  - This is **not** a full GitHub "Files changed" clone — no
+    expand-context-lines affordance (Patchwork never has the surrounding
+    file content to expand into), no syntax highlighting beyond the
+    add/delete/context roles above. Patchwork's diffs stay small and
+    targeted (CLAUDE.md's "smallest correct migration"); full syntax
+    highlighting would be disproportionate machinery for that size of
+    change.
+- **Command/log output** stays the simpler `<pre>` treatment:
+  `overflow-x-auto`, bordered block, `text-[11px]` (Section 9's smallest
+  step) — raw stdout/stderr is unstructured text, not row-shaped data, so
+  it doesn't earn the table treatment diffs do.
 - **Truncation must be visible, never silent.** Any bounded/capped
   output (already true of verification logs) shows an explicit line
   ("Output truncated by Patchwork.") rather than just stopping — this is
   a product-honesty rule as much as a design one (Section 2).
-- No line numbers in diffs today (not needed at Patchwork's diff size —
-  a handful of changed lines with 3 lines of context each). Revisit only
-  if a future screen needs to reference a specific line across a larger
-  diff.
 
 ## 21. Evidence presentation
 
@@ -622,10 +753,18 @@ code.
   file path — never paraphrased or "cleaned up" by the UI layer. If the
   underlying data is honestly ambiguous or partial, the UI says so
   (Section 25) rather than presenting false confidence.
-- File/line references are always `font-mono`, always in the exact
-  `path:line` shape already established, never split across separate
-  styled spans that could be visually mistaken for two different pieces
-  of data.
+- File/line references are always `font-mono`. **Findings are grouped by
+  file** (`FindingsEvidence`, `analysis-runs/[id]/page.tsx`) — file path
+  is the primary key, exactly matching the diff's own per-file grouping
+  (Section 20), with each match's `:line` and matched expression nested
+  underneath as its own row. This replaced an earlier flat
+  `path:line · symbol` sentence per finding, which read as prose rather
+  than evidence and duplicated the file path on every line when several
+  findings shared one file. Nesting under one file heading is the
+  correct exception to "never split file/line across separate spans" —
+  the goal that rule protects (never let two pieces of a single
+  `path:line` reference look like unrelated data) is still honored; only
+  the grouping _across_ multiple findings changed.
 - A `·` (middle dot) is an acceptable inline separator between short
   metadata fragments on one line (already used: `Private · default
 branch main`), rationed to at most one or two per line, matching the
@@ -857,6 +996,30 @@ for>`/implicit wrapping, error text programmatically associated via
 - Wide content (diffs, logs, wide metadata rows) always scrolls inside
   its own `overflow-x-auto` container (Section 20) — the page body
   itself must never scroll horizontally, on any screen, at any width.
+- **`overflow-x: hidden` on both `<html>` and `<body>`** (set once, in
+  `apps/web/src/app/layout.tsx`) is load-bearing, not decorative. A deeply
+  nested `overflow-x-auto` container (the diff table is the real case
+  that surfaced this) can inflate `document.documentElement.scrollWidth`
+  purely through CSS's own `scrollWidth` propagation rules, even when
+  every element in the chain correctly has `min-w-0` and nothing visually
+  renders outside its own box — and an inflated `scrollWidth` on `<html>`
+  genuinely lets the whole page pan sideways on touch/trackpad, dragging
+  real content (the shell, everything) off-screen, which no per-element
+  visual audit will catch. Verify absence of this failure mode by
+  actually attempting a horizontal scroll (`window.scrollTo`/
+  `element.scrollLeft`) in a real browser, not just by checking that no
+  element's `getBoundingClientRect()` exceeds the viewport — the two
+  checks catch different bugs, and this one only shows up in the second.
+- Every flex-column wrapper on a scroll-adjacent path (the
+  Fix/Verification/Pull request pipeline down to the diff table is the
+  concrete example) needs `min-w-0` — a flex item's default
+  `min-width: auto` refuses to shrink below its content's intrinsic
+  width, so a single wide descendant (a long title, a wide diff row) can
+  silently widen every `flex flex-col` ancestor between it and the page
+  edge. This is the same root cause documented for the assessment-title
+  fix in Section 5's history; it recurs at every new flex-column layer
+  introduced between the page and a wide leaf, so audit the whole chain,
+  not just the leaf, whenever one is added.
 - No hamburger menu exists or is anticipated — the shell (Section 5) is
   thin enough that it doesn't need to collapse; if it ever grows a
   center nav, that nav collapses per the Taste Skill's navigation
@@ -917,6 +1080,78 @@ touch the same concepts.
   screen until the backend capability it calls is real and shipped
   (matches this session's own sequencing — the PR-creation backend
   shipped before any frontend surface for it exists, deliberately).
+- **The Fix → Verification → Pull request pipeline is a connected
+  sequence, shown as one, not three unrelated sections.** Each `AFFECTED`
+  assessment's own remediation pipeline uses `Pipeline`/`Stage`
+  (`analysis-runs/[id]/page.tsx`): one continuous `border-l-2` rail runs
+  down the left edge connecting all three stages, with a small
+  micro-label (`text-[11px] font-semibold tracking-wide uppercase`) at
+  the top of each. This is the one place a small-caps tracked label is
+  used in the product — a deliberate, narrow exception to the Taste
+  Skill's eyebrow-restraint rule, justified because that rule targets
+  _decorative_ labels repeated above every section on a marketing page;
+  here the same three labels (Fix, Verification, Pull request) name
+  Patchwork's actual, fixed workflow stages, used consistently and only
+  in this one structural role — not proliferated as a generic "section
+  header" pattern elsewhere.
+- **Every stage in that pipeline is always shown, including ones that
+  haven't started.** A stage that can't happen yet because an earlier one
+  hasn't completed (Verification before a fix is generated, Pull request
+  before verification has passed) renders as a real row, dimmed, saying
+  what it's waiting for ("Requires a candidate fix" / "Requires a passed
+  verification") — never omitted from the DOM. Seeing the whole shape of
+  the pipeline, including its blocked stages, is what lets a reader
+  understand "we're stuck at Fix, nothing downstream has run" at a
+  glance, which is the same "never let an absence read as silence"
+  reasoning behind Section 34's NOT RUN rule, applied to whole stages
+  rather than individual verification steps.
+- **At most one primary-weight action per pipeline instance** — see
+  Section 16's corrected Buttons rule for the exact mechanical decision
+  (which stage is the genuine frontier) behind this.
+- **Each pipeline stage carries its own small status dot** (`h-1.5 w-1.5`,
+  the same five semantic roles as everywhere else — Section 11), placed
+  directly before its micro-label. Fix/Verification/Pull request each map
+  their own real status onto `success` (emerald) / `failure` (rose) /
+  `pending` (slate, pulsing) / `neutral` (zinc, both "not started yet" and
+  a policy REFUSED — see the `*StageTone` helpers in
+  `analysis-runs/[id]/page.tsx`). This lets a reader read the health of
+  the whole pipeline — which stage passed, which is stuck — without
+  opening any of it, purely from three dots on the rail; text alone at
+  `text-[11px]` was too quiet to serve as a real landmark while scanning.
+- **Static validation and runtime verification share one visual grammar
+  without becoming the same operation.** Both are evidence answering
+  "why trust this patch," so both use the identical shape — a status dot
+  - uppercase micro-label, then a `text-sm font-semibold` colored summary
+    sentence, then grouped detail — but static validation is **not** a
+    fourth `Pipeline`/`Stage` rail entry; it renders nested inside the Fix
+    stage, immediately under the diff, because it is evidence _about_ the
+    fix artifact, not an independent pipeline step. The label itself keeps
+    the distinction explicit ("Static validation" vs. "Runtime
+    verification" in Verification's own summary sentence) — never just
+    "Validation" for one and "Verification" for the other, which would
+    blur exactly the static-vs-runtime line Section 34 treats as
+    non-negotiable.
+- **A static check's `detail` field is real per-file evidence — group by
+  it, don't discard it.** `postconditionResult[].detail` is always either
+  a bare file path or `"<file path>: <specific finding>"` (e.g. `"0
+remaining Invoice.subscription access(es)"`); `StaticValidation` splits
+  on it to group checks by file (matching the diff's and findings' own
+  file-first grouping — Section 20/21) and to show the specific finding
+  next to its check name, rather than repeating three generic check names
+  once per changed file with no way to tell them apart.
+- **The `reason` string is real evidence but not product copy — never
+  render it verbatim.** It's built by the analyzer for internal use
+  (`assess.ts`), always prefixed with a `[workspace] STATUS:` disambiguation
+  tag, and for `AFFECTED` restates the provider-change title (already the
+  heading above it). `summarizeAssessment`
+  (`analysis-runs/[id]/page.tsx`) reconstructs the same underlying facts —
+  a real usage count from `findings.length`, the real per-workspace
+  `applicabilityReason` CoverageDetail already surfaces — into a short
+  count line plus one plain sentence, falling back to the raw reason
+  (prefix stripped) only when the structured fields don't confidently
+  match. This is presentation, not a new claim: every future screen that
+  shows a `reason` string must reconstruct from structured fields the
+  same way, never print the raw analyzer string in product copy.
 
 ## 33. Index-screen vs. detail-screen rules
 
@@ -927,7 +1162,7 @@ Repositories (index)
   → Analysis / Impact assessment (detail, one screen today)
     → Candidate fix (section of the same detail screen)
       → Runtime verification (section of the same detail screen)
-        → Pull request (NOT YET SURFACED — see Section 32's rule)
+        → Pull request (section of the same detail screen)
 ```
 
 **Index screens summarize; detail screens explain — this is a hard

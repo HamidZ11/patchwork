@@ -30,7 +30,7 @@ export function AppShell({
   return (
     <div className="flex min-h-full flex-col">
       <header className="w-full border-b border-zinc-200 dark:border-zinc-800">
-        <div className="mx-auto flex h-14 w-full max-w-2xl items-center justify-between px-6">
+        <div className="flex h-14 w-full items-center justify-between px-6">
           <Link
             href="/repositories"
             className="text-sm font-semibold tracking-tight text-zinc-950 transition-colors hover:text-zinc-700 dark:text-zinc-50 dark:hover:text-zinc-300"
