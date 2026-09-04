@@ -4,6 +4,7 @@ import type { GitHubAppAuth, GitHubClient } from '@patchwork/github';
 import {
   checkOfflineEligibility,
   createPendingPullRequestAttempt,
+  findOpenedPullRequestAttemptForAssessment,
   getPullRequestAttemptForUser,
   getPullRequestAttemptsForPatchAttempt,
   getVerificationRunForPublish,
@@ -21,7 +22,8 @@ export interface PullRequestAttemptsRoutesDeps {
  * Trusted-layer half of GitHub publication -- authenticates, ownership-
  * scopes the VerificationRun, re-checks every offline eligibility rule
  * (PatchAttempt GENERATED, VerificationRun PASSED, verified-diff-hash
- * match, no forbidden files), and enqueues the work by inserting a
+ * match, no forbidden files, no pull request already open for this
+ * ImpactAssessment), and enqueues the work by inserting a
  * PENDING pull_request_attempts row -- apps/worker's poll loop (see
  * apps/worker/src/pull-requests/) does the one live-GitHub check this
  * route deliberately doesn't (current default branch HEAD) and performs
@@ -99,6 +101,32 @@ export function registerPullRequestAttemptsRoutes(
           error: 'Conflict',
           message: `The previous Patchwork pull request (#${openedAttempt.githubPrNumber}) is no longer open (${livePr.merged ? 'merged' : 'closed'}). Publishing again is not supported yet.`,
           pullRequestAttempt: openedAttempt,
+        });
+      }
+
+      // Publication is deduplicated per ImpactAssessment, not per
+      // PatchAttempt. Re-running "Prepare fix" appends a new PatchAttempt for
+      // the same change, so the per-attempt checks above cannot see a pull
+      // request Patchwork already opened from an earlier attempt -- without
+      // this, a second pull request would be opened for a change that is
+      // already published. Refused, not returned as `alreadyInFlight`: the
+      // caller asked to publish THIS attempt's verification run, and that
+      // attempt has no pull request; handing back the sibling attempt's row
+      // would attribute another attempt's publication to this one.
+      const assessmentOpened = await findOpenedPullRequestAttemptForAssessment(
+        deps.db,
+        verificationRun.impactAssessmentId,
+        verificationRun.patchAttemptId,
+      );
+      if (assessmentOpened) {
+        const prLabel =
+          assessmentOpened.githubPrNumber === null
+            ? 'a pull request'
+            : `pull request #${assessmentOpened.githubPrNumber}`;
+        return reply.status(409).send({
+          error: 'Conflict',
+          message: `Patchwork already opened ${prLabel} for this change from an earlier patch attempt. Publishing a second pull request for the same assessment is not supported.`,
+          pullRequestAttempt: assessmentOpened,
         });
       }
 

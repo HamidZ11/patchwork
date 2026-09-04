@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { and, desc, eq, inArray } from 'drizzle-orm';
+import { and, desc, eq, inArray, ne } from 'drizzle-orm';
 import { schema, type Database } from '@patchwork/db';
 
 const FORBIDDEN_PATH_PATTERNS: RegExp[] = [
@@ -14,6 +14,11 @@ export interface VerificationRunForPublish {
   id: string;
   status: string;
   patchAttemptId: string;
+  /** The assessment that owns this patch attempt. Publication is deduplicated
+   * per assessment, not per attempt: re-preparing a fix creates a new
+   * PatchAttempt, and without this a second PR could be opened for a change
+   * Patchwork has already published. */
+  impactAssessmentId: string;
   patchAttemptStatus: string;
   diff: string | null;
   changedFiles: string[];
@@ -46,6 +51,7 @@ export async function getVerificationRunForPublish(
       status: schema.verificationRuns.status,
       manifest: schema.verificationRuns.manifest,
       patchAttemptId: schema.patchAttempts.id,
+      impactAssessmentId: schema.impactAssessments.id,
       patchAttemptStatus: schema.patchAttempts.status,
       diff: schema.patchAttempts.diff,
       changedFiles: schema.patchAttempts.changedFiles,
@@ -94,6 +100,7 @@ export async function getVerificationRunForPublish(
     id: row.id,
     status: row.status,
     patchAttemptId: row.patchAttemptId,
+    impactAssessmentId: row.impactAssessmentId,
     patchAttemptStatus: row.patchAttemptStatus,
     diff: row.diff,
     changedFiles: row.changedFiles,
@@ -157,6 +164,55 @@ export interface PersistedPullRequestAttempt {
   githubPrUrl: string | null;
   createdAt: Date;
   completedAt: Date | null;
+}
+
+/**
+ * The still-OPENED Patchwork pull request for an assessment, if one exists on
+ * any patch attempt OTHER than the given one.
+ *
+ * Publication is an assessment-level fact: re-running "Prepare fix" appends a
+ * new PatchAttempt, so a per-attempt lookup
+ * (getPullRequestAttemptsForPatchAttempt) cannot see a PR opened from an
+ * earlier attempt for the same change, and would let a second PR be opened for
+ * work already published. `excludePatchAttemptId` keeps that per-attempt case
+ * with its existing caller, which handles it (in-flight / live-state re-check)
+ * with more context than this helper has.
+ */
+export async function findOpenedPullRequestAttemptForAssessment(
+  db: Database,
+  impactAssessmentId: string,
+  excludePatchAttemptId: string,
+): Promise<(PersistedPullRequestAttempt & { patchAttemptId: string }) | null> {
+  const [row] = await db
+    .select({
+      id: schema.pullRequestAttempts.id,
+      status: schema.pullRequestAttempts.status,
+      failureCategory: schema.pullRequestAttempts.failureCategory,
+      failureReason: schema.pullRequestAttempts.failureReason,
+      branchName: schema.pullRequestAttempts.branchName,
+      commitSha: schema.pullRequestAttempts.commitSha,
+      githubPrNumber: schema.pullRequestAttempts.githubPrNumber,
+      githubPrUrl: schema.pullRequestAttempts.githubPrUrl,
+      createdAt: schema.pullRequestAttempts.createdAt,
+      completedAt: schema.pullRequestAttempts.completedAt,
+      patchAttemptId: schema.pullRequestAttempts.patchAttemptId,
+    })
+    .from(schema.pullRequestAttempts)
+    .innerJoin(
+      schema.patchAttempts,
+      eq(schema.pullRequestAttempts.patchAttemptId, schema.patchAttempts.id),
+    )
+    .where(
+      and(
+        eq(schema.patchAttempts.impactAssessmentId, impactAssessmentId),
+        eq(schema.pullRequestAttempts.status, 'OPENED'),
+        ne(schema.pullRequestAttempts.patchAttemptId, excludePatchAttemptId),
+      ),
+    )
+    .orderBy(desc(schema.pullRequestAttempts.createdAt))
+    .limit(1);
+
+  return row ?? null;
 }
 
 /** Every PullRequestAttempt for a PatchAttempt, newest first -- used for the in-flight and existing-OPENED guards. */

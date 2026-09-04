@@ -26,6 +26,7 @@ const ANALYSED_SHA = 'a'.repeat(40);
 function fixtureContext(overrides: Partial<PublishContext> = {}): PublishContext {
   return {
     patchAttemptId: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
+    impactAssessmentId: 'assess-1',
     patchAttemptStatus: 'GENERATED',
     diff: DIFF,
     changedFiles: ['src/billing.ts'],
@@ -67,12 +68,14 @@ function baseRepo(overrides: Parameters<typeof createFakeGitHubRepo>[1] = {}) {
 function deps(
   repo: ReturnType<typeof createFakeGitHubRepo>,
   priorCommitShas: string[] = [],
+  assessmentOpenedPullRequest: PublishDeps['assessmentOpenedPullRequest'] = null,
 ): PublishDeps {
   return {
     githubClient: repo.client,
     githubAppAuth: fakeGitHubAppAuth(),
     appSlug: 'patchwork-dev',
     priorCommitShas,
+    assessmentOpenedPullRequest,
   };
 }
 
@@ -251,5 +254,37 @@ describe('publishPullRequest', () => {
     expect(second.status).toBe('OPENED');
     expect(second.commitSha).toBe(first.commitSha);
     expect(repo.blobs.size).toBe(blobsAfterFirst); // no duplicate commit built on resume
+  });
+
+  it('refuses to open a second pull request when the assessment already has one open', async () => {
+    const repo = baseRepo();
+
+    const outcome = await publishPullRequest(
+      fixtureContext(),
+      deps(repo, [], {
+        githubPrNumber: 1,
+        githubPrUrl: 'https://github.com/octocat/hello-world/pull/1',
+      }),
+    );
+
+    expect(outcome.status).toBe('REFUSED');
+    expect(outcome.failureCategory).toBe('POLICY_REFUSAL');
+    expect(outcome.failureReason).toContain('#1');
+    expect(outcome.failureReason).toContain('earlier patch attempt');
+
+    // Nothing reached GitHub: no branch, no commit, no PR. The refusal happens
+    // before any write, so a duplicate is never partially created.
+    expect(repo.prs).toHaveLength(0);
+    expect(repo.blobs.size).toBe(0);
+    expect(repo.refs.size).toBe(1); // only the pre-existing default branch
+  });
+
+  it('publishes normally when the sibling lookup finds no open pull request', async () => {
+    const repo = baseRepo();
+
+    const outcome = await publishPullRequest(fixtureContext(), deps(repo, [], null));
+
+    expect(outcome.status).toBe('OPENED');
+    expect(repo.prs).toHaveLength(1);
   });
 });

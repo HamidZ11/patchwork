@@ -12,6 +12,8 @@ export type PullRequestFailureCategory =
 
 export interface PublishContext {
   patchAttemptId: string;
+  /** The assessment this patch attempt belongs to. Publication is deduplicated per assessment, not per attempt -- re-running "Prepare fix" appends a new PatchAttempt for the same change. */
+  impactAssessmentId: string;
   patchAttemptStatus: string;
   diff: string | null;
   changedFiles: string[];

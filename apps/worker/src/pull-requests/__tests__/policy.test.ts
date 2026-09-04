@@ -5,6 +5,7 @@ import type { PublishContext } from '../types.js';
 function fixtureContext(overrides: Partial<PublishContext> = {}): PublishContext {
   return {
     patchAttemptId: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
+    impactAssessmentId: 'assess-1',
     patchAttemptStatus: 'GENERATED',
     diff: '--- a\n+++ b\n',
     changedFiles: ['src/services/invoiceService.ts'],

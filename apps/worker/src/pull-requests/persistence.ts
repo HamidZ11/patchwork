@@ -1,4 +1,4 @@
-import { desc, eq } from 'drizzle-orm';
+import { and, desc, eq, ne } from 'drizzle-orm';
 import { schema, type Database } from '@patchwork/db';
 import type { PublishContext, PublishOutcome } from './types.js';
 
@@ -30,6 +30,7 @@ export async function getPublishContext(
   const [row] = await db
     .select({
       patchAttemptId: schema.patchAttempts.id,
+      impactAssessmentId: schema.impactAssessments.id,
       patchAttemptStatus: schema.patchAttempts.status,
       diff: schema.patchAttempts.diff,
       changedFiles: schema.patchAttempts.changedFiles,
@@ -109,6 +110,7 @@ export async function getPublishContext(
 
   return {
     patchAttemptId: row.patchAttemptId,
+    impactAssessmentId: row.impactAssessmentId,
     patchAttemptStatus: row.patchAttemptStatus,
     diff: row.diff,
     changedFiles: row.changedFiles,
@@ -135,6 +137,46 @@ export async function getPublishContext(
     providerChangeExternalId: row.providerChangeExternalId,
     migrationRequirement: row.migrationRequirement,
   };
+}
+
+/**
+ * The still-OPENED Patchwork pull request for this attempt's assessment,
+ * if one was opened from a DIFFERENT PatchAttempt of the same assessment.
+ *
+ * Publication is an assessment-level fact, not a per-attempt one: re-running
+ * "Prepare fix" appends a new PatchAttempt for the same change, so a
+ * per-attempt lookup cannot see a PR Patchwork already opened for it. Read
+ * immediately before the GitHub write (rather than only at enqueue time in the
+ * API) because this is the point a duplicate would actually become visible to
+ * the customer. Attempts on this same PatchAttempt are excluded -- those are
+ * resumes of one attempt, reconciled against GitHub itself by run.ts.
+ */
+export async function findAssessmentOpenedPullRequest(
+  db: Database,
+  impactAssessmentId: string,
+  excludePatchAttemptId: string,
+): Promise<{ githubPrNumber: number | null; githubPrUrl: string | null } | null> {
+  const [row] = await db
+    .select({
+      githubPrNumber: schema.pullRequestAttempts.githubPrNumber,
+      githubPrUrl: schema.pullRequestAttempts.githubPrUrl,
+    })
+    .from(schema.pullRequestAttempts)
+    .innerJoin(
+      schema.patchAttempts,
+      eq(schema.pullRequestAttempts.patchAttemptId, schema.patchAttempts.id),
+    )
+    .where(
+      and(
+        eq(schema.patchAttempts.impactAssessmentId, impactAssessmentId),
+        eq(schema.pullRequestAttempts.status, 'OPENED'),
+        ne(schema.pullRequestAttempts.patchAttemptId, excludePatchAttemptId),
+      ),
+    )
+    .orderBy(desc(schema.pullRequestAttempts.createdAt))
+    .limit(1);
+
+  return row ?? null;
 }
 
 /**

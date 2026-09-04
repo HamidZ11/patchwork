@@ -417,6 +417,113 @@ describe('patch attempts (real database)', () => {
     await cleanupUser(userId);
   });
 
+  it('GET /analysis-runs/:id returns patch attempts newest-first, with downstream state scoped to its own attempt', async () => {
+    // Regression guard for the contract the Analysis Detail page depends on when
+    // it reads `assessment.patchAttempts[0]` as the current attempt. Two things
+    // must hold, and neither was covered before:
+    //
+    //   1. attempts come back ordered by createdAt DESC, so index 0 is the
+    //      newest attempt rather than an arbitrary insertion order, and
+    //   2. each attempt carries only its own verification/PR rows, so a
+    //      superseded attempt's PASSED verification or OPENED pull request can
+    //      never be projected onto a newer patch.
+    //
+    // Modelled on a real record where an older attempt owned an OPENED PR while
+    // a newer attempt had been prepared afterwards.
+    const { cookie, userId } = await createAuthenticatedUser();
+    const { repositoryId } = await connectRepository(userId);
+    const { app, analysisRunId } = await triggerAnalysisAndAssess(
+      cookie,
+      repositoryId,
+      affectedFixtureFiles(),
+    );
+    const assessmentId = await getAssessmentId(
+      analysisRunId,
+      STRIPE_BASIL_INVOICE_SUBSCRIPTION_RULE.providerChange.externalId,
+    );
+
+    await app.inject({
+      method: 'POST',
+      url: `/impact-assessments/${assessmentId}/patch-attempts`,
+      headers: { cookie },
+    });
+    await app.inject({
+      method: 'POST',
+      url: `/impact-assessments/${assessmentId}/patch-attempts`,
+      headers: { cookie },
+    });
+
+    const attempts = await db.db
+      .select()
+      .from(schema.patchAttempts)
+      .where(eq(schema.patchAttempts.impactAssessmentId, assessmentId));
+    expect(attempts).toHaveLength(2);
+
+    const oldest = [...attempts].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())[0]!;
+
+    // Give the OLDER attempt the full downstream lineage a superseded attempt
+    // would carry in production: a passed verification and an opened PR.
+    const [verificationRun] = await db.db
+      .insert(schema.verificationRuns)
+      .values({ patchAttemptId: oldest.id, status: 'PASSED' })
+      .returning();
+    await db.db.insert(schema.pullRequestAttempts).values({
+      patchAttemptId: oldest.id,
+      verificationRunId: verificationRun!.id,
+      status: 'OPENED',
+    });
+
+    const response = await app.inject({
+      method: 'GET',
+      url: `/analysis-runs/${analysisRunId}`,
+      headers: { cookie },
+    });
+    expect(response.statusCode).toBe(200);
+    const body = response.json() as {
+      analysisRun: {
+        assessments: {
+          id: string;
+          patchAttempts: {
+            id: string;
+            createdAt: string;
+            verificationRuns: { id: string; status: string }[];
+            pullRequestAttempts: { status: string }[];
+          }[];
+        }[];
+      };
+    };
+
+    const projected = body.analysisRun.assessments.find((a) => a.id === assessmentId);
+    expect(projected?.patchAttempts).toHaveLength(2);
+
+    // 1. newest-first ordering
+    const [current, superseded] = projected!.patchAttempts;
+    expect(new Date(current!.createdAt).getTime()).toBeGreaterThanOrEqual(
+      new Date(superseded!.createdAt).getTime(),
+    );
+    expect(superseded!.id).toBe(oldest.id);
+
+    // 2. lineage stays inside its own attempt -- the older attempt's PASSED
+    //    verification and OPENED PR must not appear on the current attempt.
+    expect(current!.verificationRuns).toHaveLength(0);
+    expect(current!.pullRequestAttempts).toHaveLength(0);
+    expect(superseded!.verificationRuns.map((r) => r.status)).toEqual(['PASSED']);
+    expect(superseded!.pullRequestAttempts.map((r) => r.status)).toEqual(['OPENED']);
+
+    // Remove the rows this test inserted directly before the shared cleanup.
+    // `pull_request_attempts.verification_run_id` is ON DELETE RESTRICT, so a
+    // PR attempt left in place blocks the cascade that cleanupUser relies on
+    // and would leak this test's whole lineage into the database.
+    await db.db
+      .delete(schema.pullRequestAttempts)
+      .where(eq(schema.pullRequestAttempts.patchAttemptId, oldest.id));
+    await db.db
+      .delete(schema.verificationRuns)
+      .where(eq(schema.verificationRuns.patchAttemptId, oldest.id));
+
+    await cleanupUser(userId);
+  });
+
   it('GET /analysis-runs/:id includes patch attempts and remediation support alongside each assessment', async () => {
     const { cookie, userId } = await createAuthenticatedUser();
     const { repositoryId } = await connectRepository(userId);

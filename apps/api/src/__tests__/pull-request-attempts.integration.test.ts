@@ -130,6 +130,8 @@ describe('pull request attempts (real database)', () => {
     repositoryId: string,
   ): Promise<{
     app: ReturnType<typeof buildApp>;
+    analysisRunId: string;
+    assessmentId: string;
     patchAttemptId: string;
     diff: string;
     changedFiles: string[];
@@ -188,6 +190,8 @@ describe('pull request attempts (real database)', () => {
 
     return {
       app,
+      analysisRunId: analysisRun.id,
+      assessmentId: assessmentRow.id,
       patchAttemptId: patchAttempt.id,
       diff: patchAttempt.diff,
       changedFiles: patchAttempt.changedFiles,
@@ -211,6 +215,23 @@ describe('pull request attempts (real database)', () => {
       version: 1,
       patch: { patchAttemptId, diffSha256: createHash('sha256').update(diff).digest('hex') },
     };
+  }
+
+  /**
+   * Removes rows these tests insert directly. `pull_request_attempts
+   * .verification_run_id` is ON DELETE RESTRICT, so a pull-request attempt
+   * left in place blocks the cascade `cleanupUser` relies on and would leak
+   * the whole lineage into the database.
+   */
+  async function cleanupSeededPublishRows(patchAttemptIds: string[]): Promise<void> {
+    for (const patchAttemptId of patchAttemptIds) {
+      await db.db
+        .delete(schema.pullRequestAttempts)
+        .where(eq(schema.pullRequestAttempts.patchAttemptId, patchAttemptId));
+      await db.db
+        .delete(schema.verificationRuns)
+        .where(eq(schema.verificationRuns.patchAttemptId, patchAttemptId));
+    }
   }
 
   it('returns 401 without a session', async () => {
@@ -450,6 +471,153 @@ describe('pull request attempts (real database)', () => {
       .where(eq(schema.pullRequestAttempts.patchAttemptId, patchAttemptId));
     expect(rows).toHaveLength(1); // still just the original OPENED row -- nothing new created
 
+    await cleanupUser(userId);
+  });
+
+  /**
+   * Publication is deduplicated per ImpactAssessment, not per PatchAttempt.
+   * Re-running "Prepare fix" appends a new PatchAttempt for the same change,
+   * so a per-attempt guard alone would let Patchwork open a second pull
+   * request for work it has already published -- the exact shape of the real
+   * stripe-basil-fixture record, whose OPENED PR sits on a superseded attempt.
+   */
+  it('refuses to publish an assessment that already has an open pull request from an earlier patch attempt', async () => {
+    const { cookie, userId } = await createAuthenticatedUser();
+    const { repositoryId } = await connectRepository(userId);
+    const {
+      app,
+      analysisRunId,
+      assessmentId,
+      patchAttemptId: earlierAttemptId,
+      diff: earlierDiff,
+    } = await createGeneratedPatchAttempt(cookie, repositoryId);
+
+    const earlierVerificationRunId = await seedVerificationRun(earlierAttemptId, {
+      manifest: manifestFor(earlierAttemptId, earlierDiff),
+    });
+    await db.db.insert(schema.pullRequestAttempts).values({
+      patchAttemptId: earlierAttemptId,
+      verificationRunId: earlierVerificationRunId,
+      status: 'OPENED',
+      branchName: 'patchwork/stripe-invoice-subscription-to-parent/aaaaaaaa',
+      commitSha: 'c'.repeat(40),
+      githubPrNumber: 4,
+      githubPrUrl: 'https://github.com/octocat/hello-world/pull/4',
+    });
+
+    // "Prepare fix" again: a newer attempt for the same assessment, verified on
+    // its own diff. Nothing about the earlier attempt blocks any of this.
+    const laterPatchResponse = await app.inject({
+      method: 'POST',
+      url: `/impact-assessments/${assessmentId}/patch-attempts`,
+      headers: { cookie },
+    });
+    expect(laterPatchResponse.statusCode).toBe(201);
+    const { patchAttempt: laterAttempt } = laterPatchResponse.json() as {
+      patchAttempt: { id: string; status: string; diff: string };
+    };
+    expect(laterAttempt.id).not.toBe(earlierAttemptId);
+    expect(laterAttempt.status).toBe('GENERATED');
+
+    const laterVerificationRunId = await seedVerificationRun(laterAttempt.id, {
+      manifest: manifestFor(laterAttempt.id, laterAttempt.diff),
+    });
+
+    const publishResponse = await app.inject({
+      method: 'POST',
+      url: `/verification-runs/${laterVerificationRunId}/pull-requests`,
+      headers: { cookie },
+    });
+
+    expect(publishResponse.statusCode).toBe(409);
+    const publishBody = publishResponse.json() as { message: string };
+    expect(publishBody.message).toContain('#4');
+    expect(publishBody.message).toContain('earlier patch attempt');
+
+    // Refused, not enqueued: the later attempt has no pull request row at all.
+    const laterPrRows = await db.db
+      .select()
+      .from(schema.pullRequestAttempts)
+      .where(eq(schema.pullRequestAttempts.patchAttemptId, laterAttempt.id));
+    expect(laterPrRows).toHaveLength(0);
+
+    // The detail payload keeps both attempts' state strictly separate: the
+    // OPENED pull request stays on the earlier attempt, and the current
+    // (newest) attempt carries only its own verification run.
+    const detailResponse = await app.inject({
+      method: 'GET',
+      url: `/analysis-runs/${analysisRunId}`,
+      headers: { cookie },
+    });
+    expect(detailResponse.statusCode).toBe(200);
+    const detail = detailResponse.json() as {
+      analysisRun: {
+        assessments: {
+          id: string;
+          patchAttempts: {
+            id: string;
+            verificationRuns: { id: string }[];
+            pullRequestAttempts: { status: string; githubPrNumber: number | null }[];
+          }[];
+        }[];
+      };
+    };
+    const assessment = detail.analysisRun.assessments.find((a) => a.id === assessmentId);
+    if (!assessment) throw new Error('assessment not found in analysis run detail');
+
+    expect(assessment.patchAttempts[0]?.id).toBe(laterAttempt.id);
+    expect(assessment.patchAttempts[0]?.pullRequestAttempts).toHaveLength(0);
+    expect(assessment.patchAttempts[0]?.verificationRuns.map((run) => run.id)).toEqual([
+      laterVerificationRunId,
+    ]);
+
+    const earlierInDetail = assessment.patchAttempts.find((a) => a.id === earlierAttemptId);
+    expect(earlierInDetail?.pullRequestAttempts).toEqual([
+      expect.objectContaining({ status: 'OPENED', githubPrNumber: 4 }),
+    ]);
+    expect(earlierInDetail?.verificationRuns.map((run) => run.id)).toEqual([
+      earlierVerificationRunId,
+    ]);
+
+    await cleanupSeededPublishRows([earlierAttemptId, laterAttempt.id]);
+    await cleanupUser(userId);
+  });
+
+  it('does not refuse a different assessment that has no pull request of its own', async () => {
+    const { cookie, userId } = await createAuthenticatedUser();
+
+    const published = await connectRepository(userId);
+    const publishedFixture = await createGeneratedPatchAttempt(cookie, published.repositoryId);
+    const publishedVerificationRunId = await seedVerificationRun(publishedFixture.patchAttemptId, {
+      manifest: manifestFor(publishedFixture.patchAttemptId, publishedFixture.diff),
+    });
+    await db.db.insert(schema.pullRequestAttempts).values({
+      patchAttemptId: publishedFixture.patchAttemptId,
+      verificationRunId: publishedVerificationRunId,
+      status: 'OPENED',
+      branchName: 'patchwork/stripe-invoice-subscription-to-parent/bbbbbbbb',
+      commitSha: 'd'.repeat(40),
+      githubPrNumber: 5,
+      githubPrUrl: 'https://github.com/octocat/hello-world/pull/5',
+    });
+
+    // A second repository, so a genuinely different ImpactAssessment.
+    const other = await connectRepository(userId);
+    const otherFixture = await createGeneratedPatchAttempt(cookie, other.repositoryId);
+    expect(otherFixture.assessmentId).not.toBe(publishedFixture.assessmentId);
+    const otherVerificationRunId = await seedVerificationRun(otherFixture.patchAttemptId, {
+      manifest: manifestFor(otherFixture.patchAttemptId, otherFixture.diff),
+    });
+
+    const response = await otherFixture.app.inject({
+      method: 'POST',
+      url: `/verification-runs/${otherVerificationRunId}/pull-requests`,
+      headers: { cookie },
+    });
+
+    expect(response.statusCode).toBe(201);
+
+    await cleanupSeededPublishRows([publishedFixture.patchAttemptId, otherFixture.patchAttemptId]);
     await cleanupUser(userId);
   });
 

@@ -799,22 +799,115 @@ function verificationStageTone(run: VerificationRun | undefined): StageTone {
   return 'neutral';
 }
 
-function pullRequestStageTone(attempt: PullRequestAttempt | undefined): StageTone {
-  if (!attempt) return 'neutral';
+/**
+ * The current attempt's own outcome always wins: a FAILED publish on this
+ * attempt is this stage's state even though the assessment has an older
+ * OPENED pull request. The assessment-level publication only sets the tone
+ * when the current attempt has no publish outcome of its own -- otherwise a
+ * concluded stage would render as if nothing had happened.
+ */
+function pullRequestStageTone(
+  attempt: PullRequestAttempt | undefined,
+  publishedForAssessment?: PullRequestAttempt | undefined,
+): StageTone {
+  if (!attempt) return publishedForAssessment ? 'success' : 'neutral';
   if (ACTIVE_PULL_REQUEST_STATUSES.has(attempt.status)) return 'pending';
   if (attempt.status === 'OPENED') return 'success';
   if (attempt.status === 'FAILED') return 'failure';
   return 'neutral';
 }
 
+/**
+ * The one cross-attempt fact Stage 07 surfaces: Patchwork has already opened a
+ * pull request for this assessment, from a patch attempt other than the one
+ * this report shows as current.
+ *
+ * Deliberately narrow. Only the publication itself crosses the attempt
+ * boundary -- never the older attempt's diff, verification result or patch
+ * status, all of which belong to a different lineage and would be false if
+ * attached to the attempt stages 05 and 06 describe. This block therefore
+ * carries no verification claim of its own, and the caller states plainly that
+ * the current attempt is not the published one, so it can never read as "the
+ * patch above shipped".
+ */
+function ExistingAssessmentPullRequest({ attempt }: { attempt: PullRequestAttempt }) {
+  const openedAt = attempt.completedAt ?? attempt.createdAt;
+
+  return (
+    <div className="flex min-w-0 flex-col gap-3">
+      <span className="inline-flex min-w-0 items-center gap-2">
+        <span
+          className={`h-1.5 w-1.5 shrink-0 rounded-full ${PULL_REQUEST_STATUS_STYLE.OPENED.dot}`}
+          aria-hidden="true"
+        />
+        <span className={`text-sm font-semibold ${PULL_REQUEST_STATUS_STYLE.OPENED.text}`}>
+          {attempt.githubPrNumber === null
+            ? 'Pull request already created'
+            : `Pull request #${attempt.githubPrNumber} already created`}
+        </span>
+      </span>
+
+      <p className="min-w-0 text-xs leading-5 text-fg-secondary">
+        Patchwork previously opened a pull request for this assessment from an earlier patch
+        attempt.
+      </p>
+
+      {(attempt.branchName || attempt.commitSha) && (
+        <dl className="grid min-w-0 gap-x-6 gap-y-2 sm:grid-cols-[minmax(0,7rem)_minmax(0,1fr)]">
+          {attempt.branchName && (
+            <>
+              <dt className="text-xs text-fg-tertiary">Branch</dt>
+              <dd className="min-w-0 font-mono text-xs break-all text-fg">{attempt.branchName}</dd>
+            </>
+          )}
+          {attempt.commitSha && (
+            <>
+              <dt className="text-xs text-fg-tertiary">Commit</dt>
+              <dd className="min-w-0 font-mono text-xs break-all text-fg">
+                {attempt.commitSha.slice(0, 7)}
+              </dd>
+            </>
+          )}
+          <dt className="text-xs text-fg-tertiary">Opened</dt>
+          <dd className="min-w-0 text-xs text-fg">{new Date(openedAt).toLocaleString()}</dd>
+        </dl>
+      )}
+
+      {attempt.githubPrUrl && (
+        <a
+          href={attempt.githubPrUrl}
+          target="_blank"
+          rel="noreferrer"
+          className={`${buttonVariantClassName.secondary} inline-flex w-fit items-center gap-1.5`}
+        >
+          View pull request
+          <ExternalLinkIcon />
+        </a>
+      )}
+
+      <span className="text-xs text-fg-tertiary">
+        Patchwork opened this pull request for review. It does not merge or deploy.
+      </span>
+    </div>
+  );
+}
+
 function PullRequestSection({
   analysisRunId,
   latestVerificationRun,
   pullRequestAttempts,
+  publishedForAssessment,
 }: {
   analysisRunId: string;
   latestVerificationRun: VerificationRun | undefined;
   pullRequestAttempts: PullRequestAttempt[];
+  /**
+   * An OPENED pull request belonging to a different patch attempt of the same
+   * assessment. Its presence removes the create action: the API refuses a
+   * second publication for an assessment that already has one, so offering the
+   * button would promise an action the server would reject.
+   */
+  publishedForAssessment: PullRequestAttempt | undefined;
 }) {
   const passedVerificationRunId =
     latestVerificationRun?.status === 'PASSED' ? latestVerificationRun.id : null;
@@ -822,32 +915,48 @@ function PullRequestSection({
 
   // A workflow prerequisite, not an error: publishing is gated on a passed
   // runtime verification, so this states the dependency plainly rather than
-  // presenting the absence as a failure.
-  if (!latest && !passedVerificationRunId) {
+  // presenting the absence as a failure. Skipped when a pull request already
+  // exists for the assessment -- an unmet prerequisite for an action that is
+  // no longer on offer is noise, and the block below is the real answer.
+  if (!latest && !passedVerificationRunId && !publishedForAssessment) {
     return <Blocked reason="Requires a passed runtime verification before publishing." />;
   }
 
   const isActive = latest !== undefined && ACTIVE_PULL_REQUEST_STATUSES.has(latest.status);
   const canCreate =
-    passedVerificationRunId !== null && (!latest || (!isActive && latest.status !== 'OPENED'));
+    publishedForAssessment === undefined &&
+    passedVerificationRunId !== null &&
+    (!latest || (!isActive && latest.status !== 'OPENED'));
   const isOpened = latest?.status === 'OPENED';
   const buttonVariant = !latest ? 'primary' : latest.status === 'REFUSED' ? 'quiet' : 'primary';
 
   return (
     <div className="flex flex-col gap-2">
+      {publishedForAssessment && <ExistingAssessmentPullRequest attempt={publishedForAssessment} />}
+
       {!latest ? (
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-fg-tertiary">Not yet published</span>
-          {passedVerificationRunId && (
-            <form action={createPullRequest.bind(null, passedVerificationRunId, analysisRunId)}>
-              <FormSubmitButton
-                label="Create pull request"
-                pendingLabel="Publishing…"
-                variant={buttonVariant}
-              />
-            </form>
-          )}
-        </div>
+        publishedForAssessment ? (
+          // The current attempt's own state, stated separately from the
+          // publication above so the two are never conflated: this attempt has
+          // no pull request of its own, and none will be offered.
+          <span className="border-t border-rule pt-3 text-xs leading-5 text-fg-tertiary">
+            The current patch attempt has not been published. Patchwork does not open a second pull
+            request for a change it has already published.
+          </span>
+        ) : (
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-fg-tertiary">Not yet published</span>
+            {passedVerificationRunId && (
+              <form action={createPullRequest.bind(null, passedVerificationRunId, analysisRunId)}>
+                <FormSubmitButton
+                  label="Create pull request"
+                  pendingLabel="Publishing…"
+                  variant={buttonVariant}
+                />
+              </form>
+            )}
+          </div>
+        )
       ) : (
         <>
           <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2">
@@ -1762,6 +1871,59 @@ function AssessmentOpening({
 }
 
 /**
+ * The patch attempt that represents this assessment's current state.
+ *
+ * `PatchAttempt` is an audit log: re-running "Prepare fix" appends a new row
+ * rather than replacing the old one, so an assessment can hold several
+ * attempts, and older ones legitimately keep their own verification runs and
+ * pull-request attempts (including an OPENED PR) as history.
+ *
+ * The current attempt is the most recently created one. The API already
+ * guarantees that order -- `getPatchAttemptsForAssessments` sorts
+ * `desc(createdAt)` and the route projects that ordering through untouched --
+ * so index 0 is the newest attempt, not an arbitrary insertion order. This
+ * reads it through a named helper rather than inline indexing so the
+ * dependency on that ordering is explicit at the point of use; the contract is
+ * pinned by a regression test in `patch-attempts.integration.test.ts`.
+ *
+ * Deliberately NOT "the attempt that has the most interesting downstream
+ * state": selecting an older attempt because it owns an OPENED PR would show a
+ * superseded diff as current and pair a newer patch with an older attempt's
+ * PASSED verification, which is exactly the lineage crossing the workflow must
+ * never imply.
+ */
+function selectCurrentPatchAttempt(assessment: AssessmentDetail): PatchAttempt | undefined {
+  return assessment.patchAttempts[0];
+}
+
+/**
+ * A pull request Patchwork has already opened for this assessment from a patch
+ * attempt other than the current one.
+ *
+ * Publication is a fact about the assessment, not about one patch attempt:
+ * re-running "Prepare fix" appends a new PatchAttempt for the same change, so
+ * reading only the current attempt's own pull-request attempts would show
+ * "Not yet published" for a change Patchwork has in fact already published,
+ * and would offer a create action the API now refuses (see
+ * apps/api/src/routes/pull-request-attempts.ts).
+ *
+ * Both levels arrive newest-first from the API, so the first OPENED row found
+ * is the most recent one. The current attempt is skipped because its own pull
+ * requests are its own state, already rendered as such.
+ */
+function selectAssessmentPublishedPullRequest(
+  assessment: AssessmentDetail,
+  currentAttempt: PatchAttempt | undefined,
+): PullRequestAttempt | undefined {
+  for (const attempt of assessment.patchAttempts) {
+    if (attempt.id === currentAttempt?.id) continue;
+    const opened = attempt.pullRequestAttempts.find((pr) => pr.status === 'OPENED');
+    if (opened) return opened;
+  }
+  return undefined;
+}
+
+/**
  * One provider change rendered as its own evidence chain. The seven stages
  * are a property of a single assessment, not of the analysis run: a run
  * holds N assessments (one per registered rule), and each carries its own
@@ -1785,7 +1947,8 @@ function AssessmentReport({
    * coverage, so Stage 02 needs both. */
   evidence: AnalysisRunEvidence | null;
 }) {
-  const latestAttempt = assessment.patchAttempts[0];
+  const latestAttempt = selectCurrentPatchAttempt(assessment);
+  const publishedForAssessment = selectAssessmentPublishedPullRequest(assessment, latestAttempt);
   const isAffected = assessment.status === 'AFFECTED';
   const isGenerated = latestAttempt?.status === 'GENERATED';
   const summary = summarizeAssessment(assessment);
@@ -1894,7 +2057,10 @@ function AssessmentReport({
             <ChainSection
               number="07"
               label="Pull request"
-              tone={pullRequestStageTone(latestAttempt?.pullRequestAttempts[0])}
+              tone={pullRequestStageTone(
+                latestAttempt?.pullRequestAttempts[0],
+                publishedForAssessment,
+              )}
               muted={!isGenerated}
             >
               {isGenerated && latestAttempt ? (
@@ -1902,6 +2068,7 @@ function AssessmentReport({
                   analysisRunId={analysisRunId}
                   latestVerificationRun={latestAttempt.verificationRuns[0]}
                   pullRequestAttempts={latestAttempt.pullRequestAttempts}
+                  publishedForAssessment={publishedForAssessment}
                 />
               ) : (
                 <Blocked reason="Requires a candidate fix" />

@@ -3,6 +3,7 @@ import type { Database } from '@patchwork/db';
 import type { GitHubAppAuth, GitHubClient } from '@patchwork/github';
 import {
   completePullRequestAttempt,
+  findAssessmentOpenedPullRequest,
   getPublishContext,
   getPullRequestAttemptsForPatchAttempt,
 } from './persistence.js';
@@ -72,11 +73,22 @@ export async function processNextPendingPullRequestAttempt(
       .filter((attempt) => attempt.id !== claimed.id && attempt.commitSha !== null)
       .map((attempt) => attempt.commitSha as string);
 
+    // Read as late as possible -- immediately before the write -- so a PR
+    // opened for a sibling patch attempt after this row was enqueued is still
+    // seen. The API refuses the same case at enqueue time; this is the check
+    // that stands between a concurrently-enqueued duplicate and GitHub.
+    const assessmentOpenedPullRequest = await findAssessmentOpenedPullRequest(
+      deps.db,
+      context.impactAssessmentId,
+      context.patchAttemptId,
+    );
+
     const outcome = await publishPullRequest(context, {
       githubClient: deps.githubClient,
       githubAppAuth: deps.githubAppAuth,
       appSlug: deps.appSlug,
       priorCommitShas,
+      assessmentOpenedPullRequest,
     });
     await completePullRequestAttempt(deps.db, claimed.id, outcome);
     deps.logger.info(

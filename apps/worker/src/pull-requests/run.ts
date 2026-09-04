@@ -32,6 +32,14 @@ export interface PublishDeps {
    * the orchestration function itself).
    */
   priorCommitShas: string[];
+  /**
+   * A still-OPENED Patchwork pull request belonging to a DIFFERENT
+   * PatchAttempt of the same ImpactAssessment, or null if there is none --
+   * fetched by process.ts for the same DB-free reason as priorCommitShas.
+   * Its presence means Patchwork has already published this change; opening
+   * a second pull request for it is refused below.
+   */
+  assessmentOpenedPullRequest: { githubPrNumber: number | null; githubPrUrl: string | null } | null;
 }
 
 function refused(category: PullRequestFailureCategory, reason: string): PublishOutcome {
@@ -90,7 +98,18 @@ function opened(
  */
 function reVerifyEligibility(
   context: PublishContext,
+  assessmentOpenedPullRequest: PublishDeps['assessmentOpenedPullRequest'],
 ): { kind: 'ok'; diff: string } | { kind: 'refused'; reason: string } {
+  if (assessmentOpenedPullRequest) {
+    const prLabel =
+      assessmentOpenedPullRequest.githubPrNumber === null
+        ? 'a pull request'
+        : `pull request #${assessmentOpenedPullRequest.githubPrNumber}`;
+    return {
+      kind: 'refused',
+      reason: `Patchwork already opened ${prLabel} for this change from an earlier patch attempt -- refusing to open a second pull request for the same assessment`,
+    };
+  }
   if (context.patchAttemptStatus !== 'GENERATED') {
     return {
       kind: 'refused',
@@ -247,7 +266,7 @@ export async function publishPullRequest(
   context: PublishContext,
   deps: PublishDeps,
 ): Promise<PublishOutcome> {
-  const eligibility = reVerifyEligibility(context);
+  const eligibility = reVerifyEligibility(context, deps.assessmentOpenedPullRequest);
   if (eligibility.kind === 'refused') return refused('POLICY_REFUSAL', eligibility.reason);
   const { diff } = eligibility;
 
