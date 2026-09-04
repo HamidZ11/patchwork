@@ -1153,24 +1153,39 @@ function FixStageContent({
         <span className="text-xs text-fg-tertiary">No candidate fix prepared yet.</span>
       )}
 
+      {/* A refusal is a safety decision, not a breakage: Patchwork could not
+          prove this specific usage shape rewrites safely, so it declined to
+          rewrite it. Kept in the neutral role, visually distinct from FAILED
+          below, and never softened into a generic "could not complete". */}
       {latestAttempt?.status === 'REFUSED' && (
-        <div className="flex flex-col gap-1">
-          <span className="text-xs font-medium text-fg-tertiary">
-            Automatic fix not supported for this usage.
+        <div className="flex min-w-0 flex-col gap-1">
+          <span className="text-sm font-semibold text-fg-secondary">
+            Patchwork declined to rewrite this usage
+          </span>
+          <span className="text-xs text-fg-tertiary">
+            A safe transformation could not be proven for this code shape, so no patch was produced.
           </span>
           {latestAttempt.refusalReason && (
-            <span className="text-xs text-fg-tertiary">{latestAttempt.refusalReason}</span>
+            <p className="mt-1 border-l-2 border-rule-strong pl-3 text-xs leading-5 break-words text-fg-secondary">
+              {latestAttempt.refusalReason}
+            </p>
           )}
         </div>
       )}
 
+      {/* Distinct from a refusal: generation itself broke. Carries the
+          attention role because, unlike a refusal, it is not an expected
+          outcome of the safety policy. */}
       {latestAttempt?.status === 'FAILED' && (
-        <div className="flex flex-col gap-1">
-          <span className="text-xs font-medium text-attention">
-            Could not generate a safe candidate fix.
+        <div className="flex min-w-0 flex-col gap-1">
+          <span className="text-sm font-semibold text-attention">Patch generation failed</span>
+          <span className="text-xs text-fg-tertiary">
+            This is a generation error, not a safety refusal.
           </span>
           {latestAttempt.failureReason && (
-            <span className="text-xs text-fg-tertiary">{latestAttempt.failureReason}</span>
+            <p className="mt-1 border-l-2 border-rule-strong pl-3 text-xs leading-5 break-words text-fg-secondary">
+              {latestAttempt.failureReason}
+            </p>
           )}
         </div>
       )}
@@ -1201,6 +1216,7 @@ function splitCheckDetail(detail: string): { file: string; note: string | null }
  * its own ChainSection is what keeps that difference visible. */
 function StaticValidation({ checks }: { checks: PostconditionCheck[] }) {
   const passed = checks.every((check) => check.passed);
+  const passedCount = checks.filter((check) => check.passed).length;
   const byFile = new Map<string, PostconditionCheck[]>();
   for (const check of checks) {
     const { file } = splitCheckDetail(check.detail);
@@ -1220,25 +1236,57 @@ function StaticValidation({ checks }: { checks: PostconditionCheck[] }) {
           Static validation
         </span>
       </div>
-      <span className={`text-sm font-semibold ${passed ? 'text-success' : 'text-attention'}`}>
-        {passed ? 'Static validation passed' : 'Static validation failed'}
-      </span>
-      <div className="flex flex-col gap-2">
+      <div className="flex min-w-0 flex-col gap-1">
+        <span className={`text-sm font-semibold ${passed ? 'text-success' : 'text-attention'}`}>
+          {passed ? 'Static validation passed' : 'Static validation failed'}
+          <span className="ml-2 font-mono text-2xs font-normal text-fg-tertiary">
+            {passedCount}/{checks.length} checks
+          </span>
+        </span>
+        {/* Keeps the static/runtime boundary explicit at the point a reader
+            is deciding how much the result proves. Truthful: postcondition
+            checks re-analyse the rewritten source with the same semantic
+            engine impact analysis uses -- they never execute the repository. */}
+        <span className="text-xs text-fg-tertiary">
+          Checks on the rewritten source. No repository code was executed here; that is runtime
+          verification below.
+        </span>
+      </div>
+
+      <div className="flex min-w-0 flex-col gap-3">
         {[...byFile.entries()].map(([file, fileChecks]) => (
-          <div key={file} className="flex flex-col gap-0.5">
-            <span className="font-mono text-xs text-fg-tertiary">{file}</span>
-            {fileChecks.map((check, index) => {
-              const { note } = splitCheckDetail(check.detail);
-              return (
-                <span
-                  key={index}
-                  className={`pl-3 text-xs ${check.passed ? 'text-fg-tertiary' : 'text-attention'}`}
-                >
-                  {check.passed ? '✓' : '✗'} {check.name}
-                  {note && <span className="text-fg-tertiary"> · {note}</span>}
-                </span>
-              );
-            })}
+          <div key={file} className="flex min-w-0 flex-col gap-1">
+            <span className="font-mono text-2xs break-all text-fg-tertiary">{file}</span>
+            <ul className="flex min-w-0 flex-col gap-1">
+              {fileChecks.map((check, index) => {
+                const { note } = splitCheckDetail(check.detail);
+                return (
+                  <li key={index} className="flex min-w-0 items-baseline gap-2">
+                    <span
+                      aria-hidden="true"
+                      className={`w-3 shrink-0 font-mono text-xs ${
+                        check.passed ? 'text-success' : 'text-attention'
+                      }`}
+                    >
+                      {check.passed ? '✓' : '✗'}
+                    </span>
+                    <span className="flex min-w-0 flex-col gap-0.5">
+                      <span
+                        className={`text-xs ${check.passed ? 'text-fg-secondary' : 'text-attention'}`}
+                      >
+                        {check.name}
+                        <span className="sr-only">{check.passed ? ' passed' : ' failed'}</span>
+                      </span>
+                      {note && (
+                        <span className="font-mono text-2xs break-all text-fg-tertiary">
+                          {note}
+                        </span>
+                      )}
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
           </div>
         ))}
       </div>
@@ -1246,12 +1294,93 @@ function StaticValidation({ checks }: { checks: PostconditionCheck[] }) {
   );
 }
 
-function PatchAttemptArtifact({ attempt }: { attempt: PatchAttempt }) {
+/**
+ * Splits provider-authored migration prose into sentences so it renders as
+ * separate paragraphs instead of one dense block.
+ *
+ * Purely presentational and text-preserving: the split points are
+ * sentence-ending periods already followed by whitespace and a capital
+ * letter, so re-joining the parts with a single space reproduces the input
+ * exactly. It never rewrites, reorders, summarizes or re-punctuates the
+ * provider's wording -- the semantics of a migration requirement are the
+ * provider's to state, not Patchwork's to paraphrase.
+ *
+ * Deliberately conservative: it will under-split (leaving a longer
+ * paragraph) rather than risk splitting inside a version like `v18.0.0`, a
+ * path like `subscription_details.items`, or an abbreviation.
+ */
+function splitMigrationSentences(text: string): string[] {
+  const parts = text
+    .trim()
+    .split(/(?<=[.!?])\s+(?=[A-Z])/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+  return parts.length > 0 ? parts : [text.trim()];
+}
+
+/**
+ * The provider's own statement of what must change, quoted rather than
+ * produced by Patchwork -- hence the left-rule treatment (DESIGN.md Section
+ * 12: a quotation gets a left border only, never the full bordered box an
+ * artifact Patchwork computed would get).
+ *
+ * Rendered in the prose face, not mono: an earlier revision set this in
+ * `font-mono text-xs`, which both read as machine output it is not and
+ * clipped at narrow widths, because long identifiers inside the prose
+ * (`subscription_proration_date`) cannot break in a monospace measure.
+ * Prose type plus `break-words` fixes both.
+ */
+function MigrationRequirement({ text }: { text: string }) {
+  const sentences = splitMigrationSentences(text);
   return (
-    <div className="flex min-w-0 flex-col gap-3">
-      {attempt.diff && <DiffView diff={attempt.diff} />}
-      {attempt.postconditionResult && attempt.postconditionResult.length > 0 && (
-        <StaticValidation checks={attempt.postconditionResult} />
+    <div className="flex min-w-0 flex-col gap-2 border-l-2 border-rule-strong pl-4">
+      {sentences.map((sentence, index) => (
+        <p key={index} className="text-sm leading-6 break-words text-fg-secondary">
+          {sentence}
+        </p>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * A GENERATED patch attempt, read top-down as its own small lifecycle:
+ * what was produced -> what it changes -> what was proved about it.
+ *
+ * Each part is rendered only from real persisted data, and an absent part
+ * says so rather than rendering nothing: some real GENERATED attempts carry
+ * no diff and no postconditions at all, and silence there would read as
+ * "nothing to see" instead of "not recorded".
+ */
+function PatchAttemptArtifact({ attempt }: { attempt: PatchAttempt }) {
+  const fileCount = attempt.changedFiles.length;
+  const checks = attempt.postconditionResult ?? [];
+
+  return (
+    <div className="flex min-w-0 flex-col gap-4">
+      <div className="flex min-w-0 flex-col gap-1">
+        <span className="text-sm font-semibold text-success">
+          Deterministic transformation generated
+        </span>
+        {fileCount > 0 && (
+          <span className="font-mono text-2xs text-fg-tertiary">
+            {fileCount} file{fileCount === 1 ? '' : 's'} changed
+          </span>
+        )}
+      </div>
+
+      {attempt.diff ? (
+        <DiffView diff={attempt.diff} />
+      ) : (
+        <span className="text-xs text-fg-tertiary">No diff recorded for this patch attempt.</span>
+      )}
+
+      {checks.length > 0 ? (
+        <StaticValidation checks={checks} />
+      ) : (
+        <span className="text-xs text-fg-tertiary">
+          No static validation recorded for this patch attempt.
+        </span>
       )}
     </div>
   );
@@ -1624,11 +1753,7 @@ function AssessmentReport({
 
       {isAffected && (
         <ChainSection number="04" label="Migration">
-          <div className="flex flex-col gap-1 border-l-2 border-rule-strong pl-3">
-            <p className="font-mono text-xs leading-relaxed whitespace-pre-wrap text-fg-secondary">
-              {assessment.migrationRequirement}
-            </p>
-          </div>
+          <MigrationRequirement text={assessment.migrationRequirement} />
         </ChainSection>
       )}
 
