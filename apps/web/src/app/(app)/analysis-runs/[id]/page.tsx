@@ -969,10 +969,15 @@ function FixStageContent({
   assessment,
   analysisRunId,
   latestAttempt,
+  actionInOpening,
 }: {
   assessment: AssessmentDetail;
   analysisRunId: string;
   latestAttempt: PatchAttempt | undefined;
+  /** True when the opening already renders the prepare-fix control, so this
+   * stage shows only patch state/evidence. Prevents the same primary action
+   * appearing twice for one assessment. */
+  actionInOpening: boolean;
 }) {
   const buttonVariant =
     !latestAttempt || latestAttempt.status === 'REFUSED' || latestAttempt.status === 'FAILED'
@@ -981,13 +986,22 @@ function FixStageContent({
 
   return (
     <div className="flex min-w-0 flex-col gap-3">
-      <form action={prepareFix.bind(null, assessment.id, analysisRunId)}>
-        <FormSubmitButton
+      {!actionInOpening && (
+        <PrepareFixForm
+          assessmentId={assessment.id}
+          analysisRunId={analysisRunId}
           label={latestAttempt ? 'Prepare fix again' : 'Prepare fix'}
-          pendingLabel="Preparing…"
           variant={buttonVariant}
         />
-      </form>
+      )}
+
+      {/* With the control moved into the opening this stage would otherwise be
+          empty, which would read as missing rather than as "nothing generated
+          yet" -- the same absence-must-not-read-as-silence rule the blocked
+          stages follow. */}
+      {!latestAttempt && (
+        <span className="text-xs text-fg-tertiary">No candidate fix prepared yet.</span>
+      )}
 
       {latestAttempt?.status === 'REFUSED' && (
         <div className="flex flex-col gap-1">
@@ -1167,6 +1181,204 @@ function summarizeAssessment(assessment: AssessmentDetail): AssessmentSummary {
   };
 }
 
+interface RepositoryProof {
+  usageLabel: string;
+  /** The single matched symbol, when every finding matched the same one --
+   * null when findings matched several distinct symbols, so the sentence
+   * never names one symbol while counting usages of others. */
+  symbol: string | null;
+  fileLabel: string;
+}
+
+/**
+ * The repository-specific half of "why this repository is affected",
+ * derived only from the real `findings` array: how many confirmed usages,
+ * of which symbol, in how many files. No rule-identity lookup table and no
+ * prose parsing -- every value here is a count or a verbatim
+ * `matchedSymbol` the analyzer already recorded, so this can never drift
+ * out of step with a rule's real meaning the way hardcoded per-predicate
+ * copy would. Null for anything but a confirmed AFFECTED verdict with real
+ * findings, so it can never imply evidence that does not exist.
+ */
+function repositoryProof(assessment: AssessmentDetail): RepositoryProof | null {
+  if (assessment.status !== 'AFFECTED') return null;
+  const { findings } = assessment;
+  if (findings.length === 0) return null;
+
+  const symbols = new Set(findings.map((finding) => finding.matchedSymbol));
+  const files = new Set(findings.map((finding) => finding.sourceFile));
+
+  return {
+    usageLabel: `${findings.length} confirmed usage${findings.length === 1 ? '' : 's'}`,
+    symbol: symbols.size === 1 ? [...symbols][0] : null,
+    fileLabel: `${files.size} file${files.size === 1 ? '' : 's'}`,
+  };
+}
+
+/**
+ * Whether the prepare-fix action belongs in the assessment opening rather
+ * than in Stage 05. True only for the clean frontier: an AFFECTED change
+ * with a registered deterministic recipe and no attempt yet.
+ *
+ * Everything else deliberately keeps the action down in Stage 05 next to
+ * the context that explains it -- a REFUSED or FAILED attempt's reason sits
+ * there, and a top-level "Prepare fix again" divorced from why the last one
+ * refused would read as a fresh offer rather than a retry. A GENERATED
+ * attempt has already moved the frontier downstream to verification, where
+ * Stage 05 keeps only its quiet re-run.
+ *
+ * This is a placement decision, not a second interpretation of remediation
+ * state: exactly one prepare-fix control renders per assessment either way,
+ * so the opening and Stage 05 cannot contradict each other.
+ */
+function showPrepareFixInOpening(
+  assessment: AssessmentDetail,
+  latestAttempt: PatchAttempt | undefined,
+): boolean {
+  return (
+    assessment.status === 'AFFECTED' &&
+    assessment.remediationSupported &&
+    latestAttempt === undefined
+  );
+}
+
+/** The one prepare-fix control, rendered either in the opening or in Stage
+ * 05 -- never both. Extracted so both call sites bind the identical server
+ * action against the same stable assessment id. */
+function PrepareFixForm({
+  assessmentId,
+  analysisRunId,
+  label,
+  variant,
+}: {
+  assessmentId: string;
+  analysisRunId: string;
+  label: string;
+  variant: 'primary' | 'secondary' | 'quiet';
+}) {
+  return (
+    <form action={prepareFix.bind(null, assessmentId, analysisRunId)}>
+      <FormSubmitButton label={label} pendingLabel="Preparing…" variant={variant} />
+    </form>
+  );
+}
+
+/**
+ * The orientation layer above the numbered evidence chain: verdict, what
+ * changed, why it lands on this repository, how much confirmed impact
+ * exists, and the safe next action where one is genuinely available. It
+ * summarizes evidence the chain then shows in full -- it never introduces
+ * a claim the chain cannot substantiate.
+ */
+function AssessmentOpening({
+  assessment,
+  analysisRunId,
+  latestAttempt,
+  summary,
+}: {
+  assessment: AssessmentDetail;
+  analysisRunId: string;
+  latestAttempt: PatchAttempt | undefined;
+  summary: AssessmentSummary;
+}) {
+  const style = STATUS_STYLE[assessment.status];
+  const isAffected = assessment.status === 'AFFECTED';
+  const proof = repositoryProof(assessment);
+  const withAction = showPrepareFixInOpening(assessment, latestAttempt);
+
+  const whyHeading =
+    assessment.status === 'AFFECTED'
+      ? 'Why this repository is affected'
+      : assessment.status === 'UNCERTAIN'
+        ? 'Why this is uncertain'
+        : 'Why this repository is not affected';
+
+  return (
+    <div className="flex min-w-0 flex-col gap-4">
+      <div className="flex min-w-0 flex-col gap-2.5">
+        <span
+          className={`inline-flex w-fit items-center gap-1.5 text-xs font-semibold ${style.text}`}
+        >
+          <span className={`h-2 w-2 shrink-0 rounded-full ${style.dot}`} aria-hidden="true" />
+          {STATUS_LABEL[assessment.status]}
+        </span>
+        <h2
+          className={`min-w-0 text-fg ${
+            isAffected
+              ? 'text-xl leading-7 font-semibold tracking-tight'
+              : 'text-base leading-6 font-semibold tracking-tight'
+          }`}
+        >
+          {assessment.providerChangeTitle}
+        </h2>
+      </div>
+
+      <div className="flex min-w-0 flex-col gap-1.5">
+        <p className="text-2xs font-semibold tracking-wide text-fg-tertiary uppercase">
+          {whyHeading}
+        </p>
+        {/* `summary.reason` is the existing safe reconstruction of the
+            per-workspace applicability evidence -- never the raw analyzer
+            `reason` string. */}
+        <p className="text-sm leading-6 text-fg-secondary">{summary.reason}</p>
+        {assessment.status === 'UNCERTAIN' && (
+          <p className="text-sm leading-6 text-fg-tertiary">
+            Patchwork could not determine whether this change applies, so it is not asserting impact
+            either way.
+          </p>
+        )}
+        {proof && (
+          <p className="text-sm leading-6 text-fg-secondary">
+            Patchwork confirmed {proof.usageLabel}
+            {proof.symbol && (
+              <>
+                {' of '}
+                <code className="font-mono text-xs text-fg">{proof.symbol}</code>
+              </>
+            )}{' '}
+            in {proof.fileLabel}.
+          </p>
+        )}
+      </div>
+
+      {/* The upstream provenance for the headline above. Lives here rather than
+          in a standalone Stage 01, which held nothing else once the change's
+          title and verdict moved into this opening. Rendered exactly once. */}
+      <a
+        href={assessment.providerChangeSourceUrl}
+        target="_blank"
+        rel="noreferrer"
+        className="inline-flex w-fit items-center gap-1 text-sm text-fg-secondary hover:text-fg"
+      >
+        Provider changelog
+        <ExternalLinkIcon />
+      </a>
+
+      {(proof || withAction) && (
+        <div className="flex flex-wrap items-center gap-x-5 gap-y-3">
+          {proof && <span className="text-sm font-semibold text-fg">{proof.usageLabel}</span>}
+          {withAction && (
+            <span className="flex flex-wrap items-center gap-x-3 gap-y-2">
+              <PrepareFixForm
+                assessmentId={assessment.id}
+                analysisRunId={analysisRunId}
+                label="Prepare fix"
+                variant="primary"
+              />
+              {/* Truthful because `remediationSupported` means the backend found a
+                  registered deterministic remediation recipe for this predicate
+                  kind -- not an LLM, and not a guess. */}
+              <span className="text-xs text-fg-tertiary">
+                Deterministic transformation available
+              </span>
+            </span>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /**
  * One provider change rendered as its own evidence chain. The seven stages
  * are a property of a single assessment, not of the analysis run: a run
@@ -1186,7 +1398,6 @@ function AssessmentReport({
   analysisRunId: string;
   commitSha: string;
 }) {
-  const style = STATUS_STYLE[assessment.status];
   const latestAttempt = assessment.patchAttempts[0];
   const isAffected = assessment.status === 'AFFECTED';
   const isGenerated = latestAttempt?.status === 'GENERATED';
@@ -1198,38 +1409,24 @@ function AssessmentReport({
         isAffected ? 'rounded-md bg-surface p-5 sm:p-6' : 'py-1'
       }`}
     >
-      <ChainSection number="01" label="External change">
-        <div className="flex min-w-0 flex-col gap-2.5">
-          <span
-            className={`inline-flex w-fit items-center gap-1.5 text-xs font-semibold ${style.text}`}
-          >
-            <span className={`h-2 w-2 shrink-0 rounded-full ${style.dot}`} aria-hidden="true" />
-            {STATUS_LABEL[assessment.status]}
-          </span>
-          <h2
-            className={`min-w-0 text-fg ${
-              isAffected
-                ? 'text-xl leading-7 font-semibold tracking-tight'
-                : 'text-base leading-6 font-semibold tracking-tight'
-            }`}
-          >
-            {assessment.providerChangeTitle}
-          </h2>
-          <a
-            href={assessment.providerChangeSourceUrl}
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex w-fit items-center gap-1 text-xs text-fg-tertiary hover:text-fg"
-          >
-            Provider changelog
-            <ExternalLinkIcon />
-          </a>
-        </div>
-      </ChainSection>
+      <AssessmentOpening
+        assessment={assessment}
+        analysisRunId={analysisRunId}
+        latestAttempt={latestAttempt}
+        summary={summary}
+      />
 
+      {/* Stage 01 is not rendered as its own block: the opening above already
+          carries every part of it -- the change's verdict, headline and source
+          provenance -- so a standalone section here held nothing the reader had
+          not just read. The chain therefore begins at 02, which keeps its fixed
+          identity (Section 32: a stage number names a stage, it is not a
+          position counter, so omitting one never renumbers the rest). */}
       <ChainSection number="02" label="Applicability">
+        {/* No applicability sentence here: the opening's "Why this repository is
+            affected" already states it from the same `summary.reason`. This
+            stage is the deeper evidence behind that sentence. */}
         <div className="flex min-w-0 flex-col gap-3">
-          <p className="text-sm leading-6 text-fg-secondary">{summary.reason}</p>
           {assessment.coverage ? (
             <CoverageDetail workspaces={assessment.coverage.workspaces} />
           ) : (
@@ -1275,6 +1472,7 @@ function AssessmentReport({
                 assessment={assessment}
                 analysisRunId={analysisRunId}
                 latestAttempt={latestAttempt}
+                actionInOpening={showPrepareFixInOpening(assessment, latestAttempt)}
               />
             </ChainSection>
 

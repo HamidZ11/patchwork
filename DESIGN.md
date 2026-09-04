@@ -1369,6 +1369,13 @@ touch the same concepts.
   `AFFECTED` change with no supported remediation) but never renumbers to
   close the gap. Renumbering would make "05" mean something different per
   assessment and quietly imply a stage happened that never existed.
+  **A stage may also be omitted from the front, not only the end**: the
+  assessment opening carries stage 01 in full (the change's verdict,
+  headline and source provenance), so no standalone `01` block renders and
+  the visible chain starts at `02`. That is the same rule, not an exception
+  to it — the number still names a stage rather than counting one, so a
+  chain beginning at `02` says "01 is elsewhere on this page," never
+  "something is missing."
 - **A stage dot appears only where a real backend status backs it.**
   `ChainSection`'s `tone` is optional and an omitted tone renders **no
   dot at all**, rather than a neutral one. Stages 01–04 are evidence
