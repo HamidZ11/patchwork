@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import { apiFetch } from '@/lib/api';
 import { FormSubmitButton } from '@/components/form-submit-button';
+import { buttonVariantClassName } from '@/components/button-styles';
 import { AssessmentSelector, type AssessmentTab } from './assessment-selector';
 
 interface InstalledSdk {
@@ -819,8 +820,11 @@ function PullRequestSection({
     latestVerificationRun?.status === 'PASSED' ? latestVerificationRun.id : null;
   const [latest, ...earlier] = pullRequestAttempts;
 
+  // A workflow prerequisite, not an error: publishing is gated on a passed
+  // runtime verification, so this states the dependency plainly rather than
+  // presenting the absence as a failure.
   if (!latest && !passedVerificationRunId) {
-    return <Blocked reason="Requires a passed verification" />;
+    return <Blocked reason="Requires a passed runtime verification before publishing." />;
   }
 
   const isActive = latest !== undefined && ACTIVE_PULL_REQUEST_STATUSES.has(latest.status);
@@ -846,27 +850,17 @@ function PullRequestSection({
         </div>
       ) : (
         <>
-          <div className="flex items-center gap-2">
-            <span
-              className={`h-1.5 w-1.5 shrink-0 rounded-full ${PULL_REQUEST_STATUS_STYLE[latest.status].dot}`}
-              aria-hidden="true"
-            />
-            <span
-              className={`${isOpened ? 'text-sm font-semibold' : 'text-xs font-medium'} ${PULL_REQUEST_STATUS_STYLE[latest.status].text}`}
-            >
-              {isOpened && latest.githubPrUrl ? (
-                <a
-                  href={latest.githubPrUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="inline-flex items-center gap-1 hover:underline"
-                >
-                  {pullRequestStatusLabel(latest)}
-                  <ExternalLinkIcon />
-                </a>
-              ) : (
-                pullRequestStatusLabel(latest)
-              )}
+          <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2">
+            <span className="inline-flex min-w-0 items-center gap-2">
+              <span
+                className={`h-1.5 w-1.5 shrink-0 rounded-full ${PULL_REQUEST_STATUS_STYLE[latest.status].dot}`}
+                aria-hidden="true"
+              />
+              <span
+                className={`${isOpened ? 'text-sm font-semibold' : 'text-xs font-medium'} ${PULL_REQUEST_STATUS_STYLE[latest.status].text}`}
+              >
+                {pullRequestStatusLabel(latest)}
+              </span>
             </span>
             {canCreate && passedVerificationRunId && (
               <form action={createPullRequest.bind(null, passedVerificationRunId, analysisRunId)}>
@@ -879,15 +873,69 @@ function PullRequestSection({
             )}
           </div>
 
-          {latest.failureReason && (
-            <span className="text-xs text-fg-tertiary">{latest.failureReason}</span>
+          {/* A refusal is a policy decision Patchwork made on purpose; a failure
+              is GitHub or the network not cooperating. The labels already differ
+              per category -- these keep the *kind* of outcome explicit so a
+              refusal never reads as a broken integration. */}
+          {latest.status === 'REFUSED' && (
+            <span className="text-xs text-fg-tertiary">
+              Patchwork declined to publish. This is a safety decision, not a failed request.
+            </span>
+          )}
+          {latest.status === 'FAILED' && (
+            <span className="text-xs text-fg-tertiary">
+              Publishing was attempted and did not complete.
+            </span>
           )}
 
-          {isOpened && latest.branchName && (
-            <span className="font-mono text-xs text-fg-tertiary">
-              {latest.branchName}
-              {latest.commitSha && ` @ ${latest.commitSha.slice(0, 7)}`}
-            </span>
+          {latest.failureReason && (
+            <p className="min-w-0 border-l-2 border-rule-strong pl-3 text-xs leading-5 break-words text-fg-secondary">
+              {latest.failureReason}
+            </p>
+          )}
+
+          {isOpened && (
+            <div className="flex min-w-0 flex-col gap-3">
+              {(latest.branchName || latest.commitSha) && (
+                <dl className="grid min-w-0 gap-x-6 gap-y-2 sm:grid-cols-[minmax(0,7rem)_minmax(0,1fr)]">
+                  {latest.branchName && (
+                    <>
+                      <dt className="text-xs text-fg-tertiary">Branch</dt>
+                      <dd className="min-w-0 font-mono text-xs break-all text-fg">
+                        {latest.branchName}
+                      </dd>
+                    </>
+                  )}
+                  {latest.commitSha && (
+                    <>
+                      <dt className="text-xs text-fg-tertiary">Commit</dt>
+                      <dd className="min-w-0 font-mono text-xs break-all text-fg">
+                        {latest.commitSha.slice(0, 7)}
+                      </dd>
+                    </>
+                  )}
+                </dl>
+              )}
+
+              {latest.githubPrUrl && (
+                <a
+                  href={latest.githubPrUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className={`${buttonVariantClassName.secondary} inline-flex w-fit items-center gap-1.5`}
+                >
+                  View pull request
+                  <ExternalLinkIcon />
+                </a>
+              )}
+
+              {/* Patchwork's authority stops at opening the PR -- it never
+                  merges or deploys (CLAUDE.md's PR scope). Saying so here stops
+                  an opened PR reading as "shipped". */}
+              <span className="text-xs text-fg-tertiary">
+                Patchwork opened this pull request for review. It does not merge or deploy.
+              </span>
+            </div>
           )}
         </>
       )}
@@ -932,49 +980,71 @@ function StepOutputBlock({ label, text }: { label: string; text: string | null }
   );
 }
 
+/**
+ * Four visually distinct step outcomes, never three. `Not run` (a canonical
+ * step Patchwork synthesizes because the real manifest never contained it)
+ * takes the indeterminate role -- the same calibrated-uncertainty tone the
+ * applicability ledger uses -- so it can never be mistaken for `Passed`,
+ * and is also kept separate from a real `Skipped` step the run genuinely
+ * recorded. Colour is always paired with the status word.
+ */
+function stepOutcome(step: VerificationStep): {
+  glyph: string;
+  label: string;
+  className: string;
+} {
+  if (step.notRun) return { glyph: '–', label: 'Not run', className: 'text-indeterminate' };
+  if (step.status === 'SKIPPED')
+    return { glyph: '–', label: 'Skipped', className: 'text-fg-tertiary' };
+  if (step.status === 'PASSED') return { glyph: '✓', label: 'Passed', className: 'text-success' };
+  if (step.status === 'TIMED_OUT')
+    return { glyph: '✗', label: 'Timed out', className: 'text-failure' };
+  return { glyph: '✗', label: 'Failed', className: 'text-failure' };
+}
+
 function VerificationStepRow({ step }: { step: VerificationStep }) {
-  const icon = step.status === 'PASSED' ? '✓' : step.status === 'SKIPPED' ? '–' : '✗';
-  const color =
-    step.status === 'PASSED'
-      ? 'text-success'
-      : step.status === 'SKIPPED'
-        ? 'text-fg-tertiary'
-        : 'text-failure';
-  const hasOutput = step.status !== 'SKIPPED';
-  const statusText = step.notRun
-    ? 'Not run'
-    : step.status === 'SKIPPED'
-      ? 'Skipped'
-      : step.status === 'PASSED'
-        ? 'Passed'
-        : 'Failed';
+  const outcome = stepOutcome(step);
+  const hasOutput = step.status !== 'SKIPPED' && (step.stdoutExcerpt || step.stderrExcerpt);
 
   return (
-    <div className="flex flex-col gap-1 py-1.5 text-xs">
-      <div className="flex items-center gap-2">
-        <span className={`w-3 shrink-0 font-mono ${color}`} aria-hidden="true">
-          {icon}
+    <div className="flex min-w-0 flex-col gap-1 py-2 text-xs">
+      <div className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1">
+        <span className={`w-3 shrink-0 font-mono ${outcome.className}`} aria-hidden="true">
+          {outcome.glyph}
         </span>
-        <span className={step.notRun ? 'text-fg-tertiary' : 'text-fg-secondary'}>
+        <span
+          className={`min-w-0 flex-1 ${step.notRun ? 'text-fg-tertiary' : 'text-fg-secondary'}`}
+        >
           {stepLabel(step)}
         </span>
-        <span className="text-fg-tertiary">{statusText}</span>
+        <span className={`shrink-0 font-medium ${outcome.className}`}>{outcome.label}</span>
         {step.durationMs != null && (
-          <span className="text-fg-tertiary">{formatDuration(step.durationMs)}</span>
+          <span className="shrink-0 font-mono text-2xs text-fg-tertiary">
+            {formatDuration(step.durationMs)}
+          </span>
         )}
         {step.exitCode != null && step.exitCode !== 0 && (
-          <span className="text-fg-tertiary">exit {step.exitCode}</span>
+          <span className="shrink-0 font-mono text-2xs text-fg-tertiary">exit {step.exitCode}</span>
         )}
-        {step.timedOut && <span className="text-fg-tertiary">timed out</span>}
       </div>
-      {hasOutput && (step.stdoutExcerpt || step.stderrExcerpt) && (
-        <details className="group ml-5">
-          <summary className="cursor-pointer list-none text-fg-tertiary hover:text-fg">
+
+      {/* The command that actually ran -- the most direct answer to "what did
+          this step do". Synthesized `Not run` steps carry no command, so
+          nothing is shown for them rather than an invented one. */}
+      {step.command && (
+        <span className="ml-6 min-w-0 font-mono text-2xs break-all text-fg-tertiary">
+          {step.command}
+        </span>
+      )}
+
+      {hasOutput && (
+        <details className="group ml-6">
+          <summary className="cursor-pointer list-none text-2xs text-fg-tertiary hover:text-fg">
             View output
           </summary>
           <div className="mt-1.5 flex flex-col gap-2">
             {step.truncated && (
-              <span className="text-fg-tertiary">Output truncated by Patchwork.</span>
+              <span className="text-2xs text-fg-tertiary">Output truncated by Patchwork.</span>
             )}
             <StepOutputBlock label="stdout" text={step.stdoutExcerpt} />
             <StepOutputBlock label="stderr" text={step.stderrExcerpt} />
@@ -1052,29 +1122,57 @@ function VerificationSection({
         </div>
       ) : (
         <>
-          <div className="flex items-center gap-2">
-            <span
-              className={`h-1.5 w-1.5 shrink-0 rounded-full ${VERIFICATION_STATUS_STYLE[latest.status].dot}`}
-              aria-hidden="true"
-            />
-            <span
-              className={`text-sm font-semibold ${VERIFICATION_STATUS_STYLE[latest.status].text}`}
-            >
-              {verificationStatusLabel(latest)}
-            </span>
-            {!isActive && (
-              <form action={verifyInSandbox.bind(null, patchAttemptId, analysisRunId)}>
-                <FormSubmitButton
-                  label="Verify again"
-                  pendingLabel="Starting verification…"
-                  variant={buttonVariant}
+          <div className="flex min-w-0 flex-col gap-1">
+            <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2">
+              <span className="inline-flex min-w-0 items-center gap-2">
+                <span
+                  className={`h-1.5 w-1.5 shrink-0 rounded-full ${VERIFICATION_STATUS_STYLE[latest.status].dot}`}
+                  aria-hidden="true"
                 />
-              </form>
+                <span
+                  className={`text-sm font-semibold ${VERIFICATION_STATUS_STYLE[latest.status].text}`}
+                >
+                  {verificationStatusLabel(latest)}
+                </span>
+              </span>
+              {!isActive && (
+                <form action={verifyInSandbox.bind(null, patchAttemptId, analysisRunId)}>
+                  <FormSubmitButton
+                    label="Verify again"
+                    pendingLabel="Starting verification…"
+                    variant={buttonVariant}
+                  />
+                </form>
+              )}
+            </div>
+            {/* The complementary half of Stage 05's static/runtime boundary,
+                stated once and briefly: this stage is the one that actually
+                executed the repository, and only claims a sandbox when the run
+                really recorded one. */}
+            {latest.sandboxProvider && (
+              <span className="text-xs text-fg-tertiary">
+                Ran the repository in an isolated sandbox.
+              </span>
+            )}
+            {/* INFRA_ERROR is a Patchwork-side failure, not a verdict about the
+                repository's code -- collapsing it into a generic red "failed"
+                would tell the reader something untrue about their code. */}
+            {latest.status === 'INFRA_ERROR' && (
+              <span className="text-xs text-fg-tertiary">
+                Patchwork&rsquo;s sandbox could not run. This is not a result about your code.
+              </span>
+            )}
+            {latest.status === 'TIMED_OUT' && (
+              <span className="text-xs text-fg-tertiary">
+                Execution exceeded the time allowed for a verification run.
+              </span>
             )}
           </div>
 
           {latest.failureReason && (
-            <span className="text-xs text-fg-tertiary">{latest.failureReason}</span>
+            <p className="min-w-0 border-l-2 border-rule-strong pl-3 text-xs leading-5 break-words text-fg-secondary">
+              {latest.failureReason}
+            </p>
           )}
 
           {displaySteps.length > 0 && (
