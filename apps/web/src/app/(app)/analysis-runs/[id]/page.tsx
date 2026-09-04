@@ -11,10 +11,24 @@ interface InstalledSdk {
   declaredRange: string;
   resolvedVersion: string | null;
   resolutionStatus: string;
+  /** The manifest the range was declared in -- real provenance for the
+   * declared-range ledger row. Present in the payload; previously just not
+   * declared here. */
+  manifestPath: string;
+}
+
+/** Always `UNKNOWN` under the current backend schema, carrying the real
+ * reason it is unknown. Optional here only defensively: older persisted
+ * evidence blobs predate the field, and a missing row must render as
+ * nothing rather than as a fabricated "known" value. */
+interface AccountVersionEvidence {
+  status: string;
+  reason: string;
 }
 
 interface AnalysisRunEvidence {
   installedSdks: InstalledSdk[];
+  accountVersion?: AccountVersionEvidence;
 }
 
 /** "stripe" reads as a package name; "Stripe" reads as the product this
@@ -28,6 +42,7 @@ function formatSdkEvidence(sdk: InstalledSdk): string {
 }
 
 interface Finding {
+  workspacePath: string;
   sourceFile: string;
   line: number;
   matchedSymbol: string;
@@ -225,6 +240,141 @@ function ChevronIcon() {
     </svg>
   );
 }
+
+/**
+ * How much weight a piece of applicability evidence actually carries.
+ * `indeterminate` is the calibrated-uncertainty tone: it marks evidence
+ * Patchwork genuinely does not have (`UNKNOWN`) or has only partially
+ * (`DECLARED_ONLY` -- a declared range with no lockfile pin). It is
+ * deliberately not the failure tone: not knowing something is not an
+ * error, and rendering it as one would train the reader to dismiss it.
+ * `CONFLICTING` is the one resolution state that does need review, so it
+ * takes the attention role.
+ */
+function resolutionTone(status: string): { label: string; className: string } {
+  switch (status) {
+    case 'EXACT':
+      return { label: 'Exact', className: 'text-fg-tertiary' };
+    case 'DECLARED_ONLY':
+      return { label: 'Declared only', className: 'text-indeterminate' };
+    case 'CONFLICTING':
+      return { label: 'Conflicting', className: 'text-attention' };
+    case 'UNKNOWN':
+      return { label: 'Unknown', className: 'text-indeterminate' };
+    default:
+      return { label: status, className: 'text-fg-tertiary' };
+  }
+}
+
+interface LedgerRow {
+  label: string;
+  /** Rendered monospace: a version, a range, a path, a count. */
+  value: string;
+  /** The qualifier: resolution state, provenance, or why something is unknown. */
+  note?: string;
+  noteClassName?: string;
+}
+
+/**
+ * The applicability evidence ledger: the facts behind the one-sentence
+ * conclusion the opening already states. Aligned label / value / state
+ * columns so the reader can scan what Patchwork knows -- and, just as
+ * importantly, what it does not -- rather than parsing prose.
+ *
+ * Every row comes from real persisted evidence. Rows whose backing data is
+ * absent are omitted entirely rather than rendered empty or defaulted, so
+ * the ledger never implies coverage Patchwork does not have.
+ */
+function ApplicabilityLedger({
+  evidence,
+  workspaces,
+}: {
+  evidence: AnalysisRunEvidence | null;
+  workspaces: WorkspaceCoverage[];
+}) {
+  const rows: LedgerRow[] = [];
+
+  for (const sdk of evidence?.installedSdks ?? []) {
+    const tone = resolutionTone(sdk.resolutionStatus);
+    rows.push({
+      label: sdk.workspacePath ? `${sdk.packageName} (${sdk.workspacePath})` : sdk.packageName,
+      value: sdk.resolvedVersion ?? sdk.declaredRange,
+      note: tone.label,
+      noteClassName: tone.className,
+    });
+    rows.push({
+      label: 'Declared range',
+      value: sdk.declaredRange,
+      note: sdk.manifestPath,
+    });
+  }
+
+  // Always UNKNOWN today, and materially so: several rules can only be
+  // decided from the account's pinned API version, which Patchwork cannot
+  // read without a live Stripe call. Showing it is what keeps an UNCERTAIN
+  // verdict legible rather than arbitrary.
+  if (evidence?.accountVersion) {
+    rows.push({
+      label: 'Account API version',
+      value: resolutionTone(evidence.accountVersion.status).label,
+      note: evidence.accountVersion.reason,
+      noteClassName: 'text-indeterminate',
+    });
+  }
+
+  for (const workspace of workspaces) {
+    const scope = workspace.workspacePath ? ` (${workspace.workspacePath})` : '';
+    rows.push({
+      label: `Source files scanned${scope}`,
+      value: String(workspace.sourceFilesScanned),
+      note: APPLICABILITY_LABEL[workspace.applicability] ?? workspace.applicability,
+      noteClassName:
+        workspace.applicability === 'UNKNOWN' ? 'text-indeterminate' : 'text-fg-tertiary',
+    });
+    if (workspace.filesFailedToLoad.length > 0) {
+      rows.push({
+        label: 'Files not readable',
+        value: String(workspace.filesFailedToLoad.length),
+        note: 'scan incomplete for these files',
+        noteClassName: 'text-indeterminate',
+      });
+    }
+    if (workspace.ambiguousReferences.length > 0) {
+      rows.push({
+        label: 'Unresolved references',
+        value: String(workspace.ambiguousReferences.length),
+        note: 'could not be resolved to a definition',
+        noteClassName: 'text-indeterminate',
+      });
+    }
+  }
+
+  if (rows.length === 0) return null;
+
+  return (
+    <dl className="grid min-w-0 gap-x-6 gap-y-3 sm:grid-cols-[minmax(0,12rem)_minmax(0,1fr)]">
+      {rows.map((row, index) => (
+        <Fragment key={`${row.label}-${index}`}>
+          <dt className="min-w-0 text-xs text-fg-tertiary">{row.label}</dt>
+          <dd className="flex min-w-0 flex-wrap items-baseline gap-x-2.5 gap-y-1">
+            <span className="font-mono text-xs break-all text-fg">{row.value}</span>
+            {row.note && (
+              <span className={`text-xs ${row.noteClassName ?? 'text-fg-tertiary'}`}>
+                {row.note}
+              </span>
+            )}
+          </dd>
+        </Fragment>
+      ))}
+    </dl>
+  );
+}
+
+const APPLICABILITY_LABEL: Record<WorkspaceCoverage['applicability'], string> = {
+  APPLICABLE: 'applicable',
+  NOT_APPLICABLE: 'not applicable',
+  UNKNOWN: 'applicability unknown',
+};
 
 function CoverageDetail({ workspaces }: { workspaces: WorkspaceCoverage[] }) {
   return (
@@ -1111,32 +1261,37 @@ function PatchAttemptArtifact({ attempt }: { attempt: PatchAttempt }) {
  * (matching the diff's own per-file grouping), with each matched location
  * rendered as a small two-line evidence unit: the exact location, then the
  * matched code fragment beneath it, mono throughout. */
+/**
+ * One row per confirmed usage, not one row per file. Grouping by file
+ * merged several distinct locations into a single visual block, which read
+ * as one piece of evidence; a flat list makes "2 confirmed usages" legible
+ * as two separate proofs at a glance. Each row states its address
+ * (`file:line`) quietly and the matched expression at full strength --
+ * the expression is the evidence, the location is where to find it.
+ *
+ * Deliberately no hover or pointer affordance: these are static facts, and
+ * nothing here navigates anywhere.
+ */
 function FindingsEvidence({ findings }: { findings: Finding[] }) {
   if (findings.length === 0) return null;
-  const byFile = new Map<string, Finding[]>();
-  for (const finding of findings) {
-    const list = byFile.get(finding.sourceFile) ?? [];
-    list.push(finding);
-    byFile.set(finding.sourceFile, list);
-  }
 
   return (
-    <div className="flex flex-col divide-y divide-rule rounded-md border border-rule bg-evidence">
-      {[...byFile.entries()].map(([sourceFile, fileFindings]) => (
-        <div key={sourceFile} className="flex flex-col gap-1.5 px-3 py-2">
-          <span className="font-mono text-xs font-medium text-fg-secondary">{sourceFile}</span>
-          {fileFindings.map((finding) => (
-            <div
-              key={`${finding.sourceFile}:${finding.line}`}
-              className="flex items-baseline gap-2 pl-3"
-            >
-              <span className="w-8 shrink-0 font-mono text-xs text-fg-faint">:{finding.line}</span>
-              <span className="font-mono text-xs text-fg-tertiary">{finding.matchedSymbol}</span>
-            </div>
-          ))}
-        </div>
+    <ol className="flex min-w-0 flex-col divide-y divide-rule overflow-hidden rounded-md border border-rule bg-evidence">
+      {findings.map((finding) => (
+        <li
+          key={`${finding.workspacePath}:${finding.sourceFile}:${finding.line}:${finding.matchedSymbol}`}
+          className="flex min-w-0 flex-col gap-1 px-3 py-2.5"
+        >
+          <span className="min-w-0 font-mono text-2xs break-all text-fg-tertiary">
+            {finding.sourceFile}
+            <span className="text-fg-faint">:{finding.line}</span>
+          </span>
+          <code className="min-w-0 font-mono text-xs break-all text-fg">
+            {finding.matchedSymbol}
+          </code>
+        </li>
       ))}
-    </div>
+    </ol>
   );
 }
 
@@ -1393,10 +1548,15 @@ function AssessmentReport({
   assessment,
   analysisRunId,
   commitSha,
+  evidence,
 }: {
   assessment: AssessmentDetail;
   analysisRunId: string;
   commitSha: string;
+  /** Run-level applicability evidence (installed SDKs, account API version).
+   * Applicability is decided from run-level facts plus this assessment's own
+   * coverage, so Stage 02 needs both. */
+  evidence: AnalysisRunEvidence | null;
 }) {
   const latestAttempt = assessment.patchAttempts[0];
   const isAffected = assessment.status === 'AFFECTED';
@@ -1425,8 +1585,13 @@ function AssessmentReport({
       <ChainSection number="02" label="Applicability">
         {/* No applicability sentence here: the opening's "Why this repository is
             affected" already states it from the same `summary.reason`. This
-            stage is the deeper evidence behind that sentence. */}
-        <div className="flex min-w-0 flex-col gap-3">
+            stage is the evidence behind that sentence -- the ledger by
+            default, the per-workspace narrative still one disclosure away. */}
+        <div className="flex min-w-0 flex-col gap-4">
+          <ApplicabilityLedger
+            evidence={evidence}
+            workspaces={assessment.coverage?.workspaces ?? []}
+          />
           {assessment.coverage ? (
             <CoverageDetail workspaces={assessment.coverage.workspaces} />
           ) : (
@@ -1438,13 +1603,22 @@ function AssessmentReport({
       </ChainSection>
 
       <ChainSection number="03" label="Code impact">
+        {/* The count is not repeated here -- the opening already states it for
+            every AFFECTED assessment, and the rows below are self-counting. */}
         <div className="flex min-w-0 flex-col gap-3">
-          {summary.countLabel ? (
-            <span className="text-sm font-medium text-fg-secondary">{summary.countLabel}</span>
+          {assessment.findings.length > 0 ? (
+            <FindingsEvidence findings={assessment.findings} />
           ) : (
-            <span className="text-xs text-fg-tertiary">No confirmed usages recorded.</span>
+            <div className="flex min-w-0 flex-col gap-1">
+              <span className="text-xs text-fg-tertiary">No confirmed usages were recorded.</span>
+              {assessment.status === 'UNCERTAIN' && (
+                <span className="text-xs text-fg-tertiary">
+                  Applicability could not be determined, so the absence of a match is not evidence
+                  that this change does not apply.
+                </span>
+              )}
+            </div>
           )}
-          {assessment.findings.length > 0 && <FindingsEvidence findings={assessment.findings} />}
         </div>
       </ChainSection>
 
@@ -1709,6 +1883,7 @@ export default async function AnalysisRunPage({ params }: { params: Promise<{ id
         assessment={assessment}
         analysisRunId={analysisRun.id}
         commitSha={analysisRun.commitSha}
+        evidence={analysisRun.evidence}
       />
     ),
   }));
