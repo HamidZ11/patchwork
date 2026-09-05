@@ -14,133 +14,203 @@
    deciding to change it. See DESIGN.md Sections 9-12.
 
    Every value below is stated per theme rather than derived by inverting
-   the other one: no single grey can satisfy WCAG AA against both a white
-   and a near-black canvas (the light ceiling is relative luminance
-   <= 0.183, the dark floor is >= 0.189), so a "dark theme" built by
-   flipping light-theme values necessarily fails one side. Each pair is
-   chosen for its own background and verified in both.
+   the other one: no single grey satisfies WCAG AA against both a paper
+   canvas and a graphite one, so a "dark theme" built by flipping
+   light-theme values necessarily fails one side. Each value is chosen for
+   its own background and verified in both.
+
+   Two rules this layer is checked against, because both were violated
+   before the readability pass:
+
+   1. A text token is verified against EVERY background it can actually be
+      drawn on, not just the canvas -- `canvas`, `surface-hover`, `surface`
+      and `evidence`. The worst case is the ground furthest from the text,
+      and that is what the ratios in the comments below quote.
+   2. Surfaces are an ordered ladder measured in CIE L*, and the
+      interactive hint (`surface-hover`) is always a SMALLER step off the
+      canvas than the state it must not compete with (`surface`, which is
+      also the selected state). Both themes previously had this inverted.
+
+   See DESIGN.md Section 31 for the full method and the measured table.
    --------------------------------------------------------------------------- */
 
 :root {
-  /* Surfaces. `canvas` is the page ground; `surface` is a grouping tint for
-     a multi-part object that must read as one unit; `evidence` is the
-     ground for machine output Patchwork is quoting back (diffs, logs,
-     findings) and is deliberately a separate role from `surface` even
-     though the two coincide in this theme -- they diverge in dark.
+  /* Surfaces form one elevation ladder, measured in CIE L* rather than
+     eyeballed hex steps: `canvas` is the page ground, `surface-hover` is the
+     weakest interactive hint, `surface` is a grouping tint for a multi-part
+     object (and the selected state), `evidence` is the ground for machine
+     output Patchwork is quoting back (diffs, logs, findings).
 
-     Light canvas is a warm, slightly off-white paper tone
-     (`#faf9f6`), not pure `#ffffff` -- introduced in the /repositories
-     redesign (Slice 2) specifically to read closer to a technical
-     document than a stark white app screen. `surface`/`rule` are warmed
-     to match on the same axis so the theme reads as one deliberate
-     palette rather than a white canvas with grey tokens dropped onto it.
-     Re-verified against 4.5:1/AA for every text tier and against 3:1 for
-     rule-strong-as-a-border at this exact value before shipping (see
-     DESIGN.md Section 10) -- this is a real, checked palette choice, not
-     an eyeballed "make it cream" pass. Dark is unchanged from Slice 1. */
-  --canvas: #faf9f6;
-  --surface: #f3f1ec;
-  --surface-hover: #ece9e2;
-  --evidence: #f3f1ec;
+     Ordering is deliberate and was previously wrong in both themes:
+     `surface-hover` used to be a BIGGER step off the canvas than `surface`
+     (light ΔL* 5.53 vs 2.76), so hovering an unselected assessment row read
+     as more prominent than the selected one. Selection must dominate hover,
+     so the hint is now half the step of the state -- ΔL* 2.43 for hover,
+     4.88 for selection, a 2.0x ratio.
 
-  /* Text. Three tiers carry all real content; `faint` is a fourth, narrow
-     role for true gutters (diff line numbers) and is still AA-legible. */
-  --fg: #09090b; /* 18.90:1 */
-  --fg-secondary: #3f3f46; /* 9.92:1 */
-  --fg-tertiary: #52525b; /* 7.34:1 */
-  --fg-faint: #71717a; /* 4.59:1 */
+     `evidence` was also literally identical to `surface` here, which made
+     every quoted diff/log block invisible inside an AFFECTED assessment
+     (that article is itself `bg-surface`). It is now its own step down.
+
+     The warm off-white paper tone from the /repositories redesign is kept
+     and the whole ramp is built on the same warm axis, so the theme reads
+     as one palette rather than a warm canvas with neutral greys dropped on
+     it. */
+  --canvas: #fbf9f4; /* L* 97.95 */
+  --surface-hover: #f4f2ed; /* L* 95.52 */
+  --surface: #edebe6; /* L* 93.07 */
+  --evidence: #e7e5e0; /* L* 90.97 */
+
+  /* Text. Every tier is verified against the DARKEST background it can
+     actually land on (`evidence`), not just the canvas -- the previous
+     values were only checked against the canvas, which is how `fg-faint`
+     shipped at 4.28:1 on `surface` and 3.99:1 on `surface-hover`, i.e.
+     below AA exactly where diff gutters and stage numbers are drawn.
+     Ratios below are canvas / evidence. */
+  --fg: #0e0c07; /* 18.58 / 15.53 */
+  --fg-secondary: #403e39; /* 10.15 / 8.48 */
+  --fg-tertiary: #56544f; /* 7.19 / 6.01 */
+  --fg-faint: #676560; /* 5.53 / 4.62 */
 
   /* Rules. Structural hairlines, not state indicators -- a border that
-     ever conveys state (focus, error) must meet 3:1 on its own. */
-  --rule: #e6e2d9;
-  --rule-strong: #d6d1c4;
+     ever conveys state (focus, error) must meet 3:1 on its own.
+     `rule-strong` is nudged from 1.45:1 to 1.86:1 against the canvas: it
+     is the only boundary the secondary button has (that button is
+     `bg-canvas` on `bg-canvas`), and it also draws the 2px quote bars. */
+  --rule: #dfddd8; /* 1.29 vs canvas */
+  --rule-strong: #bcb9b3; /* 1.86 vs canvas */
 
   /* Status text (DESIGN.md Section 11). Every one of these is always
-     paired with a real label; colour never carries a status alone. */
-  --attention: #b45309; /* 5.02:1 */
-  --indeterminate: #475569; /* 7.58:1 */
-  --success: #047857; /* 5.48:1 */
-  --failure: #be123c; /* 6.29:1 */
+     paired with a real label; colour never carries a status alone. Hue
+     families are unchanged -- `attention` and `success` are darkened only
+     because they failed AA on the surfaces they are actually drawn on
+     (attention was 4.45:1 on `surface`, 4.14:1 on `surface-hover`, and
+     AFFECTED is the single most important label in the product).
+     Ratios are canvas / evidence. */
+  --attention: #9a4708; /* 6.09 / 5.09 */
+  --indeterminate: #475569; /* 7.20 / 6.02 */
+  --success: #036c4e; /* 6.12 / 5.12 */
+  --failure: #be123c; /* 5.97 / 4.99 */
 
   /* Status marks (the dot). One value per role across both themes -- the
      dot reinforces an adjacent AA-legible label rather than carrying the
      status itself, so it is tuned for recognisability, not for text
-     contrast. */
+     contrast. The two greys are lifted so they still clear 3:1 on the new
+     graphite dark canvas as well as here; the three chromatic marks are
+     unchanged. */
   --mark-attention: #f59e0b;
-  --mark-indeterminate: #64748b;
+  --mark-indeterminate: #708097; /* 3.82 light / 4.04 dark, both canvases */
   --mark-success: #10b981;
   --mark-failure: #f43f5e;
-  --mark-neutral: #71717a;
+  --mark-neutral: #7d7b76; /* 4.02 light / 3.84 dark, both canvases */
 
-  /* Diff. The one place the status roles apply to code rather than state. */
-  --diff-add-bg: #ecfdf5;
-  --diff-add-fg: #065f46;
-  --diff-del-bg: #fff1f2;
-  --diff-del-fg: #9f1239;
+  /* Diff. The one place the status roles apply to code rather than state.
+     Row tints are re-seated against the (now darker) `surface` the diff
+     table actually sits on: the deleted-row tint used to clear it by only
+     ΔL* 1.07, so the add/del distinction was carried almost entirely by
+     text colour. */
+  --diff-add-bg: #e8f7ef; /* ΔL* +2.89 vs surface */
+  --diff-add-fg: #065f46; /* 6.95 on its row */
+  --diff-del-bg: #fceff0; /* ΔL* +2.39 vs surface */
+  --diff-del-fg: #9f1239; /* 7.15 on its row */
 
   /* Warning surface: a whole region that is itself the message. Distinct
      from `--attention`, which colours a status label inside ordinary
-     content. */
-  --warning-surface: #fffbeb;
-  --warning-rule: #fcd34d;
-  --warning-fg: #78350f;
+     content. Given a real step below the canvas (it was 1.03:1, i.e. the
+     banner was a border and nothing else). */
+  --warning-surface: #fbf2d9; /* ΔL* -2.36 vs canvas */
+  --warning-rule: #dcae3a; /* 1.85 on the surface */
+  --warning-fg: #78350f; /* 8.12 on the surface */
 
   /* Action fills. Colourless by design (Section 10): pure contrast, never
      an accent hue, so a control never competes with a status colour.
      `accent` is the in-content weight; `accent-strong` is the heavier
      landing-page weight -- a real documented distinction (Section 16),
-     not a duplicate. */
-  --accent: #18181b;
-  --accent-fg: #ffffff;
-  --accent-hover: #27272a;
-  --accent-strong: #09090b;
+     not a duplicate. Warmed onto the same axis as the rest of the ramp. */
+  --accent: #1c1a17;
+  --accent-fg: #ffffff; /* 17.36 on the fill */
+  --accent-hover: #302d29;
+  --accent-strong: #0e0c07;
   --accent-strong-fg: #ffffff;
-  --accent-strong-hover: #27272a;
+  --accent-strong-hover: #302d29;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --canvas: #0a0a0a;
-    --surface: #101011;
-    --surface-hover: #1b1b1d;
-    --evidence: #18181b;
+    /* Deep graphite, not near-black. The previous canvas was #0a0a0a at
+       L* 2.74 -- effectively pitch black -- and `surface` sat only ΔL* 1.97
+       above it, so a grouping tint was invisible and long evidence pages
+       merged into one dark field. The ladder now starts at L* 12.25 and
+       every step is perceptible:
 
-    --fg: #fafafa; /* 18.97:1 */
-    --fg-secondary: #d4d4d8; /* 13.40:1 */
-    --fg-tertiary: #a1a1aa; /* 7.72:1 */
-    /* Not zinc-500: on this canvas that lands at 4.10:1, under AA. Nudged
-       up until it clears, rather than shipping an illegible gutter. */
-    --fg-faint: #7c7c85; /* 4.79:1 */
+         canvas -> surface-hover  ΔL* 2.91  (interactive hint)
+         canvas -> surface        ΔL* 6.22  (grouping / selected state)
+         surface -> evidence      ΔL* 3.23  (machine output)
 
-    --rule: #27272a;
-    --rule-strong: #3f3f46;
+       Selection is 2.1x the hover step, which is the same correction made
+       in light: `surface-hover` used to be ΔL* 7.10 off the canvas while
+       `surface` was 1.97, so a hovered row out-shouted the selected one.
 
-    --attention: #fbbf24; /* 11.86:1 */
-    --indeterminate: #94a3b8; /* 7.72:1 */
-    --success: #34d399; /* 10.30:1 */
-    --failure: #fb7185; /* 7.36:1 */
+       Equal RGB channels remove the previous warm/brown cast without
+       introducing a cool tint. Each neutral is the nearest 8-bit grey
+       by relative luminance to its previous value; surface L* moves by
+       less than 0.12. Light keeps its independent warm paper palette. */
+    --canvas: #202020; /* L* 12.25 */
+    --surface-hover: #262626; /* L* 15.16 */
+    --surface: #2d2d2d; /* L* 18.47 */
+    --evidence: #343434; /* L* 21.70 */
+
+    /* Raising the canvas raises the AA floor for every tier, so all four
+       are re-solved against `evidence` (the lightest ground they land on)
+       rather than the canvas. `fg` is a soft neutral near-white rather
+       than #fafafa: 14.43:1 on the canvas is ample, and pure white on
+       graphite glares over long technical pages. Ratios are canvas /
+       evidence; `fg-faint` also clears 4.61 on the unchanged add-row tint,
+       the worst-case background for diff line numbers. */
+    --fg: #f1f1f1; /* 14.43 / 11.02 */
+    --fg-secondary: #cfcfcf; /* 10.46 / 7.99 */
+    --fg-tertiary: #bababa; /* 8.40 / 6.41 */
+    --fg-faint: #9e9e9e; /* 6.08 / 4.65 -- AA held on the lightest ground */
+
+    --rule: #414141; /* 1.60 vs canvas */
+    --rule-strong: #656565; /* 2.80 vs canvas */
+
+    /* Unchanged values: all four still clear AA on the lighter grounds
+       (worst case `failure` at 4.63 on evidence), so the truth mapping is
+       carried over exactly. Ratios are canvas / evidence. */
+    --attention: #fbbf24; /* 9.76 / 7.46 */
+    --indeterminate: #94a3b8; /* 6.35 / 4.86 */
+    --success: #34d399; /* 8.48 / 6.48 */
+    --failure: #fb7185; /* 6.05 / 4.63 */
 
     --mark-attention: #f59e0b;
-    --mark-indeterminate: #64748b;
+    --mark-indeterminate: #708097;
     --mark-success: #10b981;
     --mark-failure: #f43f5e;
-    --mark-neutral: #71717a;
+    --mark-neutral: #7d7b76;
 
-    --diff-add-bg: #081411;
-    --diff-add-fg: #6ee7b7;
-    --diff-del-bg: #1e090f;
-    --diff-del-fg: #fda4af;
+    /* Both row tints previously sat at or BELOW the surface behind them
+       (del was ΔL* -0.14), so a deleted line had no visible ground at all.
+       They are now seated at evidence luminance and separated by hue, not
+       brightness, so neither side out-weighs the other -- the +/- marker
+       and the text colour still carry the distinction. */
+    --diff-add-bg: #29382f; /* ΔL* +3.49 vs surface */
+    --diff-add-fg: #6ee7b7; /* 8.10 on its row */
+    --diff-del-bg: #403034; /* ΔL* +3.30 vs surface */
+    --diff-del-fg: #fda4af; /* 6.57 on its row */
 
-    --warning-surface: #451a03;
-    --warning-rule: #78350f;
-    --warning-fg: #fde68a;
+    /* Lifted: the old #451a03 landed at L* 15.54, three points off the new
+       canvas, which would have made the banner disappear. */
+    --warning-surface: #53300f; /* ΔL* +11.38 vs canvas */
+    --warning-rule: #a06b22; /* 2.57 on the surface */
+    --warning-fg: #fde68a; /* 9.38 on the surface */
 
-    --accent: #f4f4f5;
-    --accent-fg: #18181b;
-    --accent-hover: #ffffff;
-    --accent-strong: #ffffff;
-    --accent-strong-fg: #09090b;
-    --accent-strong-hover: #e4e4e7;
+    --accent: #f3f1ee;
+    --accent-fg: #22201d; /* 14.41 on the fill */
+    --accent-hover: #fbfaf8;
+    --accent-strong: #fbfaf8;
+    --accent-strong-fg: #22201d;
+    --accent-strong-hover: #ffffff;
   }
 }
 

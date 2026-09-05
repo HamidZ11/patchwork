@@ -203,10 +203,10 @@ stays shell-less, exactly per the direction below.
   dashboard frame. Patchwork's own information architecture is shallow
   (Section 33) and doesn't need persistent left-nav real estate the way
   a many-section SaaS product does.
-- Contents, left to right: a confident text-only "Patchwork" wordmark linked
-  to `/repositories`; a rule-separated, full-height `Repositories` item with
-  `aria-current="page"` and a bottom rule; then signed-in identity
-  (GitHub avatar + login) and sign-out at the far right. The current-route
+- Contents, left to right: a 24px monochrome mark and confident "Patchwork"
+  wordmark linked to `/repositories`; a full-height `Repositories` item with
+  `aria-current="page"` and a bottom rule; then a compact profile trigger
+  (GitHub avatar + login + chevron) at the far right. The current-route
   treatment names the user's location without inventing another route or
   implying a broader navigation system. The active route is a tab-like edge,
   not a small floating pill.
@@ -226,12 +226,28 @@ stays shell-less, exactly per the direction below.
   shell — it's page-specific wayfinding, not global navigation, and
   remains the small `text-xs` link style already established. See
   Section 19 for its exact shape.
-- Responsive: the login name hides below `md`. The Patchwork wordmark,
-  current route, avatar, and sign-out affordance stay visible at every width,
-  so the shell condenses without a hamburger or horizontal overflow.
-- Sign-out reuses `FormSubmitButton` (Section 16) with a `quiet` variant.
-  Quiet controls still have a stable hit target, hover fill, keyboard focus
-  ring, and pressed state; "quiet" means low emphasis, not loose text.
+- The original mark is two filled geometric pieces with a stepped joint,
+  rendered as two local SVG paths in `currentColor`. No separate logo font,
+  accent color, enclosing badge or animation. The brand link has a 44px hit
+  target and an 8px mark/word gap.
+- Responsive: below `sm`, the trigger retains a 44px avatar hit target and
+  a full accessible name while the login and chevron hide. The mark,
+  wordmark and real route remain visible. Long logins truncate in the
+  trigger but wrap in full inside the popover. Missing/failed avatars use
+  initials derived from the real login.
+- The profile dropdown uses the native `popover="auto"` primitive with
+  non-modal dialog semantics, ordinary link/button tab order, native
+  Escape/light-dismiss and focus restoration. It is not an ARIA `menu`:
+  no roving-tabindex or menu-only arrow-key contract is implied. Opening
+  focuses the first action; tabbing out dismisses it. Its top-layer bounds
+  track the trigger and viewport without relying on CSS anchor positioning.
+  Content is only the real GitHub login, an external GitHub-profile link,
+  and one sign-out form. Lucide supplies only the chevron/external-link
+  glyphs; no menu library or decorative motion is added.
+- Sign-out stays in `AppShell` as the same server action, moved into the
+  popover through a server-rendered child slot. It still reuses
+  `FormSubmitButton` (Section 16), including its pending/disabled state,
+  with a shell-scoped full-width 44px row. No auth/session logic changes.
 
 ## 6. Layout / grid rules
 
@@ -486,19 +502,35 @@ now impossible to get subtly wrong twice.
     tertiary" — reach for `tertiary` first; `faint` is for content that
     is a position marker beside the real content, not content itself.
   - Every tier is independently tuned per theme to clear WCAG AA (4.5:1)
-    against that theme's own canvas — see Section 31 for why this
-    replaced the earlier "just shift zinc by a fixed number of steps"
-    approach.
-- **Surfaces — three tokens**: `bg-canvas` (the page ground),
-  `bg-surface` (a grouping tint for a multi-part object that must read as
-  one unit — Section 12's `AFFECTED`-block pattern), `bg-evidence` (the
-  ground for machine output Patchwork is quoting back: a diff header, a
-  findings block, a `<pre>` output block). `surface` and `evidence`
-  currently share a value in both themes but are separate tokens because
-  they answer different questions ("this is one grouped thing" vs. "this
-  is Patchwork's own artifact") and may need to diverge once dark mode's
-  final balance is set (Section 31) — collapsing them into one token now
-  would silently re-couple two concepts that happen to look alike today.
+    against **every background it can actually be drawn on** — `canvas`,
+    `surface-hover`, `surface` and `evidence` — not just that theme's
+    canvas. **Correction**: this rule previously said "against that
+    theme's own canvas," which is a weaker check than it sounds, because
+    the canvas is the _easiest_ ground in both themes. Verifying against
+    the canvas alone is how `fg-faint` shipped at 4.28:1 on `surface` and
+    3.99:1 on `surface-hover` in light — below AA in exactly the places
+    diff gutters and stage numbers are drawn — and how light `attention`,
+    the AFFECTED label, shipped at 4.45:1 on the assessment article it
+    lives inside. The worst-case ground is the one furthest from the
+    text, and that is the number that has to clear the bar. See
+    Section 31 for why this replaced the earlier "just shift zinc by a
+    fixed number of steps" approach.
+- **Surfaces — four tokens forming one ordered elevation ladder**:
+  `bg-canvas` (the page ground), `bg-surface-hover` (the weakest
+  interactive hint), `bg-surface` (a grouping tint for a multi-part
+  object that must read as one unit — Section 12's `AFFECTED`-block
+  pattern — and the selected state), `bg-evidence` (the ground for
+  machine output Patchwork is quoting back: a diff header, a findings
+  block, a `<pre>` output block). **Correction**: this previously read
+  "three tokens" and noted that `surface` and `evidence` shared a value
+  "but may need to diverge once dark mode's final balance is set." They
+  now do diverge, in both themes, and the reason was a real defect rather
+  than a balance preference: an evidence block is normally rendered
+  _inside_ an `AFFECTED` assessment article, which is itself
+  `bg-surface`, so an identical value made every quoted diff, log and
+  findings block invisible in light mode. The ladder is now specified in
+  CIE L\* steps, not hex intuition — see Section 31 for the measured
+  table and the ordering rule that governs hover versus selection.
 - **Rules — two tokens**: `border-rule` (the default hairline —
   dividers, ordinary borders) and `border-rule-strong` (a border that
   needs more presence: a bordered evidence block, a quoted-text left
@@ -606,7 +638,8 @@ table is the role mapping, not the palette.
   requirement box, coverage-detail rail), around a list's outer edge
   when it has one, and for every `divide-y`/`divide-x` separator.
 - Borders are **1px, never thicker**, and never colored with anything
-  but the zinc pair above (no colored borders for status — status is
+  but the `rule`/`rule-strong` pair above (no colored borders for status
+  — status is
   communicated by dot + text color per Section 11, never by outlining an
   element in that color).
 - **A list of repeated items is separated by `divide-y`, not by wrapping
@@ -1278,8 +1311,12 @@ for>`/implicit wrapping, error text programmatically associated via
   scope but not part of this design foundation and should not be added
   speculatively.
 - **Correction: each theme's token values are chosen independently
-  against that theme's own canvas, not derived by shifting the other
-  theme's value by a fixed number of palette steps.** The previous
+  against every ground they can land on, not derived by shifting the
+  other theme's value by a fixed number of palette steps.** (Originally
+  written as "against that theme's own canvas"; tightened during the
+  readability pass — see the worst-case-ground rule in Section 10, and
+  note that the "near-black" framing below describes the palette this
+  section then still had, not the graphite one it has now.) The previous
   version of this rule ("the same roles at their existing shade offsets,
   roughly one step lighter for text, one step darker for backgrounds")
   was a reasonable-sounding heuristic that turns out not to hold: no
@@ -1292,28 +1329,125 @@ dark:zinc-600` (2.56:1 in _both_ themes), `zinc-500 dark:zinc-500`
   (4.10:1 in dark) — not because anyone chose them for that reason, but
   because "shift by one step" has no mechanism to notice when it stops
   being enough. Every token in `globals.css` is now verified per theme
-  independently (text tokens against 4.5:1, non-text marks/borders
-  against 3:1) rather than assumed correct because it "matches" its
-  partner. This does not mean the two themes may look unrelated — they
+  independently (text tokens against 4.5:1 on `canvas`, `surface-hover`,
+  `surface` and `evidence`; non-text marks/borders against 3:1) rather
+  than assumed correct because it "matches" its partner. The check is
+  run twice: once on the palette itself, and once against the real
+  rendered DOM — every text node on `/repositories` and Analysis Detail,
+  in both themes, with each colour resolved over its nearest opaque
+  ancestor. This does not mean the two themes may look unrelated — they
   still express the same roles in the same relative order (canvas
   darkest→lightest text runs the same direction in both) — only that the
   literal numbers are tuned, not mirrored.
 - No separate dark-mode-only decorative treatment (no dark-mode-only
   glow, no dark-mode-only gradient) — the two themes differ only in
   which end of the neutral/status scale they sit on, never in kind.
-- **Light canvas is a warm off-white (`#faf9f6`), not pure `#ffffff`** —
+- **Light canvas is a warm off-white (`#fbf9f4`), not pure `#ffffff`** —
   acted on during the `/repositories` redesign (Slice 2), which is the
-  rebalance this section previously left open. `surface`/`rule` moved
-  with it onto the same warm axis (`#f3f1ec`/`#e6e2d9`) so the theme
-  reads as one deliberately warmed palette, not a white canvas with grey
-  structural tokens dropped onto it unchanged. Every text tier was
-  re-verified against 4.5:1 at the new canvas value before shipping (see
-  Section 10) — this is a checked palette choice, not an eyeballed "make
-  it cream" pass. **Dark is intentionally untouched by this** — it still
-  uses the values Slice 1 established. Both themes remain maintained to
-  the same contrast bar; this section's own principle (independent
-  per-theme tuning, not mirrored values) is exactly what makes it safe to
-  advance one theme's palette without the other by construction.
+  rebalance this section previously left open. The rest of the ramp sits
+  on the same warm axis so the theme reads as one deliberately warmed
+  palette, not a white canvas with grey structural tokens dropped onto it
+  unchanged.
+- **Dark canvas is neutral graphite (`#202020`, L\* 12.3), not near-black.**
+  **Correction**: this section previously recorded "Dark is intentionally
+  untouched — it still uses the values Slice 1 established," and treated
+  advancing one theme without the other as safe by construction. The
+  independence principle holds, but leaving dark parked at Slice 1's
+  `#0a0a0a` was not neutral — it was a real readability defect that
+  measurement, not taste, exposed:
+  - The canvas sat at **L\* 2.74**, effectively pitch black, and
+    `surface` cleared it by only **ΔL\* 1.97** — so a grouping tint on a
+    multi-part object was invisible and long evidence pages merged into
+    one dark field.
+  - Both diff row tints sat at or _below_ the surface behind them
+    (`del` was **ΔL\* −0.14**), so an add/delete distinction Section 20
+    specifies as carried by the row background was in practice carried
+    only by text colour.
+  - The warning surface sat within ΔL\* 3 of the canvas.
+
+  Dark now uses equal-channel RGB neutrals. The readability pass's warm
+  ramp (R+2 / G / B−3) read as brown/olive on broad surfaces; matching the
+  light theme's warmth is not required. Each dark neutral is replaced by
+  the nearest 8-bit grey by linear-sRGB relative luminance, keeping the
+  readability improvements without adding a cool cast. Light remains
+  intentionally warm and unchanged. No blue-tinted "AI dark," purple,
+  terminal-green, glow or gradients.
+
+  Dark neutralisation measurements (relative luminance Y on a 0–1 scale;
+  CIE L\* derived from Y):
+
+  | surface       | before    | after     | Y before → after  | L\* before → after |
+  | ------------- | --------- | --------- | ----------------- | ------------------ |
+  | canvas        | `#22201d` | `#202020` | 0.01462 → 0.01444 | 12.36 → 12.25      |
+  | surface-hover | `#282623` | `#262626` | 0.01959 → 0.01938 | 15.27 → 15.16      |
+  | surface       | `#2f2d2a` | `#2d2d2d` | 0.02648 → 0.02624 | 18.58 → 18.47      |
+  | evidence      | `#363431` | `#343434` | 0.03462 → 0.03434 | 21.81 → 21.70      |
+
+  The four text tiers become `#f1f1f1`, `#cfcfcf`, `#bababa`, `#9e9e9e`;
+  `rule` / `rule-strong` become `#414141` / `#656565`. These are the only
+  ten token-value changes. Status text and marks, diff and warning colors,
+  action tokens, all light values, component markup and behavior stay
+  unchanged.
+
+  WCAG contrast is recalculated using linear-sRGB Y and
+  `(Ylighter + 0.05) / (Ydarker + 0.05)`, without rounding before the AA
+  check. On `evidence`, primary / secondary / tertiary / faint text are
+  **11.02 / 7.99 / 6.41 / 4.65:1**. Diff line numbers are the stricter
+  faint-text case: **4.61:1** on added rows and **4.64:1** on deleted rows.
+  All meet the 4.5:1 normal-text AA threshold, including small metadata.
+  Unchanged status text has a **4.63:1** minimum on neutral surfaces;
+  diff text stays **8.10:1** added / **6.57:1** deleted. The `fg` focus
+  ring and selected rail clear **11.02:1** on the lightest neutral ground.
+  Structural borders remain deliberately restrained at **1.60 / 2.80:1**
+  against the canvas; they are not standalone state indicators.
+
+- **Surfaces are an ordered ladder measured in CIE L\*, and the
+  interactive hint is always a SMALLER step off the canvas than the state
+  it must not compete with.** This is the ordering rule, and both themes
+  previously violated it: `surface-hover` was a _bigger_ step off the
+  canvas than `surface` (light ΔL\* 5.53 vs 2.76; dark 7.10 vs 1.97), so
+  hovering an unselected assessment row read as more prominent than the
+  selected row — a second, quieter version of the selected-state
+  ambiguity Section 32 already records. Selection is now roughly twice
+  the hover step in both themes:
+
+  | step                                   | light ΔL\* | dark ΔL\* |
+  | -------------------------------------- | ---------- | --------- |
+  | canvas → surface-hover (hint)          | 2.43       | 2.91      |
+  | canvas → surface (grouping / selected) | 4.88       | 6.22      |
+  | surface → evidence (machine output)    | 2.11       | 3.23      |
+
+  The fix is a token-value change, not a component change — nothing in
+  the selector's markup moved, and the deliberate absence of
+  `transition-colors` there (Section 32) still stands.
+
+- **Raising the dark canvas raises the AA floor, and lower text tiers
+  move with it.** This is the cost of the change and is accepted rather
+  than worked around: on a lighter ground, light-on-dark text needs to be
+  lighter to hold 4.5:1, which compresses the space available below
+  `fg-tertiary`. The tiers stay clearly separated (ΔL\* 9–12 apart) and
+  every one clears AA on `evidence`, the lightest ground it can land on.
+  Do not recover contrast headroom by letting `fg-faint` slip under AA —
+  it is used for diff line numbers and stage markers, which are content,
+  not decoration.
+- **The two grey status marks are lifted; the three chromatic ones are
+  not.** `mark-neutral` and `mark-indeterminate` lost contrast when the
+  dark canvas rose, so both moved to values that clear 3:1 on _both_
+  canvases (`#7d7b76`, `#708097`), preserving Section 11's
+  one-value-per-role-across-both-themes contract. `mark-attention`,
+  `mark-success` and `mark-failure` keep their exact previous values:
+  their light-mode ratios are unchanged by this pass, and a dot that
+  reinforces an adjacent AA-legible label is tuned for recognisability,
+  not for text contrast (Section 11). Darkening them to hit 3:1 on paper
+  would collapse the mark into the status _text_ colour and erase that
+  distinction.
+- **Status hue families are never rebalanced for looks — only for
+  measured failures.** Light `attention` (`#9a4708`) and `success`
+  (`#036c4e`) were darkened within their own hue families because they
+  failed AA on the surfaces they are actually drawn on (4.45:1 and 4.86:1
+  on `surface`). All four dark status colours are carried over unchanged,
+  since all four still clear AA on the lighter grounds. The truth mapping
+  in Section 11 is untouched in both themes.
 
 ## 32. Product-specific Patchwork patterns
 
