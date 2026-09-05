@@ -214,6 +214,64 @@
   }
 }
 
+/* ---------------------------------------------------------------------------
+   Landing-page scope.
+
+   The public landing page commits to Patchwork's graphite identity in both
+   colour schemes, because its primary content is four real screenshots of the
+   dark product: a light landing page would frame dark product imagery against
+   warm paper and read as two different products. Rather than change the theme
+   globally -- which would drag the authenticated app with it -- this pins the
+   dark token values on one subtree. Nothing outside `[data-surface='landing']`
+   is affected, and the tokens themselves are the same values the dark block
+   already defines, not a parallel palette.
+
+   `--landing-accent` is the one addition: an editorial accent used for the
+   narrative spine (section numerals, the workflow rule). It aliases the
+   existing `--mark-attention` amber deliberately -- the accent that says "this
+   change affects you" in the product is the same accent that carries the
+   argument on the landing page, so the page cannot drift into a marketing
+   palette that means nothing in the app. Actions stay colourless
+   (`--accent`), exactly as they are in the product.
+   --------------------------------------------------------------------------- */
+[data-surface='landing'] {
+  --canvas: #202020;
+  --surface-hover: #262626;
+  --surface: #2d2d2d;
+  --evidence: #343434;
+
+  --fg: #f1f1f1;
+  --fg-secondary: #cfcfcf;
+  --fg-tertiary: #bababa;
+  --fg-faint: #9e9e9e;
+
+  --rule: #414141;
+  --rule-strong: #656565;
+
+  --attention: #fbbf24;
+  --indeterminate: #94a3b8;
+  --success: #34d399;
+  --failure: #fb7185;
+
+  --mark-attention: #f59e0b;
+  --mark-indeterminate: #708097;
+  --mark-success: #10b981;
+  --mark-failure: #f43f5e;
+  --mark-neutral: #7d7b76;
+
+  --accent: #f3f1ee;
+  --accent-fg: #22201d;
+  --accent-hover: #fbfaf8;
+  --accent-strong: #fbfaf8;
+  --accent-strong-fg: #22201d;
+  --accent-strong-hover: #ffffff;
+
+  --landing-accent: #f59e0b;
+
+  background: var(--canvas);
+  color: var(--fg);
+}
+
 @theme inline {
   --color-canvas: var(--canvas);
   --color-surface: var(--surface);
@@ -254,6 +312,7 @@
   --color-accent-strong: var(--accent-strong);
   --color-accent-strong-fg: var(--accent-strong-fg);
   --color-accent-strong-hover: var(--accent-strong-hover);
+  --color-landing-accent: var(--landing-accent);
 
   /* 11px. Was four separate `text-[11px]` arbitrary values; naming it makes
      it a scale step (micro-labels, log output) instead of a one-off. */
