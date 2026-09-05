@@ -851,25 +851,63 @@ built.
   screen needs this yet; when one does, use a real `<table>` with
   `<thead>`, not a div-grid impersonating one — semantics matter for
   accessibility and for the reader's ability to scan a column.
-- **A repository is one bordered ledger object, not a generic card and
-  not a loose row.** `RepositoryLedger` uses a thin rule and the existing
-  `rounded-md` radius to make identity, verdict, snapshot, and action read
-  as one record. The surface earns its boundary because the record can
-  contain a nested provider-change register; it has no shadow or
-  decorative elevation. Other top-level collections still default to
-  `border-t` plus `divide-y` unless their records have the same genuine
-  multi-region grouping need.
-- **Every repository keeps the same three-region header.** At `sm`, CSS
-  Grid aligns repository identity, primary conclusion, and action across
-  records. Below `sm`, those regions stack in document order. This shared
-  outer primitive is what makes affected and clear repositories visibly
-  related even though their evidence density differs.
+- **Correction: a repository is one row in one bordered ledger, not its
+  own bordered record.** This previously read "a repository is one
+  bordered ledger object, not a generic card and not a loose row," with
+  its own three-region header (identity / conclusion / action), its own
+  snapshot rail, and a nested provider-change register. That shape was
+  right at two repositories and measurably wrong well before twenty:
+
+  | repositories | page height | last attention row at |
+  | ------------ | ----------- | --------------------- |
+  | 2            | 983px       | 742px                 |
+  | 5            | 1,879px     | 1,442px               |
+  | 10           | 3,166px     | 1,983px               |
+  | 20           | 5,668px     | **3,189px**           |
+
+  An affected record measured 508px against a clear record's 162px, and
+  68% of that (346px) was the provider-change register. The failure is
+  not aesthetic: the list is already sorted attention-first, and at
+  twenty repositories the last repository needing attention sat three and
+  a half screens down, so the sort could not actually be used. The same
+  content as one aligned row plus a collapsed preview is 2,039px at
+  twenty, with the last attention row at 1,026px. Section 12's rule ("a
+  list of repeated items is separated by `divide-y`, not by wrapping each
+  item in its own bordered card") now applies here too, as it always
+  should have — twenty boundaries is twenty things to parse before
+  reading any of them.
+
+- **An index row is one screen-line of content, and its columns align
+  across the whole collection.** At `sm`, CSS Grid aligns identity+
+  metadata, verdict, and action into three columns so a reader scans one
+  vertical strip rather than re-finding each field per record. Below
+  `sm`, those regions stack in document order. Snapshot facts (visibility,
+  branch, resolved SDK version, commit, analysed-at) are one wrapping
+  `font-mono` metadata line under the name, not a labelled `<dl>` region:
+  at index density they are orientation, and a definition list per row
+  costs more vertical space than the facts are worth.
 - **Asymmetric weight comes from evidence, not a different container.**
-  `affected` and `uncertain` records append a provider-change register
-  containing only real change titles, assessment status, and confirmed
-  finding counts. `clear`, `failed`, and `not_analysed` records stop after
-  the snapshot rail because they have no affected or uncertain changes
-  to enumerate. The outer record and its hierarchy do not change.
+  `affected` and `uncertain` rows carry a count fragment beside the status
+  label and a collapsed disclosure naming each real change; `clear`,
+  `failed`, and `not_analysed` rows carry the status label alone, because
+  they have nothing further that is real. The row primitive, its columns,
+  and its type scale do not change between them — only how many of its
+  optional parts are populated. Measured, that is a 105px attention row
+  against a 68px clear row.
+- **A per-row disclosure is a native `<details>`, and every row's
+  disclosure shares one `name`.** `name` makes the browser treat them as
+  one exclusive accordion — opening a second preview closes the first —
+  so an index cannot silently grow past a screen as a reader works down
+  it. It is a browser primitive: no client component, no accordion state,
+  full keyboard operation for free, and where `name` is unsupported the
+  disclosures simply stay independent rather than breaking. Never
+  rebuild this with a clickable `div` and `useState`.
+- **An index row is not a click target.** The row has no hover tint,
+  because the navigation affordance is the button inside it; tinting the
+  row would promise a click the row does not accept. `focus-within` is
+  the exception and is not transitioned — it orients a keyboard user to
+  which row they are in, and a transition would let the tint lag behind
+  the focus that caused it (Section 32's selected-state lesson).
 - **Repository status stays inside the content, never on the container.**
   The record border remains neutral; a dot and explicit status label carry
   the state beside the conclusion. This keeps status from turning the whole
@@ -885,14 +923,16 @@ built.
   metadata. The rows stay visually static because they are evidence, not
   click targets; there are no filters, tags, sorting controls, or row-level
   actions to imply capabilities Patchwork does not have.
-- Long lists (Section 4.9 of the Taste Skill flags this for marketing
-  pages) are less of a concern here — Patchwork's lists are inherently
-  bounded (a user's connected repositories, the ~4 registered rules'
-  worth of assessments per analysis run, at most a handful of
-  verification steps) and a plain divided list remains the right choice
-  at this scale. Revisit only if a real screen needs to show dozens-plus
-  rows at once (e.g., an org with 100+ connected repositories) — that's
-  a pagination/filtering problem, not a "switch to cards" problem.
+- **Density is the first answer to scale; search and filtering are the
+  second, and are only earned by measurement.** The repositories index was
+  stress-tested at 2, 5, 10 and 20 records before any control was
+  considered: at twenty it is 2,039px (2.3 screens) with every
+  attention-needing repository inside the first 1,026px, and the page
+  summary already states how many need attention. Nothing was scanning-
+  limited, so no search box and no status filter were added — an empty
+  control is worse than no control. Revisit at the scale that actually
+  breaks this (an org with 100+ connected repositories), and revisit it
+  as a pagination/filtering problem, not a "switch to cards" problem.
 
 ## 19. Navigation
 
@@ -1648,8 +1688,14 @@ remaining Invoice.subscription access(es)"`); `StaticValidation` splits
   requirement (region D, "impact information") explicitly asked for this
   once the route was confirmed to already return it. This tier exists
   specifically for a repository whose report is rich enough to enumerate
-  (`affected`/`uncertain`); `clear`/`not_analysed`/`failed` ledgers stop
-  after the shared snapshot rail.
+  (`affected`/`uncertain`); `clear`/`not_analysed`/`failed` rows carry the
+  status label alone. **Amended by the index scalability pass**: the tier
+  is unchanged in what it may show, but it is now one line per change
+  behind a collapsed disclosure rather than a two-line always-visible
+  register. The change's own status no longer needs its own line — for an
+  `AFFECTED` change the usage count implies it, and an `UNCERTAIN` one
+  says so in the same column — which is what took the register from 346px
+  to a line per change. See Section 18 for the measurements.
 
 ## 33. Index-screen vs. detail-screen rules
 

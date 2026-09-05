@@ -1,3 +1,4 @@
+import { Fragment } from 'react';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { buttonVariantClassName } from '@/components/button-styles';
@@ -110,31 +111,25 @@ function impactStateLabel(state: ImpactState): string {
 }
 
 /**
- * The one-sentence conclusion a repository's report block leads with --
- * the same real derivation `/analysis-runs/[id]` uses for its own impact
- * headline (a real count from `latestImpactAssessments`, not a fabricated
- * summary), adapted for a per-repository line rather than a per-run one.
- * Not imported from that page: two small, independently-evolving product
- * copy strings for two different screens don't yet justify a shared
- * module, and Analysis Detail's composition is out of scope for this
- * slice.
+ * The count fragment that answers "how much?" beside the status label.
+ * Only the two states that have real per-change counts get one -- `clear`,
+ * `failed` and `not_analysed` are fully carried by their status label. This
+ * replaced a per-record headline that rendered a conclusion sentence for
+ * every state ("No known impact", "Analysis failed", "Awaiting first
+ * analysis"); on an index row each of those restates its own status label at
+ * the cost of a 28px line on every repository in the estate, and the next
+ * step for the two that have one is already the button beside it.
  */
-function repositoryConclusion(state: ImpactState): string {
+function impactCounts(state: ImpactState): string | null {
   switch (state.kind) {
-    case 'affected': {
-      const total = state.affectedCount;
-      return `${total} change${total === 1 ? '' : 's'} affect${total === 1 ? 's' : ''} this repository`;
-    }
-    case 'uncertain': {
-      const total = state.uncertainCount;
-      return `${total} change${total === 1 ? '' : 's'} could not be confirmed`;
-    }
-    case 'clear':
-      return 'No known impact';
-    case 'failed':
-      return 'Analysis failed';
-    case 'not_analysed':
-      return 'Awaiting first analysis';
+    case 'affected':
+      return state.uncertainCount > 0
+        ? `${state.affectedCount} affected · ${state.uncertainCount} uncertain`
+        : `${state.affectedCount} affected`;
+    case 'uncertain':
+      return `${state.uncertainCount} uncertain`;
+    default:
+      return null;
   }
 }
 
@@ -219,14 +214,62 @@ async function analyseRepository(repositoryId: string) {
   redirect('/repositories');
 }
 
+/**
+ * `owner/name` with the owner de-emphasised. Every row on this page
+ * usually shares one owner, so rendering `fullName` at a single weight
+ * makes twenty rows begin with the same twenty identical characters --
+ * the part that actually distinguishes one row from another is the
+ * repository name, and that is what the scan should land on. Both halves
+ * are real DTO fields, not a parsed string.
+ */
 function RepositoryIdentity({ repo }: { repo: Repository }) {
   return (
-    <div className="min-w-0">
-      <h2 className="break-words text-lg font-semibold tracking-tight text-fg">{repo.fullName}</h2>
-      <p className="mt-1 text-xs text-fg-tertiary">
-        {repo.isPrivate ? 'Private repository' : 'Public repository'}
-      </p>
-    </div>
+    <h2 className="min-w-0 truncate text-sm leading-5 font-semibold tracking-tight text-fg">
+      <span className="font-normal text-fg-tertiary">{repo.owner}/</span>
+      {repo.name}
+    </h2>
+  );
+}
+
+/**
+ * The snapshot facts that used to occupy their own 70px four-column `<dl>`
+ * region under every record, inlined as one wrapping metadata line. At
+ * index density these are orientation, not evidence -- the reader needs
+ * "which commit, which SDK, how fresh" to trust the verdict beside it, and
+ * a labelled definition list per row costs more vertical space than the
+ * facts are worth. Every value is a real field; nothing is shown for a
+ * repository that has not been analysed except what is known about the
+ * repository itself.
+ */
+function RepositoryMeta({ repo }: { repo: Repository }) {
+  const { latestAnalysis } = repo;
+  const parts = [
+    repo.isPrivate ? 'Private' : 'Public',
+    repo.defaultBranch,
+    ...(latestAnalysis?.stripe
+      ? [`stripe ${latestAnalysis.stripe.resolvedVersion ?? latestAnalysis.stripe.declaredRange}`]
+      : []),
+    ...(latestAnalysis
+      ? [
+          latestAnalysis.commitSha.slice(0, 7),
+          `analysed ${formatRelativeTime(latestAnalysis.startedAt, latestAnalysis.completedAt)}`,
+        ]
+      : []),
+  ];
+
+  return (
+    <p className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 font-mono text-2xs leading-4 text-fg-tertiary">
+      {parts.map((part, index) => (
+        <Fragment key={part}>
+          {index > 0 && (
+            <span aria-hidden="true" className="text-fg-faint">
+              ·
+            </span>
+          )}
+          <span className="truncate">{part}</span>
+        </Fragment>
+      ))}
+    </p>
   );
 }
 
@@ -242,7 +285,12 @@ function RepositoryActions({
   everAnalysed: boolean;
 }) {
   return (
-    <div className="flex shrink-0 flex-wrap items-center gap-2 sm:justify-end">
+    // `flex-wrap` only below `md`, where the region is stacked and genuinely
+    // may need two lines. From `md` up it is a fixed-width grid column, and a
+    // wrapping flex container there is the failure mode this row was fixed
+    // for: it reflows onto a second line the moment the available width is a
+    // fraction of a pixel short, which turns a 105px row into a 149px one.
+    <div className="flex shrink-0 flex-wrap items-center gap-2 md:flex-nowrap md:justify-end">
       {hasReport && analysisRunId && (
         <Link href={`/analysis-runs/${analysisRunId}`} className={buttonVariantClassName.primary}>
           View impact report
@@ -261,137 +309,165 @@ function RepositoryActions({
 
 function StatusLabel({ state }: { state: ImpactState }) {
   const style = IMPACT_STATE_STYLE[state.kind];
+  const counts = impactCounts(state);
   return (
-    <span className={`inline-flex items-center gap-2 text-xs font-semibold ${style.text}`}>
-      <span className={`h-2 w-2 shrink-0 rounded-full ${style.dot}`} aria-hidden="true" />
-      {impactStateLabel(state)}
-    </span>
+    <div className="min-w-0">
+      <span className={`inline-flex items-center gap-2 text-xs font-semibold ${style.text}`}>
+        <span className={`h-2 w-2 shrink-0 rounded-full ${style.dot}`} aria-hidden="true" />
+        {impactStateLabel(state)}
+      </span>
+      {counts && (
+        <p className="mt-1 truncate font-mono text-2xs leading-4 text-fg-secondary">{counts}</p>
+      )}
+    </div>
   );
 }
 
-function SnapshotContext({ repo }: { repo: Repository }) {
-  const { latestAnalysis } = repo;
-  const items = [
-    { label: 'Branch', value: repo.defaultBranch },
-    ...(latestAnalysis?.stripe
-      ? [
-          {
-            label: 'Stripe SDK',
-            value: latestAnalysis.stripe.resolvedVersion ?? latestAnalysis.stripe.declaredRange,
-          },
-        ]
-      : []),
-    ...(latestAnalysis
-      ? [
-          { label: 'Snapshot', value: latestAnalysis.commitSha.slice(0, 7) },
-          {
-            label: 'Analysed',
-            value: formatRelativeTime(latestAnalysis.startedAt, latestAnalysis.completedAt),
-          },
-        ]
-      : []),
-  ];
-
-  return (
-    <dl className="grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-4 sm:gap-y-0">
-      {items.map((item) => (
-        <div key={item.label} className="min-w-0">
-          <dt className="text-2xs font-semibold text-fg-tertiary">{item.label}</dt>
-          <dd className="mt-1 truncate font-mono text-xs text-fg-secondary" title={item.value}>
-            {item.value}
-          </dd>
-        </div>
-      ))}
-    </dl>
-  );
-}
-
-function ProviderChanges({ assessments }: { assessments: LatestImpactAssessment[] }) {
+/**
+ * The index's answer to "why does this repository need attention?" -- one
+ * line per real provider change, collapsed behind a native disclosure.
+ *
+ * Deliberately one line, not the two-line status-beneath-title row this
+ * previously rendered: at index density the change's own status is already
+ * implied by its position (affected first, and the usage count only exists
+ * for a confirmed one), and the second line cost ~73px per change, which
+ * made a four-change repository 346px tall -- 68% of the whole record, for
+ * content Section 33 reserves for the detail screen. Still real
+ * `providerChangeTitle` plus a real findings count and nothing else: no
+ * `reason` sentence, no `file:line`, no row-level actions.
+ */
+function ImpactPreview({ assessments }: { assessments: LatestImpactAssessment[] }) {
   const changes = [...assessments]
     .filter((assessment) => assessment.status !== 'NOT_AFFECTED')
     .sort((a, b) => (a.status === b.status ? 0 : a.status === 'AFFECTED' ? -1 : 1));
 
-  return (
-    <section aria-label="Provider changes" className="border-t border-rule">
-      <div className="flex flex-col gap-1 px-5 py-4 sm:flex-row sm:items-baseline sm:justify-between sm:px-6">
-        <h3 className="text-sm font-semibold text-fg">Provider changes</h3>
-        <p className="text-xs leading-5 text-fg-tertiary">
-          {changes.length} change{changes.length === 1 ? '' : 's'} require attention
-        </p>
-      </div>
+  if (changes.length === 0) return null;
 
-      <ol className="border-t border-rule">
+  return (
+    // `name` groups every row's disclosure into one native exclusive
+    // accordion: opening a second preview closes the first, so the list
+    // cannot silently grow past a screen as the reader works down it. It
+    // is a browser primitive -- no JS, no client component, no accordion
+    // state to keep in sync -- and where it is unsupported the disclosures
+    // simply stay independent rather than breaking.
+    <details name="repository-impact-preview" className="group min-w-0 max-w-3xl">
+      <summary className="inline-flex w-fit cursor-pointer list-none items-center rounded-sm text-xs font-medium text-fg-tertiary hover:text-fg-secondary focus-visible:ring-2 focus-visible:ring-fg focus-visible:outline-none">
+        <span className="group-open:hidden">
+          Show {changes.length} change{changes.length === 1 ? '' : 's'}
+        </span>
+        <span className="hidden group-open:inline">Hide changes</span>
+      </summary>
+
+      <ul className="mt-2 flex min-w-0 flex-col gap-1.5 border-l border-rule pl-3">
         {changes.map((change) => {
           const affected = change.status === 'AFFECTED';
-          const changeStyle = IMPACT_STATE_STYLE[affected ? 'affected' : 'uncertain'];
           return (
             <li
               key={`${change.status}-${change.providerChangeTitle}`}
-              className="grid gap-3 border-b border-rule px-5 py-4 last:border-b-0 sm:px-6 md:grid-cols-[minmax(0,1fr)_9rem] md:items-center md:gap-6"
+              className="flex min-w-0 items-baseline justify-between gap-4 text-2xs leading-4"
             >
-              <div className="flex min-w-0 items-start gap-3">
-                <span
-                  className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${changeStyle.dot}`}
-                  aria-hidden="true"
-                />
-                <div className="min-w-0">
-                  <p className="text-sm font-medium leading-5 text-fg-secondary">
-                    {change.providerChangeTitle}
-                  </p>
-                  <p className={`mt-1 text-xs font-medium ${changeStyle.text}`}>
-                    {affected ? 'Affected' : 'Uncertain'}
-                  </p>
-                </div>
-              </div>
-              {affected && change.findings.length > 0 ? (
-                <p className="font-mono text-2xs leading-5 text-fg-tertiary md:text-right">
-                  {change.findings.length} confirmed usage
-                  {change.findings.length === 1 ? '' : 's'}
-                </p>
-              ) : (
-                <span aria-hidden="true" />
-              )}
+              {/* Wraps rather than truncates: the preview is opt-in, so its
+                  vertical cost is only paid when the reader asked for it, and
+                  at narrow widths a truncated change title has no hover
+                  tooltip to fall back on. */}
+              <span className="min-w-0 text-fg-secondary">{change.providerChangeTitle}</span>
+              <span
+                className={`shrink-0 font-mono ${affected ? 'text-fg-tertiary' : IMPACT_STATE_STYLE.uncertain.text}`}
+              >
+                {affected
+                  ? `${change.findings.length} usage${change.findings.length === 1 ? '' : 's'}`
+                  : 'Uncertain'}
+              </span>
             </li>
           );
         })}
-      </ol>
-    </section>
+      </ul>
+    </details>
   );
 }
 
-function RepositoryLedger({ repo, state }: { repo: Repository; state: ImpactState }) {
+/**
+ * One repository as one index row.
+ *
+ * This replaced a per-repository bordered record containing three stacked
+ * regions (header, snapshot rail, provider-change register). That shape
+ * read well at two repositories and stopped scaling well before twenty:
+ * measured, an affected record was 508px and a clear one 162px, so twenty
+ * repositories produced a 5,668px page and pushed the last
+ * attention-needing repository to 3,189px -- three and a half screens down
+ * a list that is already sorted attention-first, which defeats the point
+ * of sorting it. See DESIGN.md Section 18.
+ *
+ * The three regions are now one aligned three-column row plus an optional
+ * collapsed preview, so every row costs roughly one screen-line and the
+ * columns line up across the whole estate.
+ *
+ * The two right-hand tracks are explicit widths, deliberately not
+ * `minmax(9rem,max-content)` / `max-content`, for two reasons that are the
+ * same reason:
+ *
+ *   1. Every `<li>` is its own grid, so an intrinsic track is measured
+ *      per row. Rows with one button sized that track at 110px and rows
+ *      with two at 257px, which put the status column at four different x
+ *      positions down a twenty-row list -- the columns did not actually
+ *      align, which is the whole point of a ledger.
+ *   2. An intrinsic track is engine-measured. Chromium and WebKit size the
+ *      identical actions content at 264.08px and 252.78px respectively, and
+ *      the container inside it wrapped (`flex-wrap`), so a fractional
+ *      shortfall in that measurement reflowed the second button onto its own
+ *      line and doubled the row's height. A fixed track cannot be
+ *      under-measured, and `md:flex-nowrap` means it could not reflow even
+ *      if it were.
+ *
+ * 17rem clears the widest real actions content (a 257px "View impact
+ * report" + "Analyse again" pair) with headroom, and 11rem clears the
+ * widest real status content (a 158px "N affected · N uncertain"). If
+ * either ever overflows, the content wraps inside its own fixed track --
+ * the row grows slightly and the collection stays aligned, instead of one
+ * row silently widening its column and shunting every neighbour.
+ *
+ * The row layout starts at `md`, not `sm`: those two tracks plus their gaps
+ * need 480px, which would leave ~120px for repository identity in a 640px
+ * viewport. Below `md` the regions stack, which is what "the viewport
+ * genuinely cannot support it" looks like.
+ */
+function RepositoryRow({ repo, state }: { repo: Repository; state: ImpactState }) {
   const { latestAnalysis } = repo;
   const hasReport = latestAnalysis !== null && latestAnalysis.status === 'completed';
-  const isExpanded = isReportWorthy(state);
 
   return (
-    <article className="overflow-hidden rounded-md border border-rule bg-canvas focus-within:border-rule-strong">
-      <header className="grid gap-4 bg-surface px-5 py-4 sm:grid-cols-[minmax(6rem,0.7fr)_minmax(9rem,1.3fr)_max-content] sm:items-center sm:gap-3 sm:px-6">
+    // No hover tint: the row is not a click target (the action beside it
+    // is), and tinting it on hover would imply otherwise -- the same reason
+    // Section 18 keeps provider-change rows visually static. `focus-within`
+    // is different: it orients a keyboard user to which row they are in.
+    // Deliberately not transitioned, so the tint can never lag behind the
+    // focus that caused it.
+    <li className="grid gap-x-6 gap-y-2 px-4 py-3.5 focus-within:bg-surface-hover md:grid-cols-[minmax(0,1fr)_11rem_17rem] md:items-start md:px-5">
+      <div className="min-w-0">
         <RepositoryIdentity repo={repo} />
-
-        <div className="min-w-0">
-          <StatusLabel state={state} />
-          <p className="mt-1.5 text-xl font-semibold leading-7 tracking-tight text-fg">
-            {repositoryConclusion(state)}
-          </p>
-        </div>
-
-        <RepositoryActions
-          hasReport={hasReport}
-          analysisRunId={latestAnalysis?.analysisRunId}
-          repositoryId={repo.id}
-          everAnalysed={latestAnalysis !== null}
-        />
-      </header>
-
-      <div className="border-t border-rule px-5 py-4 sm:px-6">
-        <SnapshotContext repo={repo} />
+        <RepositoryMeta repo={repo} />
       </div>
 
-      {isExpanded && latestAnalysis && (
-        <ProviderChanges assessments={latestAnalysis.latestImpactAssessments} />
+      <StatusLabel state={state} />
+
+      <RepositoryActions
+        hasReport={hasReport}
+        analysisRunId={latestAnalysis?.analysisRunId}
+        repositoryId={repo.id}
+        everAnalysed={latestAnalysis !== null}
+      />
+
+      {/* Last in DOM order, spanning the row: the preview explains the
+          verdict, so it has to be read after it, not before. Nesting it in
+          the identity column put the collapsed change list ahead of the
+          status label for a screen reader and squeezed long change titles
+          into the narrowest column. */}
+      {isReportWorthy(state) && latestAnalysis && (
+        <div className="min-w-0 md:col-span-3">
+          <ImpactPreview assessments={latestAnalysis.latestImpactAssessments} />
+        </div>
       )}
-    </article>
+    </li>
   );
 }
 
@@ -447,11 +523,17 @@ export default async function RepositoriesPage({
 
       <ErrorBanner code={error} />
 
-      <div className="flex flex-col gap-4">
+      {/* One bordered collection with divided rows, not one bordered card per
+          repository (DESIGN.md Section 12: a list of repeated items is
+          separated by `divide-y`, not by wrapping each item in its own
+          card). At twenty repositories twenty separate boundaries is twenty
+          things to visually parse before reading any of them; one boundary
+          around one ledger is the index's real shape. */}
+      <ol className="divide-y divide-rule overflow-hidden rounded-md border border-rule">
         {ordered.map(({ repo, state }) => (
-          <RepositoryLedger key={repo.id} repo={repo} state={state} />
+          <RepositoryRow key={repo.id} repo={repo} state={state} />
         ))}
-      </div>
+      </ol>
     </main>
   );
 }
