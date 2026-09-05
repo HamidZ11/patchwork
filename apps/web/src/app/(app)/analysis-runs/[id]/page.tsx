@@ -3,6 +3,12 @@ import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import { apiFetch } from '@/lib/api';
 import { FormSubmitButton } from '@/components/form-submit-button';
+import {
+  ExplainAssessment,
+  type ExplainResult,
+  type Explanation,
+  type SupportingFact,
+} from './explain-assessment';
 import { buttonVariantClassName } from '@/components/button-styles';
 import { AssessmentSelector, type AssessmentTab } from './assessment-selector';
 
@@ -202,6 +208,33 @@ async function verifyInSandbox(patchAttemptId: string, analysisRunId: string) {
   'use server';
   await apiFetch(`/patch-attempts/${patchAttemptId}/verification-runs`, { method: 'POST' });
   redirect(`/analysis-runs/${analysisRunId}`);
+}
+
+/**
+ * Generates (or returns the cached) plain-English explanation of one
+ * assessment. Unlike the other actions on this page it does not `redirect`:
+ * an explanation changes nothing on the server that the page renders, so
+ * re-rendering the route would be wasted work. It returns the result to the
+ * client component instead, which is also what keeps a model failure scoped
+ * to that one block rather than turning the page into an error.
+ *
+ * The assessment id is bound server-side; the browser never chooses it, and
+ * never sees the API or the model provider.
+ */
+async function explainAssessment(assessmentId: string): Promise<ExplainResult> {
+  'use server';
+  const response = await apiFetch(`/impact-assessments/${assessmentId}/explanation`, {
+    method: 'POST',
+  });
+  if (!response.ok) {
+    const body = (await response.json().catch(() => ({}))) as { message?: string };
+    return {
+      ok: false,
+      message: body.message ?? 'The explanation could not be generated.',
+    };
+  }
+  const { explanation } = (await response.json()) as { explanation: Explanation };
+  return { ok: true, explanation };
 }
 
 async function createPullRequest(verificationRunId: string, analysisRunId: string) {
@@ -1761,15 +1794,89 @@ function PrepareFixForm({
  * summarizes evidence the chain then shows in full -- it never introduces
  * a claim the chain cannot substantiate.
  */
+/**
+ * The deterministic facts shown as chips beside a generated explanation.
+ *
+ * Every one is read from state Patchwork already proved and already renders
+ * elsewhere on this page -- the resolved SDK version from run evidence, the
+ * confirmed finding count, whether a registered remediation recipe exists,
+ * the current attempt's verification status, and whether a pull request is
+ * open for this assessment. Nothing is derived from the model's prose, and no
+ * field was added to the API to populate this: if a fact is not already here,
+ * it does not get a chip.
+ *
+ * Absence is stated rather than omitted where the absence is the point:
+ * "Verification not run" and "No automatic fix" are real, load-bearing facts
+ * about an assessment, and leaving them out would let the prose imply
+ * otherwise unchallenged.
+ */
+function supportingFacts(
+  assessment: AssessmentDetail,
+  latestAttempt: PatchAttempt | undefined,
+  publishedPullRequest: PullRequestAttempt | undefined,
+  evidence: AnalysisRunEvidence | null,
+): SupportingFact[] {
+  const facts: SupportingFact[] = [];
+
+  const stripe = evidence?.installedSdks.find((sdk) => sdk.packageName === 'stripe');
+  if (stripe?.resolvedVersion) {
+    facts.push({ label: `Stripe ${stripe.resolvedVersion}`, mono: true });
+  }
+
+  const count = assessment.findings.length;
+  facts.push({
+    label: count === 0 ? 'No confirmed usage' : `${count} confirmed usage${count === 1 ? '' : 's'}`,
+    mono: count > 0,
+  });
+
+  if (assessment.status === 'AFFECTED') {
+    facts.push({
+      label: assessment.remediationSupported ? 'Deterministic fix available' : 'No automatic fix',
+    });
+  }
+
+  const verification = latestAttempt?.verificationRuns[0];
+  if (latestAttempt?.status === 'GENERATED') {
+    facts.push({
+      label:
+        verification === undefined
+          ? 'Verification not run'
+          : verification.status === 'PASSED'
+            ? 'Verification passed'
+            : `Verification ${verification.status.toLowerCase().replace(/_/g, ' ')}`,
+    });
+  }
+
+  const openedPullRequest =
+    publishedPullRequest ??
+    latestAttempt?.pullRequestAttempts.find((attempt) => attempt.status === 'OPENED');
+  if (openedPullRequest) {
+    facts.push({
+      label:
+        openedPullRequest.githubPrNumber === null
+          ? 'Pull request opened'
+          : `Pull request #${openedPullRequest.githubPrNumber} opened`,
+    });
+  }
+
+  return facts;
+}
+
 function AssessmentOpening({
   assessment,
   analysisRunId,
   latestAttempt,
+  publishedPullRequest,
+  evidence,
   summary,
 }: {
   assessment: AssessmentDetail;
   analysisRunId: string;
   latestAttempt: PatchAttempt | undefined;
+  publishedPullRequest: PullRequestAttempt | undefined;
+  /** Run-level SDK evidence, passed down only to restate the resolved Stripe
+   * version as a supporting fact -- the opening itself does not render it. */
+  evidence: AnalysisRunEvidence | null;
   summary: AssessmentSummary;
 }) {
   const style = STATUS_STYLE[assessment.status];
@@ -1844,6 +1951,25 @@ function AssessmentOpening({
         Provider changelog
         <ExternalLinkIcon />
       </a>
+
+      {/* The AI action sits directly under the deterministic explanation it
+          describes and before the evidence chain begins -- close enough to be
+          obviously about this verdict, subordinate enough that the proof is
+          read first. Offered only for the two verdicts where the copy earns
+          its cost: a proven NOT_AFFECTED is already fully explained by the
+          sentence above it, and the API refuses to generate one regardless. */}
+      {(assessment.status === 'AFFECTED' || assessment.status === 'UNCERTAIN') && (
+        <ExplainAssessment
+          action={explainAssessment.bind(null, assessment.id)}
+          label={assessment.status === 'AFFECTED' ? 'Explain impact' : 'Explain uncertainty'}
+          supportingFacts={supportingFacts(
+            assessment,
+            latestAttempt,
+            publishedPullRequest,
+            evidence,
+          )}
+        />
+      )}
 
       {(proof || withAction) && (
         <div className="flex flex-wrap items-center gap-x-5 gap-y-3">
@@ -1963,6 +2089,8 @@ function AssessmentReport({
         assessment={assessment}
         analysisRunId={analysisRunId}
         latestAttempt={latestAttempt}
+        publishedPullRequest={publishedForAssessment}
+        evidence={evidence}
         summary={summary}
       />
 

@@ -1,6 +1,7 @@
 import { writeFile } from 'node:fs/promises';
 import type { Database, DbClient } from '@patchwork/db';
 import type { AppDeps } from '../app.js';
+import type { ExplanationModel } from '../explanations/types.js';
 import type { GitHubAppAuth, GitHubClient } from '@patchwork/github';
 import { buildFixtureArchive } from './build-fixture-archive.js';
 
@@ -112,6 +113,36 @@ export function fakeGitHubAppAuth(overrides: Partial<GitHubAppAuth> = {}): GitHu
   };
 }
 
+/**
+ * A deterministic stand-in for the OpenAI-backed ExplanationModel. Every
+ * automated test drives this, never the network: an explanation test asserts
+ * caching, authorization and truth-boundary behaviour, none of which needs a
+ * real generation, and a suite that spent credits per run would be a suite
+ * nobody runs. `calls` lets a test prove a cache hit made no second request.
+ */
+export function fakeExplanationModel(
+  overrides: Partial<ExplanationModel> & { calls?: { count: number } } = {},
+): ExplanationModel & { calls: { count: number } } {
+  const calls = overrides.calls ?? { count: 0 };
+  return {
+    calls,
+    model: overrides.model ?? 'test-explanation-model',
+    generate:
+      overrides.generate ??
+      (async (context) => {
+        calls.count += 1;
+        return {
+          explanation: {
+            summary: `Summary for ${context.verdict}.`,
+            whyItMatters: `Why it matters for ${context.verdict}.`,
+            nextStep: 'Next step.',
+          },
+          usage: { inputTokens: 100, outputTokens: 50 },
+        };
+      }),
+  };
+}
+
 export function testAppDeps(overrides: Partial<AppDeps> = {}): AppDeps {
   return {
     db: fakeDbClient(),
@@ -123,6 +154,7 @@ export function testAppDeps(overrides: Partial<AppDeps> = {}): AppDeps {
     githubAppSlug: 'test-app',
     cookiePolicy: { domain: undefined, secure: false },
     webAppUrl: 'http://localhost:3000',
+    explanationModel: fakeExplanationModel(),
     ...overrides,
   };
 }

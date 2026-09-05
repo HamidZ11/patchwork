@@ -2,10 +2,12 @@ import Fastify, { type FastifyError, type FastifyInstance } from 'fastify';
 import { randomUUID } from 'node:crypto';
 import type { DbClient } from '@patchwork/db';
 import type { GitHubAppAuth, GitHubClient } from '@patchwork/github';
+import type { ExplanationModel } from './explanations/types.js';
 import type { CookiePolicy } from './plugins/cookies.js';
 import { registerSessionPlugin } from './plugins/session.js';
 import { registerAnalysesRoutes } from './routes/analyses.js';
 import { registerAuthRoutes } from './routes/auth.js';
+import { registerExplanationsRoutes } from './routes/explanations.js';
 import { registerGitHubRoutes } from './routes/github.js';
 import { registerHealthRoutes } from './routes/health.js';
 import { registerImpactAssessmentsRoutes } from './routes/impact-assessments.js';
@@ -24,6 +26,7 @@ export interface AppDeps {
   githubAppSlug: string;
   cookiePolicy: CookiePolicy;
   webAppUrl: string;
+  explanationModel: ExplanationModel;
 }
 
 export function buildApp(deps: AppDeps): FastifyInstance {
@@ -85,6 +88,10 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     db: deps.db.db,
     githubClient: deps.githubClient,
     githubAppAuth: deps.githubAppAuth,
+  });
+  registerExplanationsRoutes(app, {
+    db: deps.db.db,
+    explanationModel: deps.explanationModel,
   });
   registerVerificationRunsRoutes(app, { db: deps.db.db });
   registerPullRequestAttemptsRoutes(app, {

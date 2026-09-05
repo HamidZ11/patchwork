@@ -144,10 +144,30 @@ export function AssessmentSelector({
         })}
       </div>
 
-      {/* No `tabIndex` on the panel: the APG only calls for it when a panel
+      {/* `key` is load-bearing, not a lint appeasement: it makes the panel the
+          selected assessment's panel rather than one reusable container that
+          happens to show different children.
+
+          Every report has the same element shape, so without it React
+          reconciles an incoming report onto the outgoing one's fibers at this
+          position and any client state inside survives the switch. That is a
+          correctness bug, not a cosmetic one -- `ExplainAssessment` kept its
+          `useActionState` result, so an explanation generated for one
+          assessment stayed on screen under the next one, for an assessment
+          that had never requested one. Keying by assessment identity makes a
+          selection change a remount, which is the only thing that can be true
+          for a panel whose entire meaning is "this assessment".
+
+          Deliberately here rather than on `ExplainAssessment` itself: the
+          invariant is that a report's client state belongs to its assessment,
+          which has to hold for every client component a report may contain,
+          not just today's one.
+
+          No `tabIndex` on the panel: the APG only calls for it when a panel
           holds no focusable content, and every report contains at least its
           provider-changelog link. */}
       <div
+        key={selected.id}
         role="tabpanel"
         id={`assessment-panel-${selected.id}`}
         aria-labelledby={`assessment-tab-${selected.id}`}

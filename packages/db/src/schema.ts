@@ -318,6 +318,60 @@ export const impactFindings = pgTable('impact_findings', {
 });
 
 /**
+ * A generated plain-English explanation of one ImpactAssessment.
+ *
+ * A separate table rather than a column on `impact_assessments`, for three
+ * reasons that are all the same reason -- an explanation is a derived
+ * artifact with its own lifecycle, not part of the assessment's truth:
+ *
+ *   1. `upsertImpactAssessment` rewrites an assessment IN PLACE on
+ *      re-analysis (same row id, new status/reason/coverage, findings
+ *      replaced). An explanation stored on that row would survive a verdict
+ *      change and silently describe facts that no longer hold.
+ *   2. Cache identity has to be queryable. Reuse requires matching the
+ *      prompt version, the model, AND the exact facts the explanation was
+ *      generated from -- see `contextHash`.
+ *   3. Regeneration is append-only. A new prompt version or model inserts a
+ *      new row; the previous generation stays for audit.
+ *
+ * Nothing here is authoritative: the verdict, remediation availability,
+ * verification outcome and PR state all live in their own tables and are
+ * the source of truth. This is explanatory copy about them.
+ */
+export const impactExplanations = pgTable(
+  'impact_explanations',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    impactAssessmentId: uuid('impact_assessment_id')
+      .notNull()
+      .references(() => impactAssessments.id, { onDelete: 'cascade' }),
+    /** e.g. `impact-explanation-v1`. Bumped when the prompt or the output schema changes. */
+    promptVersion: text('prompt_version').notNull(),
+    model: text('model').notNull(),
+    /**
+     * SHA-256 of the canonical JSON of the exact context sent to the model.
+     * Part of the cache key precisely because an assessment is mutable: when
+     * re-analysis changes the underlying facts, the hash changes and a stale
+     * explanation can no longer be served for them.
+     */
+    contextHash: text('context_hash').notNull(),
+    /** The validated `{ summary, whyItMatters, nextStep }` object. Never raw model output. */
+    explanation: jsonb('explanation').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex('impact_explanations_cache_idx').on(
+      table.impactAssessmentId,
+      table.promptVersion,
+      table.model,
+      table.contextHash,
+    ),
+  ],
+);
+
+/**
  * One attempt to deterministically remediate an AFFECTED ImpactAssessment
  * -- an execution/audit record like AnalysisRun, deliberately not
  * deduplicated/upserted: each POST is its own historical attempt, not a

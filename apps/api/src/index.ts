@@ -5,6 +5,10 @@ import { loadEnv } from '@patchwork/config';
 import { createDbClient } from '@patchwork/db';
 import { buildApp } from './app.js';
 import { loadApiConfig } from './config.js';
+import {
+  createOpenAIExplanationModel,
+  createUnconfiguredExplanationModel,
+} from './explanations/openai.js';
 import { createGitHubAppAuth, createGitHubClient } from '@patchwork/github';
 import { resolveCookiePolicy } from './plugins/cookies.js';
 
@@ -33,6 +37,12 @@ const app = buildApp({
   githubAppSlug: apiConfig.github.appSlug,
   cookiePolicy: resolveCookiePolicy(env.NODE_ENV, apiConfig.sessionCookieDomain),
   webAppUrl: apiConfig.webAppUrl,
+  explanationModel: apiConfig.openai.apiKey
+    ? createOpenAIExplanationModel({
+        apiKey: apiConfig.openai.apiKey,
+        model: apiConfig.openai.explanationModel,
+      })
+    : createUnconfiguredExplanationModel(),
 });
 
 async function start(): Promise<void> {
