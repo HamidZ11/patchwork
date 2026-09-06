@@ -69,13 +69,20 @@ describe('ExplainAssessment', () => {
     );
     await user.click(screen.getByRole('button', { name: 'Explain impact' }));
 
+    // Wait for the generated state before asserting anything about it. The
+    // pending shell renders the same `region`, so asserting immediately after
+    // the click races the action's resolution: on a fast machine the module is
+    // already mounted, on a slower one the shell still is -- and the shell does
+    // not carry the module's surface class. That race is what made this test
+    // pass locally and fail in CI.
+    await screen.findByText(EXPLANATION.summary);
+
     expect(
       screen
         .getByRole('region', { name: 'AI explanation' })
         .classList.contains('dark:bg-surface-hover'),
     ).toBe(true);
     for (const heading of ['In plain English', 'Why it matters here', 'Next step']) {
-      await waitFor(() => expect(screen.getByText(heading)).toBeDefined());
       const label = screen.getByText(heading);
       expect(label.classList.contains('font-bold')).toBe(true);
       expect(label.classList.contains('text-fg')).toBe(true);
