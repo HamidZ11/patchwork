@@ -1,7 +1,7 @@
 'use client';
 
 import Image from 'next/image';
-import { ChevronDown, ExternalLink } from 'lucide-react';
+import { ExternalLink } from 'lucide-react';
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react';
 
 export function ProfilePopover({
@@ -24,11 +24,29 @@ export function ProfilePopover({
 
     // The native top layer avoids clipping. Anchor it without requiring
     // CSS anchor-positioning support, and keep it inside narrow viewports.
+    // The trigger sits in the phone top bar or at the foot of the rail, so
+    // open toward whichever side has room and align to the nearer edge.
     const rect = trigger.getBoundingClientRect();
-    const top = Math.max(8, Math.min(rect.bottom + 8, window.innerHeight - 16));
-    popover.style.top = `${top}px`;
-    popover.style.right = `${Math.max(16, document.documentElement.clientWidth - rect.right)}px`;
-    popover.style.maxHeight = `${Math.max(0, window.innerHeight - top - 8)}px`;
+    const viewportWidth = document.documentElement.clientWidth;
+    const { style } = popover;
+    if (rect.top > window.innerHeight / 2) {
+      const bottom = Math.max(8, window.innerHeight - rect.top + 8);
+      style.top = 'auto';
+      style.bottom = `${bottom}px`;
+      style.maxHeight = `${Math.max(0, window.innerHeight - bottom - 8)}px`;
+    } else {
+      const top = Math.max(8, Math.min(rect.bottom + 8, window.innerHeight - 16));
+      style.bottom = 'auto';
+      style.top = `${top}px`;
+      style.maxHeight = `${Math.max(0, window.innerHeight - top - 8)}px`;
+    }
+    if (rect.left < viewportWidth / 2) {
+      style.right = 'auto';
+      style.left = `${Math.max(8, rect.left)}px`;
+    } else {
+      style.left = 'auto';
+      style.right = `${Math.max(16, viewportWidth - rect.right)}px`;
+    }
   }, []);
 
   useEffect(() => {
@@ -56,30 +74,25 @@ export function ProfilePopover({
         aria-haspopup="dialog"
         aria-label={`Profile for ${user.githubLogin}`}
         onClick={(event) => event.currentTarget.focus({ preventScroll: true })}
-        className="flex h-11 min-w-11 items-center justify-center gap-2 rounded-md p-1.5 text-sm font-medium text-fg-secondary hover:bg-surface-hover hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-fg focus-visible:ring-offset-2 focus-visible:ring-offset-canvas active:bg-surface group-has-[:popover-open]/profile:bg-surface group-has-[:popover-open]/profile:text-fg sm:px-2"
+        className="grid size-9 place-items-center rounded-full hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus group-has-[:popover-open]/profile:bg-surface"
       >
         <span
           aria-hidden="true"
-          className="flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-full border border-rule bg-evidence text-xs font-semibold text-fg-secondary"
+          className="flex size-7 shrink-0 items-center justify-center overflow-hidden rounded-full bg-surface text-2xs font-semibold text-fg-secondary shadow-btn"
         >
           {user.avatarUrl && failedAvatar !== user.avatarUrl ? (
             <Image
               src={user.avatarUrl}
               alt=""
-              width={32}
-              height={32}
-              className="size-8 object-cover"
+              width={28}
+              height={28}
+              className="size-7 object-cover"
               onError={() => setFailedAvatar(user.avatarUrl)}
             />
           ) : (
             user.githubLogin.slice(0, 2).toUpperCase()
           )}
         </span>
-        <span className="hidden max-w-36 truncate sm:block">{user.githubLogin}</span>
-        <ChevronDown
-          aria-hidden="true"
-          className="hidden size-3.5 shrink-0 text-fg-tertiary sm:block"
-        />
       </button>
 
       <div
@@ -107,7 +120,7 @@ export function ProfilePopover({
             event.currentTarget.hidePopover();
           }
         }}
-        className="fixed inset-auto top-16 right-4 m-0 w-64 max-w-[calc(100vw-2rem)] overflow-y-auto rounded-md border border-rule-strong bg-surface p-1.5 text-fg"
+        className="fixed inset-auto m-0 w-64 max-w-[calc(100vw-2rem)] overflow-y-auto rounded-card bg-panel p-1.5 text-fg shadow-overlay"
       >
         <div className="px-3 py-2.5">
           <p id={`${id}-identity`} className="break-all text-sm font-semibold">
@@ -120,7 +133,7 @@ export function ProfilePopover({
           href={`https://github.com/${encodeURIComponent(user.githubLogin)}`}
           target="_blank"
           rel="noopener noreferrer"
-          className="flex min-h-11 items-center justify-between gap-3 rounded-sm px-3 text-xs font-medium text-fg-secondary hover:bg-evidence hover:text-fg focus-visible:bg-evidence focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-fg active:bg-evidence"
+          className="flex min-h-10 items-center justify-between gap-3 rounded-control px-3 text-ui font-medium text-fg-secondary hover:bg-surface hover:text-fg focus-visible:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-focus active:bg-surface"
         >
           <span>
             View GitHub profile<span className="sr-only"> (opens in a new tab)</span>

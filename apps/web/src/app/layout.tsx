@@ -23,9 +23,13 @@ export default function RootLayout({ children }: LayoutProps<'/'>) {
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full overflow-x-hidden antialiased`}
     >
-      <body className="flex min-h-full flex-col overflow-x-hidden bg-canvas text-fg">
-        {children}
-      </body>
+      {/* `clip`, not `hidden`, on body: `hidden` makes body a scroll container
+          that never scrolls (the viewport does), which silently disables every
+          `position: sticky` descendant -- the app rail and the landing header.
+          `clip` still clips wide content without creating a scroll container.
+          `<html>` keeps `hidden`, which propagates to the viewport and is what
+          blocks horizontal panning (DESIGN.md Section 30). */}
+      <body className="flex min-h-full flex-col overflow-x-clip bg-canvas text-fg">{children}</body>
     </html>
   );
 }

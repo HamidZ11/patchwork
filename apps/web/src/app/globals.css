@@ -34,7 +34,112 @@
    See DESIGN.md Section 31 for the full method and the measured table.
    --------------------------------------------------------------------------- */
 
+/* ---------------------------------------------------------------------------
+   Dark: the product theme (DESIGN.md Amendment B2).
+
+   Dark-only: these values sit on `:root`, not behind `prefers-color-scheme`,
+   so the document background, scrollbars and native controls agree with the
+   app regardless of the OS setting. The warm-paper light values are retained,
+   unapplied, under `[data-theme='light']` below.
+
+   The charcoal ladder is borrowed from Beautiful UI (Turbo, MIT -- values
+   only, no code): page, inset, surface, field and line steps a few points of
+   OKLCH lightness apart. Depth comes from those steps plus a lit 1px edge
+   and a very soft drop (`--shadow-card`, `--shadow-btn` below), not from
+   grey borders or big tonal jumps. CIE L*:
+
+     chrome          8.2   top shell -- a step below the page, framing it
+     canvas         10.2   page ground
+     panel          12.2   the repository panel
+     raised         14.2   rows that need attention
+     surface-hover  15.2   hover on panel rows
+     raised-hover   17.5   hover on raised rows
+     surface        18.0   controls, matrix cells, grouping / selected state
+     evidence       20.8   machine output Patchwork quotes back
+
+   Semantic colour is muted and spent only where a state means something:
+   amber is Affected (and the warning banner) and nothing else. There is no
+   brand hue; focus is a cool grey.
+   --------------------------------------------------------------------------- */
 :root {
+  color-scheme: dark;
+
+  --chrome: #17181a;
+  --canvas: #1b1c1e;
+  --panel: #1f2022;
+  --raised: #232427;
+  --surface-hover: #25262a;
+  --raised-hover: #2a2b2e;
+  --surface: #2b2c2f;
+  --evidence: #313236;
+
+  /* Three tiers, each verified on `evidence`, the lightest ground it can land
+     on. (Beautiful UI's third tier, #6c6f75, is ~3.3:1 and is deliberately
+     not borrowed.) `fg-faint` equals `fg-tertiary`: no darker grey clears AA
+     on evidence and both diff rows. */
+  --fg: #f2f3f4; /* 11.52 */
+  --fg-secondary: #babdc3; /* 6.80 */
+  --fg-tertiary: #9da1a8; /* 4.94 */
+  --fg-faint: #9da1a8; /* 4.94; 5.01 / 4.98 on the add / del rows */
+
+  --rule: #2e3033;
+  --rule-strong: #3a3c40;
+
+  /* Focus rings and the matrix column outline. 6.63 on evidence. */
+  --focus: #b3bbca;
+
+  /* Status text, muted. Worst case on evidence. */
+  --attention: #dcaa55; /* 6.05 */
+  --indeterminate: #9cafca; /* 5.73 */
+  --success: #6dc396; /* 6.03 */
+  --failure: #e8898f; /* 5.13 */
+
+  /* Marks share the hues, so a glyph and its label always agree. The
+     neutral mark clears 3:1 on every surface a glyph sits on. */
+  --mark-attention: #dcaa55;
+  --mark-indeterminate: #9cafca;
+  --mark-success: #6dc396;
+  --mark-failure: #e8898f;
+  --mark-neutral: #83878f;
+
+  --diff-add-bg: #243529; /* ΔL* +2.36 vs surface */
+  --diff-add-fg: #8bdcb0; /* 8.02 on its row */
+  --diff-del-bg: #3e2d32; /* ΔL* +2.55 vs surface */
+  --diff-del-fg: #f2abb1; /* 6.91 on its row */
+
+  --warning-surface: #30281a; /* ΔL* +6.37 vs canvas */
+  --warning-rule: #62502a;
+  --warning-fg: #edd5a0; /* 10.13 on the surface */
+
+  /* Action fills stay colourless. Near-white is the strongest control and
+     is kept for the few primary actions outside the repository index. */
+  --accent: #f2f3f4;
+  --accent-fg: #1b1c1e;
+  --accent-hover: #ffffff;
+  --accent-strong: #fbfaf8;
+  --accent-strong-fg: #1b1c1e;
+  --accent-strong-hover: #ffffff;
+}
+
+/* ---------------------------------------------------------------------------
+   Light: retained, not applied.
+
+   Nothing sets `data-theme='light'` today (Amendment B2). The values are the
+   verified warm-paper theme the product shipped with, kept so a light theme
+   can be revisited without re-deriving them. `--chrome`, `--panel`,
+   `--raised`, `--raised-hover` and `--focus` are placeholders added only to
+   keep the token set complete -- they have not been contrast-checked and
+   must be before this scope is ever used.
+   --------------------------------------------------------------------------- */
+[data-theme='light'] {
+  color-scheme: light;
+
+  --chrome: #f4f2ed;
+  --panel: #fbf9f4;
+  --raised: #f7f5f0;
+  --raised-hover: #f1efea;
+  --focus: #56544f;
+
   /* Surfaces form one elevation ladder, measured in CIE L* rather than
      eyeballed hex steps: `canvas` is the page ground, `surface-hover` is the
      weakest interactive hint, `surface` is a grouping tint for a multi-part
@@ -135,85 +240,6 @@
   --accent-strong-hover: #302d29;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    /* Deep graphite, not near-black. The previous canvas was #0a0a0a at
-       L* 2.74 -- effectively pitch black -- and `surface` sat only ΔL* 1.97
-       above it, so a grouping tint was invisible and long evidence pages
-       merged into one dark field. The ladder now starts at L* 12.25 and
-       every step is perceptible:
-
-         canvas -> surface-hover  ΔL* 2.91  (interactive hint)
-         canvas -> surface        ΔL* 6.22  (grouping / selected state)
-         surface -> evidence      ΔL* 3.23  (machine output)
-
-       Selection is 2.1x the hover step, which is the same correction made
-       in light: `surface-hover` used to be ΔL* 7.10 off the canvas while
-       `surface` was 1.97, so a hovered row out-shouted the selected one.
-
-       Equal RGB channels remove the previous warm/brown cast without
-       introducing a cool tint. Each neutral is the nearest 8-bit grey
-       by relative luminance to its previous value; surface L* moves by
-       less than 0.12. Light keeps its independent warm paper palette. */
-    --canvas: #202020; /* L* 12.25 */
-    --surface-hover: #262626; /* L* 15.16 */
-    --surface: #2d2d2d; /* L* 18.47 */
-    --evidence: #343434; /* L* 21.70 */
-
-    /* Raising the canvas raises the AA floor for every tier, so all four
-       are re-solved against `evidence` (the lightest ground they land on)
-       rather than the canvas. `fg` is a soft neutral near-white rather
-       than #fafafa: 14.43:1 on the canvas is ample, and pure white on
-       graphite glares over long technical pages. Ratios are canvas /
-       evidence; `fg-faint` also clears 4.61 on the unchanged add-row tint,
-       the worst-case background for diff line numbers. */
-    --fg: #f1f1f1; /* 14.43 / 11.02 */
-    --fg-secondary: #cfcfcf; /* 10.46 / 7.99 */
-    --fg-tertiary: #bababa; /* 8.40 / 6.41 */
-    --fg-faint: #9e9e9e; /* 6.08 / 4.65 -- AA held on the lightest ground */
-
-    --rule: #414141; /* 1.60 vs canvas */
-    --rule-strong: #656565; /* 2.80 vs canvas */
-
-    /* Unchanged values: all four still clear AA on the lighter grounds
-       (worst case `failure` at 4.63 on evidence), so the truth mapping is
-       carried over exactly. Ratios are canvas / evidence. */
-    --attention: #fbbf24; /* 9.76 / 7.46 */
-    --indeterminate: #94a3b8; /* 6.35 / 4.86 */
-    --success: #34d399; /* 8.48 / 6.48 */
-    --failure: #fb7185; /* 6.05 / 4.63 */
-
-    --mark-attention: #f59e0b;
-    --mark-indeterminate: #708097;
-    --mark-success: #10b981;
-    --mark-failure: #f43f5e;
-    --mark-neutral: #7d7b76;
-
-    /* Both row tints previously sat at or BELOW the surface behind them
-       (del was ΔL* -0.14), so a deleted line had no visible ground at all.
-       They are now seated at evidence luminance and separated by hue, not
-       brightness, so neither side out-weighs the other -- the +/- marker
-       and the text colour still carry the distinction. */
-    --diff-add-bg: #29382f; /* ΔL* +3.49 vs surface */
-    --diff-add-fg: #6ee7b7; /* 8.10 on its row */
-    --diff-del-bg: #403034; /* ΔL* +3.30 vs surface */
-    --diff-del-fg: #fda4af; /* 6.57 on its row */
-
-    /* Lifted: the old #451a03 landed at L* 15.54, three points off the new
-       canvas, which would have made the banner disappear. */
-    --warning-surface: #53300f; /* ΔL* +11.38 vs canvas */
-    --warning-rule: #a06b22; /* 2.57 on the surface */
-    --warning-fg: #fde68a; /* 9.38 on the surface */
-
-    --accent: #f3f1ee;
-    --accent-fg: #22201d; /* 14.41 on the fill */
-    --accent-hover: #fbfaf8;
-    --accent-strong: #fbfaf8;
-    --accent-strong-fg: #22201d;
-    --accent-strong-hover: #ffffff;
-  }
-}
-
 /* ---------------------------------------------------------------------------
    Landing-page scope.
 
@@ -223,8 +249,10 @@
    warm paper and read as two different products. Rather than change the theme
    globally -- which would drag the authenticated app with it -- this pins the
    dark token values on one subtree. Nothing outside `[data-surface='landing']`
-   is affected, and the tokens themselves are the same values the dark block
-   already defines, not a parallel palette.
+   is affected. These are the graphite values the page was designed and
+   screenshotted against; the app's own dark palette has since moved to the
+   charcoal ladder above (Amendment A2), and the landing page deliberately
+   keeps graphite until it gets its own pass rather than drifting with it.
 
    `--landing-accent` is the one addition: an editorial accent used for the
    narrative spine (section numerals, the workflow rule). It aliases the
@@ -274,6 +302,10 @@
 
 @theme inline {
   --color-canvas: var(--canvas);
+  --color-chrome: var(--chrome);
+  --color-panel: var(--panel);
+  --color-raised: var(--raised);
+  --color-raised-hover: var(--raised-hover);
   --color-surface: var(--surface);
   --color-surface-hover: var(--surface-hover);
   --color-evidence: var(--evidence);
@@ -285,6 +317,8 @@
 
   --color-rule: var(--rule);
   --color-rule-strong: var(--rule-strong);
+
+  --color-focus: var(--focus);
 
   --color-attention: var(--attention);
   --color-indeterminate: var(--indeterminate);
@@ -318,8 +352,68 @@
      it a scale step (micro-labels, log output) instead of a one-off. */
   --text-2xs: 0.6875rem;
 
+  /* The product type scale (DESIGN.md Amendment B6) is four sans steps --
+     `text-title` 22/28 (page title), `text-sm` 14/20 (identity, emphasis),
+     `text-ui` 13/20 (body, labels, controls) and `text-xs` 12/16 (supporting
+     detail) -- plus mono at `text-2xs` for literal values only. */
+  --text-ui: 0.8125rem;
+  --text-ui--line-height: 1.25rem;
+  --text-title: 1.375rem;
+  --text-title--line-height: 1.75rem;
+
+  /* Depth recipes borrowed from Beautiful UI (DESIGN.md Amendment B6): a lit
+     1px edge -- white at low alpha, which reads as light catching the rim,
+     where a grey border reads as an outline -- plus a drop too soft to read
+     as a shadow. `btn` for tactile controls, `card` for the panel,
+     `overlay` for floating layers. Nothing heavier exists. */
+  --shadow-hairline: 0 0 0 1px var(--rule);
+  --shadow-btn: 0 0 0 1px rgb(255 255 255 / 0.1), 0 1px 2px rgb(0 0 0 / 0.3);
+  --shadow-card:
+    0 0 0 1px rgb(255 255 255 / 0.08), 0 1px 2px rgb(0 0 0 / 0.2), 0 2px 6px rgb(0 0 0 / 0.2);
+  --shadow-overlay: 0 0 0 1px rgb(255 255 255 / 0.15), 0 8px 28px rgb(0 0 0 / 0.34);
+
+  /* Radius scale (borrowed): chip 6, control 8, card 10, window 14. */
+  --radius-chip: 6px;
+  --radius-control: 8px;
+  --radius-card: 10px;
+  --radius-window: 14px;
+
+  /* A strong ease-out for anything that moves; colour changes use the
+     default ease. */
+  --ease-out-strong: cubic-bezier(0.23, 1, 0.32, 1);
+
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+}
+
+/* The repository index's change matrix (DESIGN.md Amendment B5): hovering a
+   tracked-change column -- its header, its legend entry, or any cell --
+   outlines that column across every repository, and dims the other legend
+   entries. (Each of those is also a link to the change filter; selection
+   is styled in the markup, not here.) CSS only, through `:has()`; with no `:has()` support nothing
+   highlights and nothing breaks. Six columns covers the tracked set with
+   headroom; add selectors here if Patchwork ever tracks more. */
+.matrix-scope:has([data-col='0']:hover) [data-col='0'],
+.matrix-scope:has([data-col='1']:hover) [data-col='1'],
+.matrix-scope:has([data-col='2']:hover) [data-col='2'],
+.matrix-scope:has([data-col='3']:hover) [data-col='3'],
+.matrix-scope:has([data-col='4']:hover) [data-col='4'],
+.matrix-scope:has([data-col='5']:hover) [data-col='5'] {
+  outline: 1px solid var(--fg-secondary);
+  outline-offset: 1px;
+}
+.matrix-scope:has([data-col]:hover) [data-legend] {
+  opacity: 0.4;
+}
+.matrix-scope:has([data-col='0']:hover) [data-legend='0'],
+.matrix-scope:has([data-col='1']:hover) [data-legend='1'],
+.matrix-scope:has([data-col='2']:hover) [data-legend='2'],
+.matrix-scope:has([data-col='3']:hover) [data-legend='3'],
+.matrix-scope:has([data-col='4']:hover) [data-legend='4'],
+.matrix-scope:has([data-col='5']:hover) [data-legend='5'] {
+  opacity: 1;
+  outline: none;
+  background: var(--surface);
 }
 
 body {
