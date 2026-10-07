@@ -23,6 +23,227 @@ the gap so it gets added here.
 
 ---
 
+## Amendments
+
+These decisions supersede specific rules further down; each affected section
+carries a one-line pointer back here, and anything not listed is unchanged.
+The B series records the approved Repositories redesign (prototype "C",
+refined), implemented 2026-10-06. It replaces most of the 2026-10-04 A
+series; the superseded entries are listed at the end so they are not
+restored.
+
+**B1. Shell: one compact top shell** (supersedes A1's left rail and the
+top-bar specifics in Sections 5, 19 and 30).
+
+- `AppShell` is a sticky 48px top bar on `bg-chrome` with a `border-b`
+  hairline, content capped at `max-w-360` (1440px) to share the index's
+  grid. Left to right: the mark (home), a divider, the primary destinations
+  as compact items (the current one filled `bg-surface`), then "Add
+  repository" (secondary; icon-only below `sm`) and the avatar, which opens
+  the account popover.
+- **No left rail, icon rail or sidebar.** One or two destinations do not
+  earn a column of chrome.
+- Only destinations that exist are listed -- Repositories today -- never
+  dead or disabled entries. `aria-current="page"` only on the index; the
+  item reads as current across the whole repository workflow.
+- `<body>` keeps `overflow-x: clip`, not `hidden` (which silently disables
+  `position: sticky`); `<html>` keeps `hidden`, which blocks horizontal
+  panning.
+
+**B2. Palette: cool charcoal, dark-only** (supersedes A2's values;
+Section 31's OS-driven switch stays removed).
+
+- One charcoal ladder, borrowed from Beautiful UI (Turbo, MIT -- values
+  only, no code), CIE L\*: chrome 8.2 < canvas 10.2 < panel 12.2 < raised
+  14.2 < surface-hover 15.2 < raised-hover 17.5 < surface 18.0 < evidence
+  20.8. Depth comes from these small steps plus the lit-edge recipes in B6
+  -- never tinted washes or heavy shadows. **Not near-black:** the first
+  pass sat the canvas at L\* 2.5, which crushed every surface into the bottom
+  of the range and read as a template.
+- Cool greys only. **Do not reintroduce warm graphite, ivory, brown or
+  warm-paper tones in the app.** The light values stay dormant under
+  `[data-theme='light']`; the landing page keeps its pinned graphite until
+  its own pass.
+- Text: `fg`, `fg-secondary`, `fg-tertiary` (which `fg-faint` equals in this
+  palette), spaced far enough apart to read as tiers; every one clears 4.5:1
+  on `evidence`. Beautiful UI's third tier (~3.3:1) is deliberately not
+  borrowed. Values and ratios live in `globals.css`.
+
+**B3. No brand hue; focus is cool grey** (supersedes A3 and Section 10's
+accent rule).
+
+- `--brand` is retired. Patchwork's identity comes from the mark, type,
+  composition and the change matrix, not a colour. Focus rings use
+  `--focus`.
+- Amber means Affected (and the warning banner) and nothing else: never a
+  general accent, wash or identity colour.
+
+**B4. Status: glyph, verdict tone, matrix** (supersedes, on the repository
+index, the dot-plus-label pattern of Sections 11 and 22 and A4's colourless
+Clear label).
+
+- The verdict glyph is the Patchwork mark (`patch-glyph.tsx`); shape carries
+  state as well as colour: affected solid, uncertain half, clear outlined,
+  failed split at the joint, not assessed half dashed, not analysed dashed.
+- The verdict word is coloured where it asks for a decision or reports a
+  failure (Affected, Uncertain, Failed) and neutral otherwise. Status is
+  never colourless where it carries meaning, and never a pill.
+- Semantic colour stays small -- glyphs, verdict words, matrix cells, 8px
+  swatches -- never a row wash or filled panel.
+
+**B5. Repository index** (supersedes A4 and the earlier single-panel B5,
+2026-10-08; summary filters and change filter added the same day).
+
+- **Main column plus a context sidebar.** The page title and one subtitle
+  (owner, how many repositories are watched) sit above a two-column grid:
+  the repository sections on the left, a sticky sidebar on the right
+  (17-18.5rem from `lg`; below it, after the list). The sidebar holds what
+  _explains_ the list, never the list itself: the tracked changes, two
+  lines per change instead of a truncated one, each with what it hits
+  ("2 affected", "2 uncertain", "None affected"). The earlier Overview
+  block (segmented bar plus counts) is gone -- the summary strip replaced
+  it; do not restore it.
+- **The summary strip is the view filter.** One `bg-panel` window opens
+  the main column with four links -- All repositories, Needs attention,
+  Needs analysis, Clear -- each a label, a `text-xl` count and one short
+  breakdown naming exactly the verdicts behind the number (8px state dots;
+  "2 affected · 1 uncertain", "1 failed · 3 unassessed", "Not affected",
+  "Last analysed yesterday"). The current view is `bg-surface` with
+  `aria-current="page"`. 4 columns from `md`, 2x2 below. "All" keeps the
+  three grouped sections; the others show one.
+- **Tracked changes filter the list.** Each sidebar entry, each matrix
+  column header and each matrix cell links to `?change=<title>`: the
+  repositories that change hits (AFFECTED or UNCERTAIN -- never "not
+  affected" or unassessed). Keyed by title, not the `01` label, because
+  labels follow impact order and a shared link must not drift to another
+  change. The selected entry is `bg-surface` + `shadow-btn`
+  (`aria-current`), its column header turns `fg` and its cells are
+  outlined; a chip above the list ("Hit by 02 <title> ×", then what it
+  hits) is the way out. Selecting the current change again clears it;
+  selecting a view drops it. An unknown `view` or `change` in the URL is
+  ignored, never guessed at.
+- **Filters are links, not client state.** Every filter is a URL, so it is
+  server-rendered, shareable and back-button safe. A filter with no rows
+  says which filter is empty, in verdict terms, with "Show all
+  repositories".
+- **Three sections, each with its own density**, each its own `bg-panel`
+  window (`rounded-window`, `shadow-card`) under a plain heading with a
+  count:
+  - _Needs attention_: roomy two-line rows -- name, then the verdict word
+    and what it rests on ("3 changes · 4 usages" for Affected, "1 change
+    unresolved" for Uncertain, so the two never read as degrees of one
+    thing) -- plus the change matrix
+    and "Review". The only section with a column header ("Affected by",
+    `01`..., "Analysed").
+  - _Needs analysis_: single-line rows -- name, status word, time, Retry or
+    Analyse.
+  - _Clear_: single-line rows with no status word (the heading says it) --
+    name, time, an icon Re-analyse.
+- **The change matrix appears only where it carries information**: on
+  attention rows. One 24px cell per tracked change, no outlines -- affected
+  is a faint amber tint with the usage count, uncertain a faint blue-grey
+  "?", not affected a quiet block with a neutral dot, no assessment the
+  faintest empty block. Hovering a column, its header or its legend entry
+  outlines that column and lights the legend entry (`.matrix-scope` in
+  `globals.css`). Cells sit above the row link (`z-10`) so they take
+  hover and clicks; a small tooltip after 100ms names the cell ("02 ·
+  Affected · 3 usages"). Cells and headers are pointer-only (out of the
+  tab order, hidden from assistive tech): keyboard and screen-reader users
+  get the same filter from the sidebar and the matrix from each row's
+  sr-only summary.
+- **Text is spent only where it decides something.** Owner, branch and
+  commit are not on index rows; they are on the repository overview. The
+  owner prefix appears only when the estate spans more than one owner.
+- **Rows are links** -- do not restore inert rows. The name's `::after`
+  covers the row; hover steps the surface; keyboard focus rings the whole
+  row. Analyse forms sit above the link (`z-10`), never inside it. Analysed
+  times and actions share two fixed tracks, so they align across all three
+  sections.
+- Actions: "Review" is tactile (`shadow-btn`) and is the visible end of the
+  row link; Retry, Analyse and the icon Re-analyse are quiet text until
+  hovered, pulled out by their padding so their visible edges align with
+  Review. All run the real analyse action and read "Analysing…" while
+  pending. Analysed times are `fg-tertiary`: metadata, never louder than
+  the verdict.
+- Responsive: below `md` rows become glyph, name, supporting lines
+  (verdict and detail wrapping rather than truncating, then the time; or
+  status and time), action; the matrix and column header drop; the
+  summary strip is 2x2; the sidebar follows the list.
+- A failed `GET /repositories` renders an error state, never the "Connect
+  your first repository" empty state.
+
+**B6. Controls, type, radius** (amends Sections 9, 13 and 16; supersedes
+A7).
+
+- Controls are 32px tall (28px inside a row), `rounded-control`, 13px medium
+  labels, and press at `scale(0.97)` with `ease-out-strong` (no scale under
+  reduced motion). Primary: near-white fill. Secondary: tactile --
+  `bg-surface` with `shadow-btn`. Quiet: text until hovered. No outlined
+  boxes, no bright fills. The current nav item and the avatar use
+  `shadow-btn` too.
+- **Depth recipes** (borrowed from Beautiful UI, amends Section 14): a lit
+  1px edge -- white at 8-15% alpha, which reads as light on a rim where a
+  grey border reads as an outline -- plus a drop too soft to read as a
+  shadow. `shadow-btn` for tactile controls, `shadow-card` for the
+  repository panel (which has no border), `shadow-hairline` for chips,
+  `shadow-overlay` for floating layers. Nothing heavier; never on rows.
+- Type scale -- four sans steps plus mono: `text-title` 22/28 semibold,
+  -0.02em (page title); `text-sm` 14/20 (identity, emphasis); `text-ui` 13/20
+  (body, labels, controls, verdicts); `text-xs` 12/16 (supporting detail).
+  Mono at `text-2xs` 11px only for literal values (commit, change numbers,
+  package name). One exception: the summary strip's counts are `text-xl`
+  20/28 semibold, -0.01em. No other sizes on the index.
+- Radius tokens: `rounded-window` 14px (the repository panel),
+  `rounded-card` 10px (popovers), `rounded-control` 8px (controls, nav,
+  legend rows), `rounded-chip` 6px (chips); matrix cells stay at 4px, the
+  mark's square geometry. Dots and avatars are round.
+- Icons (Lucide): `folder-git-2` (nav), `plus` (add), `arrow-right`
+  (Review), `rotate-cw` (Retry, Re-analyse), `play` (Analyse), `lock`
+  (private), `x` (clear the change filter), `external-link` (account).
+
+**Still in force from 2026-10-04:**
+
+**A5. Repository overview at `/repositories/[id]`** (supersedes Section
+33's "a full Repository detail screen is not yet justified").
+
+- Reading order: breadcrumb → repository identity (`text-lg`) with
+  Re-analyse → the **verdict panel**, the strongest object on the page
+  (verdict title at `text-3xl` in its status colour, a headline, an
+  optional secondary line, the next step) with the snapshot it is true
+  about as its footer (Stripe SDK, snapshot commit, analysis state,
+  analysed) → the latest analysis's changes as static rows (title,
+  verdict, confirmed usages for AFFECTED only).
+- Hybrid density: the verdict panel gets the most room on the page; the
+  rows beneath stay compact.
+- Data: the ownership-scoped `GET /repositories`, selected by id, 404 when
+  absent, until a `GET /repositories/:id` exists.
+- The change-by-change report stays at `/analysis-runs/[id]`, reached from
+  the verdict's "Open impact report".
+- Verdict copy never says "breaking": the data does not distinguish
+  breaking changes from deprecations.
+
+**A6. `not_assessed` repository state** (extends Sections 11 and 32).
+
+- A completed run that recorded no assessments, or a run status the web
+  does not recognise, is `not_assessed`: neutral role, label "Not
+  assessed", action "Retry". **It is never `clear`.** The previous mapping
+  rendered it as a green "Clear" with no evidence behind it, contradicting
+  the abstain-on-uncertainty invariant.
+- Index priority: affected → uncertain → failed → not_assessed →
+  not_analysed → clear.
+
+**Superseded 2026-10-04 decisions -- do not restore:**
+
+- A1, the labelled/icon left rail: replaced by the top shell (B1).
+- A2, the `#141517` palette with its blue-tinted greys: replaced by B2's cool
+  charcoal ladder.
+- A3, the blue `--brand` accent: retired (B3).
+- A4, the five-column table index with neutral quiet actions: replaced by
+  the C composition (B5).
+- A7, radius and type notes: replaced by B6.
+
+---
+
 ## 1. Product personality
 
 Patchwork is **evidence-producing developer infrastructure**, not a
@@ -188,6 +409,8 @@ they're actually asking it, even if every individual piece of content is
 present and correct.
 
 ## 5. Application shell philosophy
+
+> **Superseded (2026-10-06):** the shell is one compact top bar, see Amendment B1. The specifics below are historical.
 
 **Current state:** a shell exists, implemented as `AppShell`
 (`apps/web/src/components/app-shell.tsx`), rendered by a route-group
@@ -468,6 +691,8 @@ direction worth exploring. Deliberately not adopted here:
 
 ## 10. Colour roles
 
+> **Amended (2026-10-06):** no brand hue, focus is cool grey (Amendment B3); cool charcoal tokens (B2).
+
 **Components reference semantic tokens, never raw Tailwind palette
 steps.** `globals.css` defines every color as a CSS custom property
 (`--fg`, `--surface`, `--attention`, …), re-exposed as Tailwind utility
@@ -546,6 +771,8 @@ now impossible to get subtly wrong twice.
   from ever competing visually with a status color.
 
 ## 11. Semantic status colours
+
+> **Extended:** `not_assessed` maps to the neutral role (Amendment A6); the repository index's status treatment is Amendment B4.
 
 This is the single most important color table in the product — it is
 already followed correctly across three independent status vocabularies
@@ -686,6 +913,8 @@ table is the role mapping, not the palette.
 
 ## 13. Radius system
 
+> **Amended (2026-10-06):** 8px controls and containers, 4px matrix cells, see Amendment B6.
+
 **One radius for the entire product: `rounded-md` (6px).** Every
 interactive control (button, input once inputs exist), every bordered
 block, and every status-dot's own rounding (`rounded-full`, the one
@@ -697,6 +926,8 @@ second radius value (a `rounded-lg` card, a `rounded-full` pill button)
 without a documented reason added to this section first.
 
 ## 14. Elevation / shadows
+
+> **Amended (2026-10-07):** subtle lit-edge recipes (`shadow-btn`, `shadow-card`, `shadow-hairline`, `shadow-overlay`) are the only depth allowed, see Amendment B6.
 
 **Zero shadows exist anywhere in the shipped product, and none should be
 added by default.** Patchwork communicates hierarchy through spacing,
@@ -714,6 +945,8 @@ used on static in-flow content — only on something that is genuinely
 floating above the page (a popover, a toast if one is ever justified).
 
 ## 15. Icons
+
+> **Superseded in part (2026-10-06):** icons come from Lucide; current inventory in Amendment B6.
 
 Patchwork ships **zero icon libraries** and exactly **two hand-rolled
 inline SVGs** today: an external-link glyph (linking out to a provider's
@@ -746,6 +979,8 @@ full list, not a sample):
 | Disclosure chevron | Every `<details>` summary                     | The only visual cue that a summary is expandable; rotates on open/close via pure CSS, carries real state |
 
 ## 16. Buttons
+
+> **Amended (2026-10-06):** 32px controls; secondary is tonal, see Amendment B6.
 
 Three button treatments exist: primary, secondary, quiet.
 
@@ -837,6 +1072,8 @@ built.
 - Helper text, if present, in tertiary zinc, above the error slot.
 
 ## 18. Tables / lists
+
+> **Superseded in part (2026-10-06):** the repository index composition is Amendment B5.
 
 - **Repeated structured records are a `divide-y` list of rows, not a
   card grid and not (yet) an HTML `<table>`.** Every current
@@ -935,6 +1172,8 @@ built.
   as a pagination/filtering problem, not a "switch to cards" problem.
 
 ## 19. Navigation
+
+> **Superseded in part (2026-10-06):** global navigation is the compact top shell, see Amendment B1.
 
 - **The shell (Section 5) carries global navigation**: the product mark and
   wordmark link home to `/repositories`, while the single active
@@ -1086,6 +1325,8 @@ branch main`), rationed to at most one or two per line, matching the
   is marketing copy — it holds equally well for a metadata strip.
 
 ## 22. Status presentation
+
+> **Superseded on the repository index (2026-10-06):** glyph, verdict tone and matrix, see Amendment B4.
 
 - **A status is always dot + label, never a pill/badge with a filled
   background.** This is deliberate, not an oversight: a filled colored
@@ -1295,6 +1536,8 @@ for>`/implicit wrapping, error text programmatically associated via
 
 ## 30. Responsive behaviour
 
+> **Amended (2026-10-06):** the shell stays a top bar at every width (Amendment B1); the index's responsive rules are B5; `<body>` uses `overflow-x: clip`.
+
 - **Mobile is a secondary but real target** — every current screen
   already degrades correctly (`sm:` breakpoint used for the
   row-layout-to-stacked-layout switch on the repositories list). Keep
@@ -1340,6 +1583,8 @@ for>`/implicit wrapping, error text programmatically associated via
   a hamburger.
 
 ## 31. Dark-mode principles
+
+> **Superseded in part (2026-10-06):** dark-only, cool charcoal, see Amendment B2.
 
 - **Every color decision is a token (Section 10), defined once per
   theme in `globals.css`** — a component never writes a `dark:` variant
@@ -1698,6 +1943,8 @@ remaining Invoice.subscription access(es)"`); `StaticValidation` splits
   to a line per change. See Section 18 for the measurements.
 
 ## 33. Index-screen vs. detail-screen rules
+
+> **Superseded in part (2026-10-04):** a repository overview route now exists, see Amendment A5.
 
 Patchwork's real workflow is shallow and linear:
 
