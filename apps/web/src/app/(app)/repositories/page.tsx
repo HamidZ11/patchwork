@@ -6,6 +6,7 @@ import { apiFetch, API_URL } from '@/lib/api';
 import { analyseRepository } from './actions';
 import { AnalyseButton } from './analyse-button';
 import { PatchGlyph } from './patch-glyph';
+import { PAGE_GRID, PAGE_MAIN as MAIN, Section } from './section';
 import {
   buildRepositoryIndex,
   filterRows,
@@ -295,28 +296,6 @@ function ClearRow({ row, showOwner }: { row: IndexRow; showOwner: boolean }) {
   );
 }
 
-function Section({
-  id,
-  title,
-  count,
-  children,
-}: {
-  id: string;
-  title: string;
-  count: number;
-  children: React.ReactNode;
-}) {
-  return (
-    <section aria-labelledby={id}>
-      <h2 id={id} className="mb-3 flex items-baseline gap-2 px-1 text-ui font-medium text-fg">
-        {title}
-        <span className="text-fg-tertiary tabular-nums">{count}</span>
-      </h2>
-      <div className="overflow-hidden rounded-window bg-panel shadow-card">{children}</div>
-    </section>
-  );
-}
-
 /** The tracked changes, which double as the matrix legend and the change
  * filter. Two lines per change instead of a truncated one; hovering an
  * entry outlines its column in the list, selecting it narrows the list. */
@@ -504,8 +483,6 @@ const EMPTY_VIEW: Record<IndexView, string> = {
   clear: 'No repository is clear yet.',
 };
 
-const MAIN = 'mx-auto w-full max-w-300 flex-1 px-4 pt-12 pb-24 sm:px-6 lg:px-8';
-
 export default async function RepositoriesPage({
   searchParams,
 }: {
@@ -584,7 +561,7 @@ export default async function RepositoriesPage({
         </div>
       )}
 
-      <div className="mt-10 grid gap-x-12 gap-y-12 lg:grid-cols-[minmax(0,1fr)_17rem] xl:grid-cols-[minmax(0,1fr)_18.5rem]">
+      <div className={PAGE_GRID}>
         <div className="flex min-w-0 flex-col gap-10">
           <div className="flex flex-col gap-5">
             <SummaryStrip index={index} view={filter.view} />

@@ -12,10 +12,22 @@ export interface LatestAnalysisStripeSummary {
 
 export type AssessmentStatus = 'AFFECTED' | 'UNCERTAIN' | 'NOT_AFFECTED';
 
+/** One located usage, as `GET /repositories` already returns it: a
+ * repository-relative file, a line and the symbol that matched. Never
+ * source code. */
+export interface Finding {
+  workspacePath: string;
+  sourceFile: string;
+  line: number;
+  matchedSymbol: string;
+}
+
 export interface LatestImpactAssessment {
   providerChangeTitle: string;
   status: AssessmentStatus;
-  findings: unknown[];
+  /** The analyser's own deterministic explanation of the verdict. */
+  reason: string;
+  findings: Finding[];
 }
 
 export interface LatestAnalysis {
@@ -124,27 +136,21 @@ export function verdictCopy(state: ImpactState): {
   secondary: string | null;
 } {
   switch (state.kind) {
+    // "Unresolved", as on the index: an uncertain change is not a milder
+    // affected one, it is one the analysis could not decide.
     case 'affected':
       return {
         title: 'Affected',
-        headline:
-          state.affectedCount === 1
-            ? '1 change affects this repository'
-            : `${state.affectedCount} changes affect this repository`,
+        headline: `${state.affectedCount} of ${plural(state.assessedCount, 'tracked change', 'tracked changes')} ${state.affectedCount === 1 ? 'affects' : 'affect'} this repository`,
         secondary:
           state.uncertainCount === 0
             ? null
-            : state.uncertainCount === 1
-              ? '1 uncertain change needs review'
-              : `${state.uncertainCount} uncertain changes need review`,
+            : `${plural(state.uncertainCount, 'change', 'changes')} unresolved`,
       };
     case 'uncertain':
       return {
         title: 'Uncertain',
-        headline:
-          state.uncertainCount === 1
-            ? '1 change needs review'
-            : `${state.uncertainCount} changes need review`,
+        headline: `${state.uncertainCount} of ${plural(state.assessedCount, 'tracked change', 'tracked changes')} ${state.uncertainCount === 1 ? 'is' : 'are'} unresolved`,
         secondary: 'No change is confirmed to affect this repository.',
       };
     case 'clear':
@@ -184,21 +190,44 @@ const ASSESSMENT_ORDER: Record<AssessmentStatus, number> = {
 };
 
 /** The API returns a run's assessments in no defined order, so sort by
- * verdict and then title: the same repository always lists the same way. */
-export function sortAssessments(assessments: LatestImpactAssessment[]): LatestImpactAssessment[] {
+ * verdict, then by `within` (title by default): the same repository always
+ * lists the same way. */
+export function sortAssessments(
+  assessments: LatestImpactAssessment[],
+  within: (a: LatestImpactAssessment, b: LatestImpactAssessment) => number = (a, b) =>
+    a.providerChangeTitle.localeCompare(b.providerChangeTitle),
+): LatestImpactAssessment[] {
   return [...assessments].sort(
-    (a, b) =>
-      ASSESSMENT_ORDER[a.status] - ASSESSMENT_ORDER[b.status] ||
-      a.providerChangeTitle.localeCompare(b.providerChangeTitle),
+    (a, b) => ASSESSMENT_ORDER[a.status] - ASSESSMENT_ORDER[b.status] || within(a, b),
   );
 }
 
-/** A confirmed-usage count only exists for an AFFECTED change. Printing
- * "0 usages" beside an UNCERTAIN one would assert negative evidence the
- * backend never concluded (Section 34). */
+/** "4 usages in 3 files", or null when there is nothing to count. */
+function countUsages(findings: Finding[]): string | null {
+  if (findings.length === 0) return null;
+  if (findings.length === 1) return '1 usage';
+  // `sourceFile` is repository-relative (the archive path), so it alone
+  // identifies a file across workspaces.
+  const files = new Set(findings.map((f) => f.sourceFile)).size;
+  return `${findings.length} usages in ${plural(files, 'file', 'files')}`;
+}
+
+/** A usage count only exists for an AFFECTED change. Printing "0 usages"
+ * beside an UNCERTAIN one would assert negative evidence the backend never
+ * concluded (Section 34); an AFFECTED change with no located usage (version
+ * applicability alone) gets no count either -- its reason says why. */
 export function usageLabel(assessment: LatestImpactAssessment): string | null {
-  if (assessment.status !== 'AFFECTED') return null;
-  return plural(assessment.findings.length, 'confirmed usage', 'confirmed usages');
+  return assessment.status === 'AFFECTED' ? countUsages(assessment.findings) : null;
+}
+
+/** The same count across a run: AFFECTED findings only. */
+export function totalUsageLabel(assessments: LatestImpactAssessment[]): string | null {
+  return countUsages(assessments.filter((a) => a.status === 'AFFECTED').flatMap((a) => a.findings));
+}
+
+/** File, then line: the order a reader would open them in. */
+export function sortFindings(findings: Finding[]): Finding[] {
+  return [...findings].sort((a, b) => a.sourceFile.localeCompare(b.sourceFile) || a.line - b.line);
 }
 
 export const ASSESSMENT_LABEL: Record<AssessmentStatus, string> = {

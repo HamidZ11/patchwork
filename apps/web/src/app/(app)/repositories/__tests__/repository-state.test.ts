@@ -3,20 +3,27 @@ import {
   computeImpactState,
   IMPACT_STATE_PRIORITY,
   sortAssessments,
+  sortFindings,
+  totalUsageLabel,
   usageLabel,
   verdictCopy,
+  type Finding,
   type AssessmentStatus,
   type LatestAnalysis,
   type LatestImpactAssessment,
   type Repository,
 } from '../repository-state';
 
+function finding(sourceFile: string, line = 1): Finding {
+  return { workspacePath: '.', sourceFile, line, matchedSymbol: 'invoice.subscription' };
+}
+
 function assessment(
   status: AssessmentStatus,
   title = `Change ${status}`,
-  findings = 0,
+  findings: Finding[] = [],
 ): LatestImpactAssessment {
-  return { providerChangeTitle: title, status, findings: Array.from({ length: findings }) };
+  return { providerChangeTitle: title, status, reason: `Reason for ${title}.`, findings };
 }
 
 function repo(analysis: Partial<LatestAnalysis> | null): Repository {
@@ -128,8 +135,8 @@ describe('verdictCopy', () => {
     });
     expect(copy).toEqual({
       title: 'Affected',
-      headline: '3 changes affect this repository',
-      secondary: '1 uncertain change needs review',
+      headline: '3 of 4 tracked changes affect this repository',
+      secondary: '1 change unresolved',
     });
     expect(JSON.stringify(copy)).not.toMatch(/breaking/i);
   });
@@ -137,7 +144,18 @@ describe('verdictCopy', () => {
   it('omits the uncertain line when there is nothing uncertain', () => {
     expect(
       verdictCopy({ kind: 'affected', affectedCount: 1, uncertainCount: 0, assessedCount: 4 }),
-    ).toMatchObject({ headline: '1 change affects this repository', secondary: null });
+    ).toMatchObject({
+      headline: '1 of 4 tracked changes affects this repository',
+      secondary: null,
+    });
+  });
+
+  it('calls an uncertain change unresolved, never affected', () => {
+    expect(verdictCopy({ kind: 'uncertain', uncertainCount: 1, assessedCount: 4 })).toEqual({
+      title: 'Uncertain',
+      headline: '1 of 4 tracked changes is unresolved',
+      secondary: 'No change is confirmed to affect this repository.',
+    });
   });
 
   it('states the negative evidence a clear verdict rests on', () => {
@@ -180,14 +198,57 @@ describe('sortAssessments', () => {
   });
 });
 
+describe('sortAssessments with a tiebreak', () => {
+  it('keeps verdict order first and applies the tiebreak within a verdict', () => {
+    const rank: Record<string, number> = { Z: 0, C: 1, B: 2, A: 3 };
+    const sorted = sortAssessments(
+      [
+        assessment('NOT_AFFECTED', 'A'),
+        assessment('AFFECTED', 'C'),
+        assessment('UNCERTAIN', 'B'),
+        assessment('AFFECTED', 'Z'),
+      ],
+      (a, b) => rank[a.providerChangeTitle] - rank[b.providerChangeTitle],
+    );
+    expect(sorted.map((a) => a.providerChangeTitle)).toEqual(['Z', 'C', 'B', 'A']);
+  });
+});
+
 describe('usageLabel', () => {
-  it('counts confirmed usages only for an affected change', () => {
-    expect(usageLabel(assessment('AFFECTED', 'x', 2))).toBe('2 confirmed usages');
-    expect(usageLabel(assessment('AFFECTED', 'x', 1))).toBe('1 confirmed usage');
+  it('counts usages and the files they are in for an affected change', () => {
+    expect(usageLabel(assessment('AFFECTED', 'x', [finding('a.ts')]))).toBe('1 usage');
+    expect(usageLabel(assessment('AFFECTED', 'x', [finding('a.ts', 1), finding('a.ts', 9)]))).toBe(
+      '2 usages in 1 file',
+    );
+    expect(
+      usageLabel(
+        assessment('AFFECTED', 'x', [finding('a.ts'), finding('a.ts', 5), finding('b.ts')]),
+      ),
+    ).toBe('3 usages in 2 files');
   });
 
-  it('never prints a zero count for an uncertain change', () => {
+  it('never prints a zero count', () => {
+    expect(usageLabel(assessment('AFFECTED'))).toBeNull();
     expect(usageLabel(assessment('UNCERTAIN'))).toBeNull();
     expect(usageLabel(assessment('NOT_AFFECTED'))).toBeNull();
+  });
+
+  it('never counts an uncertain change, even one carrying findings', () => {
+    expect(usageLabel(assessment('UNCERTAIN', 'x', [finding('a.ts')]))).toBeNull();
+    expect(
+      totalUsageLabel([
+        assessment('AFFECTED', 'x', [finding('a.ts'), finding('b.ts')]),
+        assessment('UNCERTAIN', 'y', [finding('c.ts')]),
+        assessment('AFFECTED', 'z', [finding('b.ts', 4)]),
+      ]),
+    ).toBe('3 usages in 2 files');
+    expect(totalUsageLabel([assessment('UNCERTAIN', 'y', [finding('c.ts')])])).toBeNull();
+  });
+});
+
+describe('sortFindings', () => {
+  it('orders by file, then line', () => {
+    const sorted = sortFindings([finding('b.ts', 2), finding('a.ts', 10), finding('a.ts', 9)]);
+    expect(sorted.map((f) => `${f.sourceFile}:${f.line}`)).toEqual(['a.ts:9', 'a.ts:10', 'b.ts:2']);
   });
 });

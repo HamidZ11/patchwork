@@ -18,7 +18,17 @@ import type {
 const NOW = new Date('2026-10-06T12:00:00.000Z');
 
 function assessment(title: string, status: AssessmentStatus, findings = 0): LatestImpactAssessment {
-  return { providerChangeTitle: title, status, findings: Array.from({ length: findings }) };
+  return {
+    providerChangeTitle: title,
+    status,
+    reason: '',
+    findings: Array.from({ length: findings }, (_, i) => ({
+      workspacePath: '.',
+      sourceFile: `src/${title}-${i}.ts`,
+      line: i + 1,
+      matchedSymbol: 'x',
+    })),
+  };
 }
 
 function repo(

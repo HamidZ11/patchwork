@@ -24,7 +24,14 @@ const COLOUR: Record<ImpactStateKind, string> = {
  *   not_analysed  both dashed -- nothing known yet
  * Decorative: the verdict word beside it is the accessible statement.
  */
-export function PatchGlyph({ kind }: { kind: ImpactStateKind }) {
+export function PatchGlyph({
+  kind,
+  className = 'size-4',
+}: {
+  kind: ImpactStateKind;
+  /** Size only; the colour belongs to the state. */
+  className?: string;
+}) {
   const solid = { fill: 'currentColor', stroke: 'none' };
   const open = { fill: 'none', stroke: 'currentColor', strokeWidth: 2.25 };
   const dashed = { ...open, strokeDasharray: '3 2.5' };
@@ -38,7 +45,11 @@ export function PatchGlyph({ kind }: { kind: ImpactStateKind }) {
   };
   const [a, b, shift] = parts[kind];
   return (
-    <svg viewBox="-1 -1 28 28" aria-hidden="true" className={`size-4 shrink-0 ${COLOUR[kind]}`}>
+    <svg
+      viewBox="-1 -1 28 28"
+      aria-hidden="true"
+      className={`shrink-0 ${className} ${COLOUR[kind]}`}
+    >
       <path d={BLOCK_A} {...a} />
       <path d={BLOCK_B} transform={shift} {...b} />
     </svg>

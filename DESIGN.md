@@ -199,28 +199,55 @@ A7).
   mark's square geometry. Dots and avatars are round.
 - Icons (Lucide): `folder-git-2` (nav), `plus` (add), `arrow-right`
   (Review), `rotate-cw` (Retry, Re-analyse), `play` (Analyse), `lock`
-  (private), `x` (clear the change filter), `external-link` (account).
+  (private), `x` (clear the change filter), `arrow-left` (back to
+  Repositories), `external-link` (account).
+
+**B7. Repository overview at `/repositories/[id]`** (supersedes A5,
+2026-10-08).
+
+- **The index's composition, narrowed to one repository.** Same container
+  and grid (`section.tsx`): a back link ("Repositories"), the identity
+  (`owner /` in `fg-tertiary`, name, `text-title`) with Private/Public and
+  the default branch beneath and Re-analyse beside it; then a main column
+  and a sticky **Snapshot** sidebar.
+- **Verdict panel first** (`bg-panel`, `rounded-window`, `shadow-card`):
+  the glyph at 20px and the verdict word at `text-title` in its tone, a
+  headline that says how many of the tracked changes it rests on ("3 of 4
+  tracked changes affect this repository"), one supporting line (usages
+  and files across AFFECTED changes only, then "1 change unresolved"), and
+  the next step: "Open impact report" once there is a verdict (primary,
+  secondary when clear), otherwise Analyse or Retry.
+- **Changes: what each verdict rests on.** One row per tracked change in
+  the latest run, decisions first, then in the index's change order. The
+  `01` labels are the estate-wide ones from the index, so `02` means the
+  same change on both pages.
+  - Affected: title, "Affected · 2 usages in 2 files", then where --
+    up to five `file:line` and matched-symbol rows (mono `text-xs`, on
+    `bg-raised` with `shadow-hairline`), "N more in the impact report"
+    beyond that. An affected change with no located usage shows the
+    analyser's reason instead of a count.
+  - Uncertain: title, "Uncertain", then the analyser's own reason -- why
+    it could not be decided. Never a usage count.
+  - Not affected: one quiet line, title and "Not affected".
+  - Affected and uncertain rows link to the index filtered by that change
+    ("1 other repository →") when another repository is hit too.
+- **Snapshot sidebar:** Stripe SDK (a declared range is labelled
+  "declared"), workspace ("Repository root" for `.`), commit, analysis
+  state, analysed. The verdict is a claim about this commit at this SDK
+  version, so these sit beside it rather than as page chrome. The default
+  branch is a repository property and stays in the header.
+- Data: the ownership-scoped `GET /repositories`, selected by id, 404 when
+  absent, until a `GET /repositories/:id` exists. Its `reason` and
+  `findings` (file, line, symbol -- never source code) were already in the
+  response; the web now types and shows them. No API change.
+- Code context, AI explanations and fixes stay in the impact report at
+  `/analysis-runs/[id]`.
+- Change titles offer a line break after `.` and `_`, so API paths wrap at
+  a segment on narrow screens. Verdict copy never says "breaking".
+- Responsive: below `lg` the snapshot follows the changes; below `sm` the
+  verdict's action drops under its copy.
 
 **Still in force from 2026-10-04:**
-
-**A5. Repository overview at `/repositories/[id]`** (supersedes Section
-33's "a full Repository detail screen is not yet justified").
-
-- Reading order: breadcrumb → repository identity (`text-lg`) with
-  Re-analyse → the **verdict panel**, the strongest object on the page
-  (verdict title at `text-3xl` in its status colour, a headline, an
-  optional secondary line, the next step) with the snapshot it is true
-  about as its footer (Stripe SDK, snapshot commit, analysis state,
-  analysed) → the latest analysis's changes as static rows (title,
-  verdict, confirmed usages for AFFECTED only).
-- Hybrid density: the verdict panel gets the most room on the page; the
-  rows beneath stay compact.
-- Data: the ownership-scoped `GET /repositories`, selected by id, 404 when
-  absent, until a `GET /repositories/:id` exists.
-- The change-by-change report stays at `/analysis-runs/[id]`, reached from
-  the verdict's "Open impact report".
-- Verdict copy never says "breaking": the data does not distinguish
-  breaking changes from deprecations.
 
 **A6. `not_assessed` repository state** (extends Sections 11 and 32).
 
@@ -234,6 +261,8 @@ A7).
 
 **Superseded 2026-10-04 decisions -- do not restore:**
 
+- A5, the repository overview with the snapshot as the verdict panel's
+  footer and one-line change rows: replaced by B7.
 - A1, the labelled/icon left rail: replaced by the top shell (B1).
 - A2, the `#141517` palette with its blue-tinted greys: replaced by B2's cool
   charcoal ladder.
@@ -1944,7 +1973,7 @@ remaining Invoice.subscription access(es)"`); `StaticValidation` splits
 
 ## 33. Index-screen vs. detail-screen rules
 
-> **Superseded in part (2026-10-04):** a repository overview route now exists, see Amendment A5.
+> **Superseded in part (2026-10-04, 2026-10-08):** a repository overview route now exists, see Amendment B7 (which replaced A5).
 
 Patchwork's real workflow is shallow and linear:
 
