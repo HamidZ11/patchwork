@@ -140,6 +140,15 @@ export function fakeExplanationModel(
           usage: { inputTokens: 100, outputTokens: 50 },
         };
       }),
+    answerFollowUp:
+      overrides.answerFollowUp ??
+      (async (input) => {
+        calls.count += 1;
+        return {
+          answer: `Answer for ${input.context.verdict}: ${input.question}`,
+          usage: { inputTokens: 120, outputTokens: 40 },
+        };
+      }),
   };
 }
 

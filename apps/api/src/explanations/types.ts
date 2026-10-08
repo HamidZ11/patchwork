@@ -72,15 +72,68 @@ export interface ExplanationContext {
 
 export interface ExplanationModelResult {
   explanation: Explanation;
-  usage: { inputTokens: number | null; outputTokens: number | null } | null;
+  usage: ModelUsage;
+}
+
+export type ModelUsage = { inputTokens: number | null; outputTokens: number | null } | null;
+
+/**
+ * Follow-up questions about an explained assessment. Versioned like the
+ * explanation prompt, though nothing is cached under it today: answers are
+ * returned and not stored (the conversation lives in the reader's page).
+ */
+export const FOLLOW_UP_PROMPT_VERSION = 'impact-follow-up-v1';
+
+/** Bounds on what a caller may send, enforced at the API so cost and prompt
+ * size stay bounded however the endpoint is called. */
+export const MAX_FOLLOW_UP_QUESTION_LENGTH = 500;
+export const MAX_FOLLOW_UP_ANSWER_LENGTH = 1200;
+export const MAX_FOLLOW_UP_HISTORY = 6;
+
+/**
+ * One earlier exchange, as the browser holds it. Untrusted: it is the
+ * caller's own conversation, sent back each turn because nothing is stored
+ * server-side. It can only shape the caller's own next answer -- it never
+ * reaches the facts block, which the server builds from persisted evidence.
+ */
+export const followUpTurnSchema = z.object({
+  question: z.string().trim().min(1).max(MAX_FOLLOW_UP_QUESTION_LENGTH),
+  answer: z.string().trim().min(1).max(MAX_FOLLOW_UP_ANSWER_LENGTH),
+});
+export type FollowUpTurn = z.infer<typeof followUpTurnSchema>;
+
+export const followUpRequestSchema = z.object({
+  question: z.string().trim().min(1).max(MAX_FOLLOW_UP_QUESTION_LENGTH),
+  history: z.array(followUpTurnSchema).max(MAX_FOLLOW_UP_HISTORY).default([]),
+});
+
+/** The model's entire permitted output for a follow-up: one capped answer. */
+export const followUpAnswerSchema = z.object({
+  answer: z.string().trim().min(1).max(MAX_FOLLOW_UP_ANSWER_LENGTH),
+});
+
+export interface FollowUpInput {
+  context: ExplanationContext;
+  /** The explanation already shown above the conversation, when one is
+   * cached for these exact facts -- server-sourced, never taken from the
+   * caller. */
+  explanation: Explanation | null;
+  history: FollowUpTurn[];
+  question: string;
+}
+
+export interface FollowUpModelResult {
+  answer: string;
+  usage: ModelUsage;
 }
 
 /**
- * The injectable boundary between the route and OpenAI. A narrow interface
- * (one method, structured in, structured out) so tests drive a fake and no
- * automated test ever reaches the network.
+ * The injectable boundary between the routes and OpenAI. A narrow interface
+ * (structured in, structured out) so tests drive a fake and no automated
+ * test ever reaches the network.
  */
 export interface ExplanationModel {
   readonly model: string;
   generate(context: ExplanationContext): Promise<ExplanationModelResult>;
+  answerFollowUp(input: FollowUpInput): Promise<FollowUpModelResult>;
 }

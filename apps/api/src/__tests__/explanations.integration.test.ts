@@ -9,7 +9,11 @@ import type { GitHubInstallationInfo, GitHubRepository } from '@patchwork/github
 import { upsertInstallationAndRepositories } from '../github/persistence.js';
 import { STRIPE_BASIL_INVOICE_SUBSCRIPTION_RULE } from '../analysis/impact/rules/stripe-basil-invoice-subscription.js';
 import { STRIPE_BASIL_ISSUING_AUTHORIZATION_STATUS_RULE } from '../analysis/impact/rules/stripe-basil-issuing-authorization-status.js';
-import { EXPLANATION_PROMPT_VERSION, type ExplanationContext } from '../explanations/types.js';
+import {
+  EXPLANATION_PROMPT_VERSION,
+  type ExplanationContext,
+  type FollowUpInput,
+} from '../explanations/types.js';
 import {
   fakeExplanationModel,
   fakeGitHubAppAuth,
@@ -601,5 +605,202 @@ describe('impact explanations (real database)', () => {
     expect(seen?.remediation.supported).toBe(true);
 
     await cleanupUser(userId);
+  });
+
+  describe('follow-up questions', () => {
+    async function followUp(
+      app: ReturnType<typeof buildApp>,
+      cookie: string,
+      assessmentId: string,
+      payload: unknown,
+    ) {
+      return app.inject({
+        method: 'POST',
+        url: `/impact-assessments/${assessmentId}/explanation/follow-ups`,
+        headers: { cookie, 'content-type': 'application/json' },
+        payload: JSON.stringify(payload),
+      });
+    }
+
+    it('returns 401 without a session', async () => {
+      const app = buildApp(testAppDeps({ db }));
+      const response = await app.inject({
+        method: 'POST',
+        url: '/impact-assessments/00000000-0000-0000-0000-000000000000/explanation/follow-ups',
+        headers: { 'content-type': 'application/json' },
+        payload: JSON.stringify({ question: 'q' }),
+      });
+      expect(response.statusCode).toBe(401);
+    });
+
+    it('answers from the same server-built facts plus the cached explanation, and stores nothing', async () => {
+      const { cookie, userId } = await createAuthenticatedUser();
+      const { repositoryId } = await connectRepository(userId);
+      let seen: FollowUpInput | undefined;
+      const model = fakeExplanationModel({
+        answerFollowUp: async (input) => {
+          seen = input;
+          return { answer: 'src/billing.ts line 5 reads invoice.subscription.', usage: null };
+        },
+      });
+      const { app, analysisRunId } = await analyse(cookie, repositoryId, affectedFixtureFiles(), {
+        explanationModel: model,
+      });
+      const assessment = await getAssessment(analysisRunId, INVOICE_RULE);
+
+      // The explanation the reader saw first, cached for these exact facts.
+      await app.inject({
+        method: 'POST',
+        url: `/impact-assessments/${assessment.id}/explanation`,
+        headers: { cookie },
+      });
+      const rowsBefore = await db.db
+        .select()
+        .from(schema.impactExplanations)
+        .where(eq(schema.impactExplanations.impactAssessmentId, assessment.id));
+
+      const history = [{ question: 'Is this real?', answer: 'Yes, Patchwork confirmed it.' }];
+      const response = await followUp(app, cookie, assessment.id, {
+        question: '  Which files do I change?  ',
+        history,
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toEqual({
+        answer: 'src/billing.ts line 5 reads invoice.subscription.',
+      });
+      expect(seen?.question).toBe('Which files do I change?');
+      expect(seen?.history).toEqual(history);
+      expect(seen?.context.verdict).toBe('AFFECTED');
+      // The facts are the explanation's own projection -- never source.
+      expect(seen?.context.findings.every((f) => Object.keys(f).length === 3)).toBe(true);
+      expect(JSON.stringify(seen?.context)).not.toContain(STRIPE_IMPORT);
+      expect(seen?.explanation?.summary).toBe('Summary for AFFECTED.');
+
+      // Nothing about the conversation is persisted.
+      const rowsAfter = await db.db
+        .select()
+        .from(schema.impactExplanations)
+        .where(eq(schema.impactExplanations.impactAssessmentId, assessment.id));
+      expect(rowsAfter).toEqual(rowsBefore);
+
+      await cleanupUser(userId);
+    });
+
+    it('answers before any explanation exists, with no explanation in the input', async () => {
+      const { cookie, userId } = await createAuthenticatedUser();
+      const { repositoryId } = await connectRepository(userId);
+      let seen: FollowUpInput | undefined;
+      const model = fakeExplanationModel({
+        answerFollowUp: async (input) => {
+          seen = input;
+          return { answer: 'a', usage: null };
+        },
+      });
+      const { app, analysisRunId } = await analyse(cookie, repositoryId, affectedFixtureFiles(), {
+        explanationModel: model,
+      });
+      const assessment = await getAssessment(analysisRunId, INVOICE_RULE);
+
+      const response = await followUp(app, cookie, assessment.id, { question: 'Why?' });
+      expect(response.statusCode).toBe(200);
+      expect(seen?.explanation).toBeNull();
+
+      await cleanupUser(userId);
+    });
+
+    it('rejects an empty question, an over-long one and too much history before calling the model', async () => {
+      const { cookie, userId } = await createAuthenticatedUser();
+      const { repositoryId } = await connectRepository(userId);
+      const model = fakeExplanationModel();
+      const { app, analysisRunId } = await analyse(cookie, repositoryId, affectedFixtureFiles(), {
+        explanationModel: model,
+      });
+      const assessment = await getAssessment(analysisRunId, INVOICE_RULE);
+      const turn = { question: 'q', answer: 'a' };
+
+      for (const payload of [
+        {},
+        { question: '   ' },
+        { question: 'x'.repeat(501) },
+        { question: 'q', history: Array.from({ length: 7 }, () => turn) },
+        { question: 'q', history: [{ question: 'q' }] },
+      ]) {
+        const response = await followUp(app, cookie, assessment.id, payload);
+        expect(response.statusCode).toBe(400);
+      }
+      expect(model.calls.count).toBe(0);
+
+      await cleanupUser(userId);
+    });
+
+    it('returns 404 for an assessment connected by a different user', async () => {
+      const { cookie: ownerCookie, userId: ownerId } = await createAuthenticatedUser();
+      const { repositoryId } = await connectRepository(ownerId);
+      const { analysisRunId } = await analyse(ownerCookie, repositoryId, affectedFixtureFiles());
+      const assessment = await getAssessment(analysisRunId, INVOICE_RULE);
+
+      const { cookie: otherCookie, userId: otherId } = await createAuthenticatedUser();
+      const model = fakeExplanationModel();
+      const app = buildApp(testAppDeps({ db, explanationModel: model }));
+      const response = await followUp(app, otherCookie, assessment.id, { question: 'q' });
+
+      expect(response.statusCode).toBe(404);
+      expect(model.calls.count).toBe(0);
+
+      await cleanupUser(otherId);
+      await cleanupUser(ownerId);
+    });
+
+    it('refuses follow-ups on a NOT_AFFECTED assessment without calling the model', async () => {
+      const { cookie, userId } = await createAuthenticatedUser();
+      const { repositoryId } = await connectRepository(userId);
+      const model = fakeExplanationModel();
+      const { app, analysisRunId } = await analyse(cookie, repositoryId, affectedFixtureFiles(), {
+        explanationModel: model,
+      });
+      const assessment = await getAssessment(analysisRunId, ISSUING_RULE);
+      expect(assessment.status).toBe('NOT_AFFECTED');
+
+      const response = await followUp(app, cookie, assessment.id, { question: 'q' });
+      expect(response.statusCode).toBe(409);
+      expect(model.calls.count).toBe(0);
+
+      await cleanupUser(userId);
+    });
+
+    it('maps invalid output to 502 and a missing provider to 503', async () => {
+      const { cookie, userId } = await createAuthenticatedUser();
+      const { repositoryId } = await connectRepository(userId);
+      const { ExplanationModelError, createUnconfiguredExplanationModel } =
+        await import('../explanations/openai.js');
+      const bad = fakeExplanationModel({
+        answerFollowUp: async () => {
+          throw new ExplanationModelError('bad shape', 'invalid_output');
+        },
+      });
+      const { app, analysisRunId } = await analyse(cookie, repositoryId, affectedFixtureFiles(), {
+        explanationModel: bad,
+      });
+      const assessment = await getAssessment(analysisRunId, INVOICE_RULE);
+
+      const invalid = await followUp(app, cookie, assessment.id, { question: 'q' });
+      expect(invalid.statusCode).toBe(502);
+
+      const unconfigured = buildApp(
+        testAppDeps({ db, explanationModel: createUnconfiguredExplanationModel() }),
+      );
+      const disabled = await followUp(unconfigured, cookie, assessment.id, { question: 'q' });
+      expect(disabled.statusCode).toBe(503);
+
+      // The verdict is untouched either way.
+      const [row] = await db.db
+        .select()
+        .from(schema.impactAssessments)
+        .where(eq(schema.impactAssessments.id, assessment.id));
+      expect(row?.status).toBe('AFFECTED');
+
+      await cleanupUser(userId);
+    });
   });
 });

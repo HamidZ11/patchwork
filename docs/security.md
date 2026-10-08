@@ -208,10 +208,24 @@ patch attempt was generated/refused and persisted, and nothing was ever
 written to GitHub.
 
 **Prompt injection.** Customer source code and external API documentation
-are both untrusted input to any future LLM step. Content from either must
-not be able to change what actions the system takes — see "AI system
-principles" in [CLAUDE.md](../CLAUDE.md#ai-system-principles). Not yet
-relevant: no AI/LLM usage exists in this slice.
+are both untrusted input to any LLM step. Content from either must not be
+able to change what actions the system takes — see "AI system principles"
+in [CLAUDE.md](../CLAUDE.md#ai-system-principles).
+
+The only LLM usage today is the read-only explanation layer
+(`apps/api/src/explanations/`): a plain-English explanation of one
+AFFECTED or UNCERTAIN assessment, and follow-up questions about it
+(`POST /impact-assessments/:id/explanation/follow-ups`). Both receive the
+same server-built projection of persisted facts — never source files, an
+archive, or a credential — and the model has no tools: it cannot run code,
+write to GitHub, or change a verdict, so the worst a manipulated answer can
+do is be wrong on the asker's own screen. Follow-ups add one more untrusted
+input, the reader's own text. It is bounded (a 500-character question and
+at most 6 earlier turns, enforced by `followUpRequestSchema`), sent only as
+user/assistant turns while the facts travel in a developer message the
+caller cannot write to, and the answer is schema-validated and
+length-capped like the explanation. Follow-ups are answered, logged as
+token usage only (never the question or answer text), and not stored.
 
 **Malicious external documentation.** Changelogs, release notes, and API
 docs ingested for change detection are external, untrusted input and should
@@ -239,7 +253,10 @@ with `--frozen-lockfile`. No automated vulnerability scanning exists yet.
 ## Deferred
 
 - Rate limiting, audit logging, and automated dependency vulnerability
-  scanning in CI.
+  scanning in CI. Explanation follow-ups are the first endpoint where a
+  signed-in user can trigger repeated model spend; until rate limiting
+  exists, only the web page caps it (10 follow-ups per page load), which a
+  direct caller can bypass.
 - The sandbox for untrusted repository/package-install execution.
 - Session cleanup for expired rows (harmless bloat, not a security issue —
   see data-model.md).
