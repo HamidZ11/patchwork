@@ -50,6 +50,22 @@ describe('TechText', () => {
     expect(container.textContent).toBe('Update src/services/invoiceService.ts at line 15.');
   });
 
+  it('never offers a line break inside a version', () => {
+    const { container } = render(
+      <p>
+        <TechText text="stripe@18.5.0 is installed; it was removed at v18.0.0." />
+      </p>,
+    );
+    const versions = [...container.querySelectorAll('code')].filter((code) =>
+      /\d+\.\d+/.test(code.textContent ?? ''),
+    );
+    expect(versions.map((code) => code.textContent)).toEqual(['stripe@18.5.0', 'v18.0.0']);
+    for (const code of versions) {
+      expect(code.querySelector('wbr')).toBeNull();
+      expect(code.classList.contains('whitespace-nowrap')).toBe(true);
+    }
+  });
+
   it('leaves plain prose alone and never changes the text', () => {
     const text = 'Replaces Upcoming Invoice API methods with the Create Preview Invoice API';
     expect(codes(text)).toEqual([]);

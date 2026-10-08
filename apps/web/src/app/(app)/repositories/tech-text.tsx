@@ -23,6 +23,10 @@ const TECHNICAL =
  * only: apart from dropping markdown backticks, the text is unchanged, and
  * every part keeps the `.`/`_` line-break opportunities of `Breakable`.
  */
+/** A version, or a package at a version, never breaks: `v18.` on one line
+ * and `0.0` on the next reads as two values. */
+const UNBREAKABLE = /^(?:[a-z][\w-]*@)?v?\d+(?:\.\d+)+$/;
+
 export function TechText({
   text,
   codeClassName = 'text-fg',
@@ -34,8 +38,15 @@ export function TechText({
   return text.split(TECHNICAL).map((part, i) =>
     // `split` with one capturing group puts each match at an odd index.
     i % 2 === 1 ? (
-      <code key={i} className={`font-mono text-[0.875em] ${codeClassName}`}>
-        <Breakable text={/^`.*`$/.test(part) ? part.slice(1, -1) : part} />
+      <code
+        key={i}
+        className={`font-mono text-[0.875em] ${UNBREAKABLE.test(part) ? 'whitespace-nowrap' : ''} ${codeClassName}`}
+      >
+        {UNBREAKABLE.test(part) ? (
+          part
+        ) : (
+          <Breakable text={/^`.*`$/.test(part) ? part.slice(1, -1) : part} />
+        )}
       </code>
     ) : (
       <Fragment key={i}>
