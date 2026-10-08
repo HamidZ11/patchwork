@@ -7,7 +7,7 @@ isolated sandbox, and opens the pull request.
 Current scope is deliberately narrow: GitHub, Stripe, TypeScript, `stripe-node`, one repository at a
 time.
 
-![A Patchwork impact report for HamidZ11/stripe-basil-fixture at commit d2b1ca5: the change removing Invoice.subscription is Affected, with 2 confirmed usages in 2 files on Stripe SDK 18.5.0, and the next step is to review the prepared fix](apps/web/public/product/report-opening.png)
+![A Patchwork impact report for HamidZ11/stripe-basil-fixture at commit d2b1ca5: the change removing Invoice.subscription is Affected, with 2 confirmed usages in 2 files on Stripe SDK 18.5.0, the next step is to review the prepared fix, and the sidebar lists all four tracked changes](docs/screenshots/impact-report.png)
 
 ## Why Patchwork
 
@@ -21,6 +21,36 @@ A provider changelog tells you what changed. It cannot tell you:
 
 Every one of those is a question about your repository, not the provider's. Patchwork answers them
 in order, and refuses to answer the ones it cannot prove.
+
+## Product tour
+
+Every screenshot is the real product running against a real repository
+([`HamidZ11/stripe-basil-fixture`](https://github.com/HamidZ11/stripe-basil-fixture) at `d2b1ca5`).
+
+**Repositories.** Every connected repository against every tracked Stripe change. The summary
+doubles as a filter, the matrix shows which changes hit which repository, and selecting a change
+narrows the list to the repositories it affects.
+
+![The repositories page: a summary of 2 repositories, 1 needing attention and 1 clear; stripe-basil-fixture is Affected by 3 changes with 4 usages, shown in a matrix against the 4 tracked Stripe changes listed in the sidebar](docs/screenshots/repositories.png)
+
+**One repository.** The verdict, then what each verdict rests on: the exact file and line for every
+confirmed usage, and the analyser's own reason when a change is uncertain.
+
+![The stripe-basil-fixture repository page: 3 of 4 tracked changes affect this repository, with file and line locations for each affected change, the reason the fourth is uncertain, and the analysed snapshot in the sidebar](docs/screenshots/repository-overview.png)
+
+**On a phone.** The same product, reflowed rather than shrunk.
+
+<p align="center">
+  <img src="docs/screenshots/mobile-repositories.png" width="30%" alt="The repositories page on a phone" />
+  &nbsp;
+  <img src="docs/screenshots/mobile-impact-report.png" width="30%" alt="An impact report on a phone, with the change list first" />
+  &nbsp;
+  <img src="docs/screenshots/mobile-landing.png" width="30%" alt="The landing page on a phone" />
+</p>
+
+**The landing page.**
+
+![The Patchwork landing page: Third-party APIs change. Know if yours actually broke. Beside it, the real impact report showing an affected Stripe change and the next step](docs/screenshots/landing.png)
 
 ## How it differs from Dependabot
 
@@ -126,7 +156,7 @@ opens a pull request. **Patchwork never merges and never deploys.**
 
 > Patchwork proves. AI explains.
 
-![The AI explanation inside an impact report: In plain English, Why it matters here and Next step, a line of supporting evidence, a follow-up question answered from the same evidence, and a footer stating the deterministic verdict remains the source of truth](apps/web/public/product/explanation.png)
+![The AI explanation inside an impact report: In plain English, Why it matters here and Next step, a line of supporting evidence, then the follow-up question "Which files do I need to change?" answered with src/services/issuingService.ts, the one file Patchwork found, and a footer stating the deterministic verdict remains the source of truth](docs/screenshots/ai-explanation.png)
 
 The verdict, findings, applicability evidence and patch state are all decided before a model is
 involved. The explanation layer receives a small server-built projection of that already-established
@@ -174,7 +204,7 @@ installation token, the App private key, database credentials, the OpenAI key, o
 
 ## Deterministic diff
 
-![Code impact at two file locations, the provider's migration requirement, and a generated deterministic diff replacing invoice.subscription with invoice.parent?.subscription_details?.subscription across two files](apps/web/public/product/fix.png)
+![Code impact at two file locations, the provider's migration requirement, and a generated deterministic diff replacing invoice.subscription with invoice.parent?.subscription_details?.subscription across two files](docs/screenshots/deterministic-diff.png)
 
 ## Tech stack
 
