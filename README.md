@@ -138,6 +138,10 @@ they were written from, so a changed verdict regenerates rather than serving sta
 cannot change a verdict, claim a check ran, or assert a fix exists. If `OPENAI_API_KEY` is absent,
 the endpoint reports itself unavailable and nothing else in the product changes.
 
+Below an explanation the reader can ask follow-up questions. Answers come from the same facts (plus
+the explanation itself), say plainly when the evidence does not cover a question, and are not
+stored: the conversation lives in the page and resets on reload.
+
 ## Architecture
 
 A modular monolith across three processes ([ADR-001](docs/adr/0001-modular-monolith-processes.md)).

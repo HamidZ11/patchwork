@@ -150,3 +150,43 @@ describe('AssessmentSelector panel identity', () => {
     expect(actionA).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('AssessmentSelector conversation identity', () => {
+  it('never shows one assessment’s follow-up conversation under another', async () => {
+    const user = userEvent.setup();
+    const withChat = (id: string): AssessmentTab => ({
+      ...tab(id, `EXPLANATION FOR ${id.toUpperCase()}`),
+      report: (
+        <article>
+          <h2>Report {id}</h2>
+          <ExplainAssessment
+            action={async () => ({
+              ok: true,
+              explanation: { summary: `EXPLANATION FOR ${id}`, whyItMatters: 'w', nextStep: 'n' },
+            })}
+            ask={async (_history, question) => ({ ok: true, answer: `${id} ANSWER: ${question}` })}
+            label="Explain impact"
+            supportingFacts={[]}
+          />
+        </article>
+      ),
+    });
+
+    render(<AssessmentSelector items={[withChat('a'), withChat('b')]} defaultSelectedId="a" />);
+
+    await user.click(screen.getByRole('button', { name: 'Explain impact' }));
+    await screen.findByText('EXPLANATION FOR a');
+    await user.type(screen.getByLabelText('Ask a follow-up about this change'), 'Why?{Enter}');
+    await screen.findByText('a ANSWER: Why?');
+
+    await user.click(screen.getByRole('tab', { name: /Change b/ }));
+    expect(screen.queryByText('a ANSWER: Why?')).toBeNull();
+    expect(screen.queryByRole('log', { name: 'Follow-up questions' })).toBeNull();
+
+    // Returning to A starts from its unrequested state: the conversation
+    // belonged to the panel that was unmounted, and nothing was stored.
+    await user.click(screen.getByRole('tab', { name: /Change a/ }));
+    expect(screen.queryByText('a ANSWER: Why?')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Explain impact' })).toBeDefined();
+  });
+});

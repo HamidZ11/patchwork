@@ -1,7 +1,9 @@
 'use client';
 
-import { useActionState, useId, useState } from 'react';
+import { useActionState, useEffect, useId, useRef, useState } from 'react';
+import { ArrowUp } from 'lucide-react';
 import { buttonVariantClassName } from '@/components/button-styles';
+import { Breakable } from '../../repositories/breakable';
 
 export interface Explanation {
   summary: string;
@@ -11,6 +13,15 @@ export interface Explanation {
 
 export type ExplainResult =
   { ok: true; explanation: Explanation } | { ok: false; message: string } | null;
+
+/** One earlier exchange, sent back with the next question: the API keeps no
+ * conversation, so the page is where the thread lives. */
+export interface FollowUpTurn {
+  question: string;
+  answer: string;
+}
+
+export type FollowUpResult = { ok: true; answer: string } | { ok: false; message: string };
 
 /**
  * A deterministic fact Patchwork already established, restated as one short
@@ -24,20 +35,44 @@ export interface SupportingFact {
   mono?: boolean;
 }
 
+/** Mirrors the API's bounds (`followUpRequestSchema`): a question's length,
+ * and how many earlier turns go back with it. */
+const MAX_QUESTION_LENGTH = 500;
+const HISTORY_SENT = 6;
+/** Follow-ups per page. Rate limiting is not built yet, so the page caps its
+ * own spend; a reload starts a new conversation. */
+const MAX_FOLLOW_UPS = 10;
+
+type Turn = {
+  id: number;
+  question: string;
+} & (
+  | { status: 'pending' }
+  | { status: 'answered'; answer: string }
+  | { status: 'failed'; message: string }
+);
+
 /**
- * The one AI-assisted surface in the product.
+ * The one AI-assisted surface in the product: a plain-English explanation of
+ * the verdict, then follow-up questions about it.
  *
  * Its whole visual job is to be recognisable at a glance as *generated copy
- * about the evidence*, and never mistakable for the evidence itself. It
- * uses existing neutral surfaces with a hairline edge, and a subtly
- * darker expanded panel. No gradient, no glow, no glyph -- DESIGN.md Section 15 is
+ * about the evidence*, and never mistakable for the evidence itself. It uses
+ * existing neutral surfaces with a hairline edge, and a subtly darker
+ * expanded panel. No gradient, no glow, no glyph -- DESIGN.md Section 15 is
  * explicit that a label which already says the thing does not get an icon,
  * and "AI explanation" says it completely.
+ *
+ * The conversation is held here, above the Hide toggle, so hiding and
+ * re-showing keeps it; it is never stored server-side, and it belongs to this
+ * assessment alone -- the selector remounts the report on every switch.
  */
 export function ExplainAssessment({
   action,
   label,
   supportingFacts,
+  ask,
+  suggestions = [],
 }: {
   /** A server action already bound to this assessment's id on the server, so
    * the browser never names which assessment to explain and never sees the
@@ -46,6 +81,12 @@ export function ExplainAssessment({
   action: () => Promise<ExplainResult>;
   label: 'Explain impact' | 'Explain uncertainty';
   supportingFacts: SupportingFact[];
+  /** Follow-ups, bound to the same assessment on the server. The page's
+   * own earlier turns and the new question are all the client supplies.
+   * Without it the explanation renders with no composer. */
+  ask?: (history: FollowUpTurn[], question: string) => Promise<FollowUpResult>;
+  /** Starter questions, offered before the first follow-up. */
+  suggestions?: string[];
 }) {
   // `useActionState` drives the form's pending state; the action itself needs
   // neither the previous state nor the form payload, so both are dropped here
@@ -58,10 +99,62 @@ export function ExplainAssessment({
   // it cannot spend a second generation (the server would serve it from cache
   // anyway, but the request itself is avoidable and so it is avoided).
   const [hidden, setHidden] = useState(false);
+  const [turns, setTurns] = useState<Turn[]>([]);
+  const nextId = useRef(0);
   const panelId = useId();
 
   const explanation = result?.ok ? result.explanation : null;
   const failure = result && !result.ok ? result.message : null;
+
+  async function runTurn(id: number, question: string, history: FollowUpTurn[]) {
+    if (!ask) return;
+    let outcome: FollowUpResult;
+    try {
+      outcome = await ask(history, question);
+    } catch {
+      outcome = { ok: false, message: 'The answer could not be generated.' };
+    }
+    setTurns((current) =>
+      current.map((turn) =>
+        turn.id !== id
+          ? turn
+          : outcome.ok
+            ? { id, question, status: 'answered', answer: outcome.answer }
+            : { id, question, status: 'failed', message: outcome.message },
+      ),
+    );
+  }
+
+  /** The answered turns before `index`, newest last, capped as the API caps. */
+  function historyBefore(index: number): FollowUpTurn[] {
+    return turns
+      .slice(0, index)
+      .flatMap((turn) =>
+        turn.status === 'answered' ? [{ question: turn.question, answer: turn.answer }] : [],
+      )
+      .slice(-HISTORY_SENT);
+  }
+
+  function sendQuestion(text: string) {
+    const question = text.trim();
+    if (!question || turns.some((turn) => turn.status === 'pending')) return;
+    if (turns.length >= MAX_FOLLOW_UPS) return;
+    const id = nextId.current++;
+    const history = historyBefore(turns.length);
+    setTurns((current) => [...current, { id, question, status: 'pending' }]);
+    void runTurn(id, question, history);
+  }
+
+  function retry(id: number) {
+    const index = turns.findIndex((turn) => turn.id === id);
+    const turn = turns[index];
+    if (!turn || turn.status !== 'failed') return;
+    const history = historyBefore(index);
+    setTurns((current) =>
+      current.map((t) => (t.id === id ? { id, question: t.question, status: 'pending' } : t)),
+    );
+    void runTurn(id, turn.question, history);
+  }
 
   if (pending) {
     return <ExplanationShell panelId={panelId} />;
@@ -74,6 +167,16 @@ export function ExplainAssessment({
         explanation={explanation}
         supportingFacts={supportingFacts}
         onHide={() => setHidden(true)}
+        conversation={
+          ask ? (
+            <Conversation
+              turns={turns}
+              suggestions={suggestions}
+              onSend={sendQuestion}
+              onRetry={retry}
+            />
+          ) : null
+        }
       />
     );
   }
@@ -114,8 +217,8 @@ export function ExplainAssessment({
  * The module's own frame, shared by the loading and generated states so the
  * two are the same object in the same place rather than two different things
  * that happen to appear in sequence. That is what keeps the layout shift to
- * the body alone: the border, the header row and the eyebrow are
- * already on screen before the first word of the explanation exists.
+ * the body alone: the edge, the header row and the label are already on
+ * screen before the first word of the explanation exists.
  */
 function ExplanationFrame({
   panelId,
@@ -168,13 +271,19 @@ function ExplanationShell({ panelId }: { panelId: string }) {
         aria-live="polite"
         className="flex min-w-0 items-center gap-2 px-4 py-3 text-sm leading-6 text-fg-tertiary"
       >
-        <span
-          aria-hidden="true"
-          className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-mark-indeterminate motion-reduce:animate-none"
-        />
+        <PendingDot />
         Generating from verified evidence…
       </p>
     </ExplanationFrame>
+  );
+}
+
+function PendingDot() {
+  return (
+    <span
+      aria-hidden="true"
+      className="size-1.5 shrink-0 animate-pulse rounded-full bg-mark-indeterminate motion-reduce:animate-none"
+    />
   );
 }
 
@@ -183,11 +292,13 @@ function ExplanationModule({
   explanation,
   supportingFacts,
   onHide,
+  conversation,
 }: {
   panelId: string;
   explanation: Explanation;
   supportingFacts: SupportingFact[];
   onHide: () => void;
+  conversation: React.ReactNode;
 }) {
   return (
     <ExplanationFrame
@@ -232,6 +343,8 @@ function ExplanationModule({
             </ul>
           </div>
         )}
+
+        {conversation}
       </div>
 
       <p className="border-t border-rule px-4 py-2.5 text-xs leading-5 text-fg-tertiary">
@@ -246,6 +359,163 @@ function ExplanationSection({ heading, body }: { heading: string; body: string }
     <div className="flex min-w-0 flex-col gap-0.5">
       <p className="text-xs font-bold text-fg">{heading}</p>
       <p className="text-sm leading-6 break-words text-fg-secondary">{body}</p>
+    </div>
+  );
+}
+
+/**
+ * Follow-ups beneath the explanation: the reader's questions as quiet
+ * right-aligned bubbles, answers as prose in the explanation's own voice,
+ * then starter questions and the composer.
+ *
+ * The thread is a `log`, so each answer is announced as it arrives. A
+ * failed answer stays in place with its own retry -- the rest of the thread
+ * is untouched -- and only one question is ever in flight.
+ */
+function Conversation({
+  turns,
+  suggestions,
+  onSend,
+  onRetry,
+}: {
+  turns: Turn[];
+  suggestions: string[];
+  onSend: (question: string) => void;
+  onRetry: (id: number) => void;
+}) {
+  const [draft, setDraft] = useState('');
+  const inputId = useId();
+  const hintId = useId();
+  const lastTurn = useRef<HTMLLIElement>(null);
+  const busy = turns.some((turn) => turn.status === 'pending');
+  const remaining = MAX_FOLLOW_UPS - turns.length;
+  const atLimit = remaining <= 0;
+  const canSend = draft.trim().length > 0 && !busy && !atLimit;
+
+  // Keep the newest exchange in view without yanking the page: `nearest`
+  // scrolls only when it is out of view, and never animates under reduced
+  // motion.
+  useEffect(() => {
+    if (turns.length === 0) return;
+    const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
+    lastTurn.current?.scrollIntoView?.({
+      block: 'nearest',
+      behavior: reduce ? 'auto' : 'smooth',
+    });
+  }, [turns.length]);
+
+  function send(text: string) {
+    if (busy || atLimit || !text.trim()) return;
+    onSend(text);
+    setDraft('');
+  }
+
+  return (
+    <div className="flex min-w-0 flex-col gap-4 border-t border-rule pt-4">
+      {turns.length > 0 && (
+        <ol role="log" aria-label="Follow-up questions" className="flex min-w-0 flex-col gap-4">
+          {turns.map((turn, index) => (
+            <li
+              key={turn.id}
+              ref={index === turns.length - 1 ? lastTurn : undefined}
+              className="flex min-w-0 flex-col gap-2"
+            >
+              <p className="max-w-[85%] self-end rounded-card bg-surface px-3 py-2 text-ui break-words whitespace-pre-line text-fg shadow-hairline">
+                <span className="sr-only">You asked: </span>
+                {turn.question}
+              </p>
+              {turn.status === 'pending' && (
+                <p className="flex items-center gap-2 text-sm leading-6 text-fg-tertiary">
+                  <PendingDot />
+                  Thinking from verified evidence…
+                </p>
+              )}
+              {turn.status === 'answered' && (
+                <p className="text-sm leading-6 break-words whitespace-pre-line text-fg-secondary">
+                  <Breakable text={turn.answer} />
+                </p>
+              )}
+              {turn.status === 'failed' && (
+                <p className="flex flex-wrap items-baseline gap-x-2 text-xs leading-5 text-fg-tertiary">
+                  {turn.message}
+                  <button
+                    type="button"
+                    onClick={() => onRetry(turn.id)}
+                    disabled={busy}
+                    className="rounded-chip font-medium text-fg-secondary transition-colors duration-100 hover:text-fg focus-visible:ring-2 focus-visible:ring-focus focus-visible:outline-none disabled:opacity-50"
+                  >
+                    Try again
+                  </button>
+                </p>
+              )}
+            </li>
+          ))}
+        </ol>
+      )}
+
+      {turns.length === 0 && suggestions.length > 0 && (
+        <ul aria-label="Suggested questions" className="flex min-w-0 flex-wrap gap-1.5">
+          {suggestions.map((suggestion) => (
+            <li key={suggestion}>
+              <button
+                type="button"
+                onClick={() => send(suggestion)}
+                className="rounded-chip bg-surface px-2.5 py-1 text-xs text-fg-secondary shadow-hairline transition-[background-color,color,scale] duration-150 ease-out-strong hover:bg-evidence hover:text-fg focus-visible:ring-2 focus-visible:ring-focus focus-visible:outline-none active:scale-[0.97] motion-reduce:active:scale-100"
+              >
+                {suggestion}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          send(draft);
+        }}
+        className="flex min-w-0 flex-col gap-2 rounded-card bg-surface p-2 shadow-hairline transition-shadow duration-150 focus-within:ring-1 focus-within:ring-focus"
+      >
+        <label htmlFor={inputId} className="sr-only">
+          Ask a follow-up about this change
+        </label>
+        <textarea
+          id={inputId}
+          rows={1}
+          value={draft}
+          maxLength={MAX_QUESTION_LENGTH}
+          disabled={atLimit}
+          aria-describedby={hintId}
+          placeholder="Ask a follow-up about this change…"
+          onChange={(event) => setDraft(event.target.value)}
+          onKeyDown={(event) => {
+            // Enter sends; Shift+Enter is a new line; an IME composition's
+            // Enter confirms the composition, never the message.
+            if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
+              event.preventDefault();
+              send(draft);
+            }
+          }}
+          className="block max-h-40 min-h-6 w-full resize-none bg-transparent px-1.5 py-1 text-ui text-fg [field-sizing:content] outline-none placeholder:text-fg-tertiary disabled:cursor-not-allowed"
+        />
+        <div className="flex items-center justify-between gap-3 pl-1.5">
+          <p id={hintId} className="min-w-0 text-xs text-fg-tertiary">
+            {atLimit
+              ? 'Follow-up limit reached. Reload the page to start a new conversation.'
+              : draft.length > MAX_QUESTION_LENGTH - 50
+                ? `${MAX_QUESTION_LENGTH - draft.length} characters left`
+                : 'Answers use only Patchwork’s evidence for this change.'}
+          </p>
+          <button
+            type="submit"
+            aria-label="Send"
+            disabled={!canSend}
+            className="grid size-7 shrink-0 place-items-center rounded-control bg-fg text-canvas transition-[background-color,color,scale] duration-150 ease-out-strong focus-visible:ring-2 focus-visible:ring-focus focus-visible:outline-none enabled:active:scale-[0.96] disabled:bg-evidence disabled:text-fg-tertiary motion-reduce:enabled:active:scale-100"
+          >
+            <ArrowUp aria-hidden="true" className="size-4" />
+          </button>
+        </div>
+      </form>
     </div>
   );
 }

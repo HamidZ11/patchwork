@@ -8,6 +8,8 @@ import {
   ExplainAssessment,
   type ExplainResult,
   type Explanation,
+  type FollowUpResult,
+  type FollowUpTurn,
   type SupportingFact,
 } from './explain-assessment';
 import { buttonVariantClassName } from '@/components/button-styles';
@@ -245,6 +247,48 @@ async function explainAssessment(assessmentId: string): Promise<ExplainResult> {
   const { explanation } = (await response.json()) as { explanation: Explanation };
   return { ok: true, explanation };
 }
+
+/**
+ * One follow-up question about an explained assessment. The assessment id is
+ * bound server-side like the explanation's; the browser supplies only its
+ * own earlier turns and the new question, which the API bounds and treats as
+ * the reader's words, never as facts. Nothing is stored, so there is nothing
+ * to re-render -- the answer goes straight back to the conversation.
+ */
+async function askFollowUp(
+  assessmentId: string,
+  history: FollowUpTurn[],
+  question: string,
+): Promise<FollowUpResult> {
+  'use server';
+  const response = await apiFetch(`/impact-assessments/${assessmentId}/explanation/follow-ups`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ history, question }),
+  });
+  if (!response.ok) {
+    const body = (await response.json().catch(() => ({}))) as { message?: string };
+    return { ok: false, message: body.message ?? 'The answer could not be generated.' };
+  }
+  const { answer } = (await response.json()) as { answer: string };
+  return { ok: true, answer };
+}
+
+/** Starter questions, by verdict. Fixed copy, not generated: each is a
+ * question the facts can answer for that verdict, so the first follow-up a
+ * reader taps never asks for evidence Patchwork does not have. */
+const FOLLOW_UP_SUGGESTIONS: Record<'AFFECTED' | 'UNCERTAIN', string[]> = {
+  AFFECTED: [
+    'Which files do I need to change?',
+    'What breaks if I upgrade without changing them?',
+    'How do I migrate this?',
+  ],
+  UNCERTAIN: [
+    'What evidence is missing?',
+    'What should I check by hand?',
+    'Why can Patchwork not decide?',
+  ],
+};
 
 async function createPullRequest(verificationRunId: string, analysisRunId: string) {
   'use server';
@@ -1922,6 +1966,8 @@ function AssessmentOpening({
       {(assessment.status === 'AFFECTED' || assessment.status === 'UNCERTAIN') && (
         <ExplainAssessment
           action={explainAssessment.bind(null, assessment.id)}
+          ask={askFollowUp.bind(null, assessment.id)}
+          suggestions={FOLLOW_UP_SUGGESTIONS[assessment.status]}
           label={assessment.status === 'AFFECTED' ? 'Explain impact' : 'Explain uncertainty'}
           supportingFacts={supportingFacts(
             assessment,

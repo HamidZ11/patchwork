@@ -289,6 +289,33 @@ amends Sections 9, 12 and 32 for this route).
   numbers). If the list cannot be read, the report still renders in full.
   No API change.
 
+**B9. AI explanation with follow-ups** (2026-10-08; extends Section 15
+and B8).
+
+- The explanation stays the opening: the three headed sections and the
+  supporting-evidence chips, unchanged in substance. Beneath them, the
+  reader can ask follow-up questions in the same module.
+- **Thread:** the reader's questions are right-aligned `bg-surface`
+  bubbles (`rounded-card`, `shadow-hairline`); answers are plain prose in
+  the explanation's own voice (`text-sm`, `fg-secondary`), never a
+  bubble, so generated text reads the same wherever it appears. The list
+  is a `log`, so answers are announced. One question in flight at a time;
+  pending reads "Thinking from verified evidence…" with the pulsing
+  indeterminate dot (still under reduced motion). A failed answer keeps
+  its place with its own "Try again"; nothing else in the module changes.
+- **Starter questions** (fixed copy by verdict, never generated) sit above
+  the composer until the first follow-up, as `rounded-chip` buttons.
+- **Composer:** an auto-growing textarea on `bg-surface` with a hairline
+  edge and a focus ring, a near-white send button (disabled until there is
+  text), Enter to send and Shift+Enter for a new line. The hint line under
+  it says answers use only Patchwork's evidence; near 500 characters it
+  counts down; at 10 follow-ups it says the limit is reached.
+- The conversation lives in the page: kept across Hide/Show, reset by a
+  reload or by switching to another change (the selector remounts the
+  report). The "source of truth" footer stays at the bottom of the module.
+- Answers break lines after `.` and `_` like change titles, so API paths
+  wrap at a segment on narrow screens.
+
 **Still in force from 2026-10-04:**
 
 **A6. `not_assessed` repository state** (extends Sections 11 and 32).
