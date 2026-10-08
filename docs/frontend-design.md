@@ -15,7 +15,8 @@ their advice is usable here. Where this document's guidance and
 DESIGN.md ever appear to disagree, DESIGN.md wins — this document exists
 to serve it, not to compete with it.
 
-Two installed skill packs inform `apps/web` work — both are guidance
+Two skill packs inform `apps/web` work. They are installed locally from
+their public repositories and are not committed here. Both are guidance
 layers only. Neither overrides CLAUDE.md, docs/product.md,
 docs/architecture.md, docs/security.md, API contracts, product scope,
 DESIGN.md, or existing engineering conventions. Where guidance conflicts
@@ -24,7 +25,8 @@ exception.
 
 ## The two packs
 
-**`.agents/skills/design-taste-frontend`** (Taste Skill) — the primary
+**Taste Skill** ([`Leonxlnx/taste-skill`](https://github.com/Leonxlnx/taste-skill),
+installed as `design-taste-frontend`) — the primary
 anti-slop / visual-quality framework: density, typography, color
 restraint, layout discipline, avoiding generic-AI/SaaS-dashboard tells.
 Written for landing pages and marketing surfaces first; its own Section 13
@@ -35,10 +37,10 @@ contrast/a11y, the em-dash ban) and discard the landing-page vocabulary
 (heroes, bento grids, marquees, scroll-hijack, testimonials) — none of it
 applies to a dense, evidence-first product UI.
 
-**`.agents/skills/{emil-design-eng,prototype,find-animation-opportunities,
-pick-ui-library,...}`** (Emil Kowalski's pack, `emilkowalski/skill`, 12
-skills installed) — a second layer for interaction quality, not visual
-identity. Prioritized for Patchwork:
+**Emil Kowalski's pack** ([`emilkowalski/skill`](https://github.com/emilkowalski/skill),
+12 skills including `emil-design-eng`, `prototype`,
+`find-animation-opportunities` and `pick-ui-library`) — a second layer
+for interaction quality, not visual identity. Prioritized for Patchwork:
 
 - **`emil-design-eng`** — interaction-craft reference: feedback states,
   transitions, easing/duration values, affordances. Use for _how_ a
