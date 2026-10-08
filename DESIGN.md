@@ -322,6 +322,45 @@ and B8).
 - Answers break lines after `.` and `_` like change titles, so API paths
   wrap at a segment on narrow screens.
 
+**B10. Impact report hierarchy** (2026-10-08; refines B8 and B9).
+
+- **Five reading levels on the report**, as tokens: `text-display` 26/32
+  semibold for the change title (`text-title` below `sm`, and for a
+  NOT_AFFECTED change); `text-heading` 16/24 semibold for the numbered
+  stage headings; `text-body` 15/24 for the prose a reader actually reads
+  (the "why" sentence, the next action); `text-ui`/`text-sm` for secondary
+  information; `text-xs` medium for labels. Contrast does the rest: body
+  prose is `fg`, secondary `fg-secondary`, labels `fg-tertiary`.
+- **The change header separates three things:** the verdict as a small
+  label; what changed, as the provider's own title (prose face, line
+  breaks after `.` and `_`); and why it lands here, as one relevance line
+  -- SDK version, confirmed usages of the matched symbol in N files, the
+  provider changelog. Inline with dots from `sm`, stacked below it. No
+  rewritten headline and no "old to new" property line: the report has no
+  such fields, and Patchwork does not generate copy where evidence belongs.
+- **"What to do next" is deterministic and prominent:** a `bg-raised`
+  block with the lit edge, placed before the AI explanation. Its sentence
+  and actions come from the verdict, the recipe registry, the current
+  patch attempt, its verification and its pull request -- never from the
+  model. Actions are the existing Prepare fix (still rendered once) or
+  links to the stage that owns the action (`#stage-04`...`#stage-07`,
+  `scroll-mt-20`); no form is duplicated.
+- **Technical names in mono, everything else in prose** (`TechText`):
+  versioned packages, file paths with an extension, quoted literals,
+  dotted API paths and versions inside the "why" sentence and the
+  migration text. Counts and UI labels are never mono.
+- **Spacing groups, boxes separate functions:** 6px from a label to its
+  text, 12px from a stage heading to its content, 24px between
+  subsections, 32px between the header, the why, the next action and the
+  explanation. Inside the AI explanation the supporting evidence is one
+  dot-separated line, not chips. Explanatory paragraphs are capped at
+  about 70 characters.
+- **Sidebar:** the selected change is a fill one step off the canvas
+  (`bg-surface-hover`) with a 2px `fg` indicator at the left edge and its
+  title at full contrast, not a raised block; titles are `text-sm`. The
+  run snapshot is a compact "Analysis details" disclosure (commit, SDK,
+  when) under the change list.
+
 **Still in force from 2026-10-04:**
 
 **A6. `not_assessed` repository state** (extends Sections 11 and 32).

@@ -21,6 +21,7 @@ import {
   type Repository,
 } from '../../repositories/repository-state';
 import { Breakable } from '../../repositories/breakable';
+import { TechText } from '../../repositories/tech-text';
 import { PAGE_MAIN } from '../../repositories/section';
 
 interface InstalledSdk {
@@ -799,7 +800,11 @@ function ChainSection({
   children: React.ReactNode;
 }) {
   return (
-    <section aria-label={label} className="border-t border-rule px-5 py-5 sm:px-6">
+    <section
+      id={`stage-${number}`}
+      aria-label={label}
+      className="scroll-mt-20 border-t border-rule px-5 py-6 sm:px-6"
+    >
       {/* An eyebrow, deliberately not a heading: the assessment's provider-change
           title in the opening is the article's only `h2`, so promoting these
           labels to `h3` would put an `h3` before it in document order.
@@ -814,7 +819,7 @@ function ChainSection({
             aria-hidden="true"
           />
         )}
-        <span className={`text-ui font-medium ${muted ? 'text-fg-tertiary' : 'text-fg'}`}>
+        <span className={`text-heading font-semibold ${muted ? 'text-fg-tertiary' : 'text-fg'}`}>
           {label}
         </span>
       </p>
@@ -1588,8 +1593,8 @@ function MigrationRequirement({ text }: { text: string }) {
   return (
     <div className="flex min-w-0 flex-col gap-2 border-l-2 border-rule-strong pl-4">
       {sentences.map((sentence, index) => (
-        <p key={index} className="text-sm leading-6 break-words text-fg-secondary">
-          {sentence}
+        <p key={index} className="max-w-[70ch] text-sm leading-6 break-words text-fg-secondary">
+          <TechText text={sentence} />
         </p>
       ))}
     </div>
@@ -1837,7 +1842,6 @@ function supportingFacts(
   const count = assessment.findings.length;
   facts.push({
     label: count === 0 ? 'No confirmed usage' : `${count} confirmed usage${count === 1 ? '' : 's'}`,
-    mono: count > 0,
   });
 
   if (assessment.status === 'AFFECTED') {
@@ -1885,15 +1889,14 @@ function AssessmentOpening({
   analysisRunId: string;
   latestAttempt: PatchAttempt | undefined;
   publishedPullRequest: PullRequestAttempt | undefined;
-  /** Run-level SDK evidence, passed down only to restate the resolved Stripe
-   * version as a supporting fact -- the opening itself does not render it. */
+  /** Run-level SDK evidence: the resolved Stripe version in the header's
+   * relevance line, and a supporting fact beside the AI explanation. */
   evidence: AnalysisRunEvidence | null;
   summary: AssessmentSummary;
 }) {
   const style = STATUS_STYLE[assessment.status];
-  const isAffected = assessment.status === 'AFFECTED';
   const proof = repositoryProof(assessment);
-  const withAction = showPrepareFixInOpening(assessment, latestAttempt);
+  const stripe = evidence?.installedSdks.length === 1 ? evidence.installedSdks[0] : null;
 
   const whyHeading =
     assessment.status === 'AFFECTED'
@@ -1903,66 +1906,103 @@ function AssessmentOpening({
         : 'Why this repository is not affected';
 
   return (
-    <div className="flex min-w-0 flex-col gap-5">
-      <div className="flex min-w-0 flex-col gap-2">
-        <span className={`inline-flex w-fit items-center gap-2 text-ui font-medium ${style.text}`}>
-          <span className={`size-2 shrink-0 rounded-full ${style.dot}`} aria-hidden="true" />
+    <div className="flex min-w-0 flex-col gap-8">
+      {/* The header separates what changed (the provider's own title) and why
+          it lands here (the relevance line: the SDK
+          this repository resolves, and how many confirmed usages in how many
+          files). Every value is persisted evidence; nothing is rewritten. */}
+      <header className="min-w-0">
+        <span className={`inline-flex items-center gap-1.5 text-xs font-medium ${style.text}`}>
+          <span className={`size-1.5 shrink-0 rounded-full ${style.dot}`} aria-hidden="true" />
           {STATUS_LABEL[assessment.status]}
         </span>
         <h2
-          className={`min-w-0 font-semibold [overflow-wrap:anywhere] text-fg ${
-            isAffected ? 'text-xl leading-7 tracking-[-0.01em]' : 'text-base leading-6'
+          className={`mt-2 min-w-0 font-semibold [overflow-wrap:anywhere] text-fg ${
+            assessment.status === 'NOT_AFFECTED'
+              ? 'text-title'
+              : 'text-title sm:text-display sm:tracking-[-0.015em]'
           }`}
         >
+          {/* Prose face even for the API names it contains: at display size,
+              mono names outweigh the words around them and stretch a phone
+              title to five lines. The relevance line below names the matched
+              symbol in mono. */}
           <Breakable text={assessment.providerChangeTitle} />
         </h2>
-      </div>
+        <p className="mt-3 flex min-w-0 flex-col gap-1 text-ui text-fg-secondary sm:flex-row sm:flex-wrap sm:items-baseline sm:gap-x-2">
+          {stripe && (
+            <>
+              <span>
+                {stripe.packageName === 'stripe' ? 'Stripe' : stripe.packageName} SDK{' '}
+                <code className="font-mono text-xs text-fg">
+                  {stripe.resolvedVersion ?? stripe.declaredRange}
+                </code>
+                {stripe.resolvedVersion === null && ' declared'}
+              </span>
+              <span aria-hidden="true" className="hidden text-fg-tertiary sm:inline">
+                ·
+              </span>
+            </>
+          )}
+          {proof && (
+            <>
+              <span>
+                {proof.usageLabel}
+                {proof.symbol && (
+                  <>
+                    {' of '}
+                    <code className="font-mono text-xs text-fg">{proof.symbol}</code>
+                  </>
+                )}{' '}
+                in {proof.fileLabel}
+              </span>
+              <span aria-hidden="true" className="hidden text-fg-tertiary sm:inline">
+                ·
+              </span>
+            </>
+          )}
+          {/* The upstream provenance for the title above, rendered exactly once. */}
+          <a
+            href={assessment.providerChangeSourceUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex w-fit items-center gap-1 rounded-chip text-fg-secondary underline decoration-rule-strong underline-offset-4 transition-colors duration-100 hover:text-fg hover:decoration-fg-tertiary focus-visible:ring-2 focus-visible:ring-focus focus-visible:outline-none"
+          >
+            Provider changelog
+            <ExternalLinkIcon />
+          </a>
+        </p>
+      </header>
 
-      <div className="flex min-w-0 flex-col gap-1.5">
+      <section aria-label={whyHeading} className="min-w-0">
         <p className="text-xs font-medium text-fg-tertiary">{whyHeading}</p>
         {/* `summary.reason` is the existing safe reconstruction of the
             per-workspace applicability evidence -- never the raw analyzer
             `reason` string. */}
-        <p className="text-sm leading-6 text-fg-secondary">{summary.reason}</p>
+        <p className="mt-1.5 max-w-[70ch] text-body text-fg">
+          <TechText text={summary.reason} />
+        </p>
         {assessment.status === 'UNCERTAIN' && (
-          <p className="text-sm leading-6 text-fg-tertiary">
+          <p className="mt-3 max-w-[70ch] text-sm leading-6 text-fg-secondary">
             Patchwork could not determine whether this change applies, so it is not asserting impact
             either way.
           </p>
         )}
-        {proof && (
-          <p className="text-sm leading-6 text-fg-secondary">
-            Patchwork confirmed {proof.usageLabel}
-            {proof.symbol && (
-              <>
-                {' of '}
-                <code className="font-mono text-xs text-fg">{proof.symbol}</code>
-              </>
-            )}{' '}
-            in {proof.fileLabel}.
-          </p>
-        )}
-      </div>
+      </section>
 
-      {/* The upstream provenance for the headline above. Lives here rather than
-          in a standalone Stage 01, which held nothing else once the change's
-          title and verdict moved into this opening. Rendered exactly once. */}
-      <a
-        href={assessment.providerChangeSourceUrl}
-        target="_blank"
-        rel="noreferrer"
-        className="inline-flex w-fit items-center gap-1.5 rounded-chip text-ui text-fg-secondary transition-colors duration-100 hover:text-fg focus-visible:ring-2 focus-visible:ring-focus focus-visible:outline-none"
-      >
-        Provider changelog
-        <ExternalLinkIcon />
-      </a>
+      <NextAction
+        assessment={assessment}
+        analysisRunId={analysisRunId}
+        latestAttempt={latestAttempt}
+        publishedPullRequest={publishedPullRequest}
+      />
 
-      {/* The AI action sits directly under the deterministic explanation it
-          describes and before the evidence chain begins -- close enough to be
-          obviously about this verdict, subordinate enough that the proof is
-          read first. Offered only for the two verdicts where the copy earns
-          its cost: a proven NOT_AFFECTED is already fully explained by the
-          sentence above it, and the API refuses to generate one regardless. */}
+      {/* The AI action sits under the deterministic next action and before
+          the evidence chain -- close enough to be obviously about this
+          verdict, subordinate enough that the proof and the action are read
+          first. Offered only for the two verdicts where the copy earns its
+          cost: a proven NOT_AFFECTED is already fully explained above, and
+          the API refuses to generate one regardless. */}
       {(assessment.status === 'AFFECTED' || assessment.status === 'UNCERTAIN') && (
         <ExplainAssessment
           action={explainAssessment.bind(null, assessment.id)}
@@ -1977,29 +2017,150 @@ function AssessmentOpening({
           )}
         />
       )}
-
-      {(proof || withAction) && (
-        <div className="flex flex-wrap items-center gap-x-5 gap-y-3">
-          {proof && <span className="text-sm font-semibold text-fg">{proof.usageLabel}</span>}
-          {withAction && (
-            <span className="flex flex-wrap items-center gap-x-3 gap-y-2">
-              <PrepareFixForm
-                assessmentId={assessment.id}
-                analysisRunId={analysisRunId}
-                label="Prepare fix"
-                variant="primary"
-              />
-              {/* Truthful because `remediationSupported` means the backend found a
-                  registered deterministic remediation recipe for this predicate
-                  kind -- not an LLM, and not a guess. */}
-              <span className="text-xs text-fg-tertiary">
-                Deterministic transformation available
-              </span>
-            </span>
-          )}
-        </div>
-      )}
     </div>
+  );
+}
+
+/** A link to a numbered stage of the chain below, styled as a control. */
+function StageLink({
+  stage,
+  children,
+  variant = 'secondary',
+}: {
+  stage: string;
+  children: React.ReactNode;
+  variant?: 'primary' | 'secondary';
+}) {
+  return (
+    <a href={`#stage-${stage}`} className={buttonVariantClassName[variant]}>
+      {children}
+    </a>
+  );
+}
+
+/**
+ * The one thing to do next, decided from deterministic state alone -- the
+ * verdict, whether a registered recipe exists, the current patch attempt,
+ * its verification and its pull request. Never from the AI explanation:
+ * the model proposes nothing here (CLAUDE.md, "The LLM proposes. Patchwork
+ * decides").
+ *
+ * Each state's action is either the existing prepare-fix control (rendered
+ * here only when `showPrepareFixInOpening`, so it still appears exactly
+ * once) or a link down to the stage that owns the action. No form is
+ * duplicated: Verify and Create pull request stay in stages 06 and 07, next
+ * to the evidence that justifies them.
+ */
+function NextAction({
+  assessment,
+  analysisRunId,
+  latestAttempt,
+  publishedPullRequest,
+}: {
+  assessment: AssessmentDetail;
+  analysisRunId: string;
+  latestAttempt: PatchAttempt | undefined;
+  publishedPullRequest: PullRequestAttempt | undefined;
+}) {
+  if (assessment.status === 'NOT_AFFECTED') return null;
+
+  const openedPullRequest =
+    latestAttempt?.pullRequestAttempts.find((attempt) => attempt.status === 'OPENED') ??
+    publishedPullRequest;
+  const verification = latestAttempt?.verificationRuns[0];
+  let text: string;
+  let actions: React.ReactNode;
+
+  if (assessment.status === 'UNCERTAIN') {
+    text =
+      'Patchwork cannot decide this change from the evidence it has. Check the unresolved evidence by hand.';
+    actions = <StageLink stage="02">Review the evidence</StageLink>;
+  } else if (openedPullRequest) {
+    text =
+      openedPullRequest.githubPrNumber === null
+        ? 'A pull request with the fix is open for review. Patchwork does not merge it.'
+        : `Pull request #${openedPullRequest.githubPrNumber} with the fix is open for review. Patchwork does not merge it.`;
+    actions = (
+      <>
+        {openedPullRequest.githubPrUrl && (
+          <a
+            href={openedPullRequest.githubPrUrl}
+            target="_blank"
+            rel="noreferrer"
+            className={buttonVariantClassName.primary}
+          >
+            View pull request
+            <ExternalLinkIcon />
+          </a>
+        )}
+        <StageLink stage="05">Review patch</StageLink>
+      </>
+    );
+  } else if (latestAttempt?.status === 'GENERATED') {
+    if (verification?.status === 'PASSED') {
+      text = 'The fix passed runtime verification and is ready to publish as a pull request.';
+      actions = (
+        <StageLink stage="07" variant="primary">
+          Review and publish
+        </StageLink>
+      );
+    } else if (verification && ACTIVE_VERIFICATION_STATUSES.has(verification.status)) {
+      text = 'A fix is prepared and its verification is running.';
+      actions = <StageLink stage="06">Follow verification</StageLink>;
+    } else {
+      text = 'A fix is prepared. Review it, then verify it in a sandbox before publishing.';
+      actions = (
+        <StageLink stage="05" variant="primary">
+          Review patch
+        </StageLink>
+      );
+    }
+  } else if (showPrepareFixInOpening(assessment, latestAttempt)) {
+    // Truthful because `remediationSupported` means the backend found a
+    // registered deterministic remediation recipe for this predicate kind --
+    // not an LLM, and not a guess.
+    text = 'Patchwork can rewrite these usages with a deterministic transformation.';
+    actions = (
+      <PrepareFixForm
+        assessmentId={assessment.id}
+        analysisRunId={analysisRunId}
+        label="Prepare fix"
+        variant="primary"
+      />
+    );
+  } else if (latestAttempt?.status === 'REFUSED' || latestAttempt?.status === 'FAILED') {
+    text =
+      latestAttempt.status === 'REFUSED'
+        ? 'Patchwork could not prove a safe rewrite for this code, so it made none. Migrate these usages by hand.'
+        : 'Generating the fix failed. Try again from the candidate patch, or migrate by hand.';
+    actions = (
+      <>
+        <StageLink stage="04" variant="primary">
+          See the migration
+        </StageLink>
+        <StageLink stage="05">See why</StageLink>
+      </>
+    );
+  } else {
+    text = 'There is no automatic fix for this change. Migrate these usages by hand.';
+    actions = (
+      <StageLink stage="04" variant="primary">
+        See the migration
+      </StageLink>
+    );
+  }
+
+  return (
+    <section
+      aria-label="What to do next"
+      className="flex min-w-0 flex-col gap-4 rounded-card bg-raised px-4 py-4 shadow-btn sm:flex-row sm:items-center sm:justify-between sm:gap-6"
+    >
+      <div className="min-w-0">
+        <p className="text-xs font-medium text-fg-tertiary">What to do next</p>
+        <p className="mt-1.5 max-w-[60ch] text-body text-fg">{text}</p>
+      </div>
+      <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div>
+    </section>
   );
 }
 
@@ -2090,7 +2251,7 @@ function AssessmentReport({
     // One panel per report, whatever the verdict (DESIGN.md Amendment B8):
     // the opening, then the numbered chain as ruled sections inside it.
     <article className="min-w-0 overflow-hidden rounded-window bg-panel shadow-card">
-      <div className="px-5 py-6 sm:px-6">
+      <div className="px-5 py-7 sm:px-6">
         <AssessmentOpening
           assessment={assessment}
           analysisRunId={analysisRunId}
@@ -2254,8 +2415,9 @@ function ChangeListHeading({ assessments }: { assessments: AssessmentDetail[] })
   );
 }
 
-/** The snapshot every verdict on this page is true about, as on the
- * repository overview: a label/value list of the exact code state. Every
+/** The snapshot every verdict on this page is true about. Secondary to the
+ * change list above it, so it is one compact line -- commit, SDK, when --
+ * with the full list one disclosure away (DESIGN.md Amendment B10). Every
  * value is real; entries with no backing data are omitted rather than
  * rendered empty. */
 function RunSnapshot({
@@ -2266,15 +2428,18 @@ function RunSnapshot({
   installedSdks: InstalledSdk[];
 }) {
   const singleSdk = installedSdks.length === 1 ? installedSdks[0] : null;
+  const sdkVersion = singleSdk ? (singleSdk.resolvedVersion ?? singleSdk.declaredRange) : null;
+  const sdkName = singleSdk?.packageName === 'stripe' ? 'Stripe' : singleSdk?.packageName;
   const when = new Date(analysisRun.completedAt ?? analysisRun.startedAt);
+  const relative = formatRelativeTime(when);
   const facts: { label: string; value: React.ReactNode; mono?: boolean }[] = [
     ...(singleSdk
       ? [
           {
-            label: `${singleSdk.packageName === 'stripe' ? 'Stripe' : singleSdk.packageName} SDK`,
+            label: `${sdkName} SDK`,
             value: (
               <>
-                {singleSdk.resolvedVersion ?? singleSdk.declaredRange}
+                {sdkVersion}
                 {singleSdk.resolvedVersion === null && (
                   <span className="font-sans text-fg-tertiary"> declared</span>
                 )}
@@ -2297,20 +2462,43 @@ function RunSnapshot({
       label: 'Analysed',
       value: (
         <time dateTime={when.toISOString()} title={formatAbsoluteTime(when)}>
-          {formatRelativeTime(when)}
+          {relative}
         </time>
       ),
     },
   ];
 
   return (
-    <section aria-labelledby="snapshot">
-      <h2 id="snapshot" className="text-ui font-medium text-fg">
-        Snapshot
-      </h2>
+    <details className="group min-w-0 border-t border-rule pt-4">
+      <summary className="flex cursor-pointer list-none items-start justify-between gap-3 rounded-control focus-visible:ring-2 focus-visible:ring-focus focus-visible:outline-none [&::-webkit-details-marker]:hidden">
+        <span className="min-w-0">
+          <span className="block text-ui font-medium text-fg">Analysis details</span>
+          <span className="mt-1 flex flex-wrap items-baseline gap-x-1.5 text-xs text-fg-secondary">
+            <span className="font-mono">{analysisRun.commitSha.slice(0, 7)}</span>
+            {sdkVersion && (
+              <>
+                <span aria-hidden="true" className="text-fg-tertiary">
+                  ·
+                </span>
+                <span>
+                  {sdkName} <span className="font-mono">{sdkVersion}</span>
+                </span>
+              </>
+            )}
+            <span aria-hidden="true" className="text-fg-tertiary">
+              ·
+            </span>
+            <span>{relative}</span>
+          </span>
+        </span>
+        <span className="mt-0.5 text-fg-tertiary">
+          <ChevronIcon />
+        </span>
+      </summary>
+
       <dl className="mt-3 divide-y divide-rule border-y border-rule">
         {facts.map((fact) => (
-          <div key={fact.label} className="grid grid-cols-[6rem_minmax(0,1fr)] gap-x-3 py-2.5">
+          <div key={fact.label} className="grid grid-cols-[6rem_minmax(0,1fr)] gap-x-3 py-2">
             <dt className="text-ui text-fg-tertiary">{fact.label}</dt>
             <dd
               className={`min-w-0 truncate text-fg ${fact.mono ? 'font-mono text-xs leading-5' : 'text-ui'}`}
@@ -2336,7 +2524,7 @@ function RunSnapshot({
           ))}
         </ul>
       )}
-    </section>
+    </details>
   );
 }
 

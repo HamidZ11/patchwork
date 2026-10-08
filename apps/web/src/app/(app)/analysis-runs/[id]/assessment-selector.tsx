@@ -83,7 +83,7 @@ export function AssessmentSelector({
 
   return (
     <div className="flex min-w-0 flex-col gap-8 lg:grid lg:grid-cols-[minmax(0,1fr)_17rem] lg:items-start lg:gap-x-12 xl:grid-cols-[minmax(0,1fr)_18.5rem]">
-      <div className="contents lg:sticky lg:top-24 lg:col-start-2 lg:row-start-1 lg:flex lg:flex-col lg:gap-10">
+      <div className="contents lg:sticky lg:top-24 lg:col-start-2 lg:row-start-1 lg:flex lg:flex-col lg:gap-6">
         <div className="order-1 min-w-0">
           {heading}
           <div
@@ -113,8 +113,14 @@ export function AssessmentSelector({
                   // left the outgoing row looking selected while the incoming one
                   // already was -- two rows selected at once. It applies
                   // instantly, and hover applies instantly with it.
-                  className={`grid min-w-0 grid-cols-[1.5rem_minmax(0,1fr)] gap-x-2 rounded-control px-2 py-2 text-left focus-visible:ring-2 focus-visible:ring-focus focus-visible:outline-none ${
-                    isSelected ? 'bg-surface shadow-btn' : 'hover:bg-surface-hover'
+                  //
+                  // Selected is restrained (DESIGN.md Amendment B10): a fill one
+                  // step off the canvas, a thin indicator at the left edge and the
+                  // title at full contrast -- not a raised block.
+                  className={`relative grid min-w-0 grid-cols-[1.5rem_minmax(0,1fr)] gap-x-2 rounded-control px-2 py-2.5 text-left focus-visible:ring-2 focus-visible:ring-focus focus-visible:outline-none ${
+                    isSelected
+                      ? 'bg-surface-hover before:absolute before:inset-y-2.5 before:left-0 before:w-0.5 before:rounded-full before:bg-fg'
+                      : 'hover:bg-surface-hover/60'
                   }`}
                 >
                   <span
@@ -124,7 +130,7 @@ export function AssessmentSelector({
                     {item.label ?? String(index + 1).padStart(2, '0')}
                   </span>
                   <span
-                    className={`line-clamp-2 text-ui [overflow-wrap:anywhere] ${
+                    className={`line-clamp-2 text-sm [overflow-wrap:anywhere] ${
                       isSelected ? 'text-fg' : 'text-fg-secondary'
                     }`}
                   >

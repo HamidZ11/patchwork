@@ -361,6 +361,18 @@
   --text-title: 1.375rem;
   --text-title--line-height: 1.75rem;
 
+  /* The impact report's reading steps (DESIGN.md Amendment B10). A report
+     carries a change, its evidence, an action and an explanation, which the
+     four UI steps above cannot separate: `text-display` 26/32 for the change
+     title, `text-heading` 16/24 for its sections, `text-body` 15/24 for
+     prose a reader actually reads. */
+  --text-display: 1.625rem;
+  --text-display--line-height: 2rem;
+  --text-heading: 1rem;
+  --text-heading--line-height: 1.5rem;
+  --text-body: 0.9375rem;
+  --text-body--line-height: 1.5rem;
+
   /* Depth recipes borrowed from Beautiful UI (DESIGN.md Amendment B6): a lit
      1px edge -- white at low alpha, which reads as light catching the rim,
      where a grey border reads as an outline -- plus a drop too soft to read

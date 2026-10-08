@@ -237,7 +237,7 @@ function ExplanationFrame({
       aria-label="AI explanation"
       className={`min-w-0 overflow-hidden rounded-card shadow-hairline ${surfaceClassName}`}
     >
-      <div className="flex min-w-0 flex-wrap items-center justify-between gap-x-4 gap-y-1 border-b border-rule px-4 py-2.5">
+      <div className="flex min-w-0 flex-wrap items-center justify-between gap-x-4 gap-y-1 border-b border-rule px-5 py-2.5">
         <p className="text-xs font-medium text-fg-secondary">AI explanation</p>
         {control}
       </div>
@@ -269,7 +269,7 @@ function ExplanationShell({ panelId }: { panelId: string }) {
       <p
         role="status"
         aria-live="polite"
-        className="flex min-w-0 items-center gap-2 px-4 py-3 text-sm leading-6 text-fg-tertiary"
+        className="flex min-w-0 items-center gap-2 px-5 py-3 text-sm leading-6 text-fg-tertiary"
       >
         <PendingDot />
         Generating from verified evidence…
@@ -318,26 +318,31 @@ function ExplanationModule({
         </button>
       }
     >
-      <div className="flex min-w-0 flex-col gap-4 px-4 py-4">
+      {/* Spacing does the grouping (DESIGN.md Amendment B10): 6px from a
+          heading to its paragraph, 24px between sections -- no box around
+          any of them. */}
+      <div className="flex min-w-0 flex-col gap-6 px-5 py-5">
         <ExplanationSection heading="In plain English" body={explanation.summary} />
         <ExplanationSection heading="Why it matters here" body={explanation.whyItMatters} />
         <ExplanationSection heading="Next step" body={explanation.nextStep} />
 
         {supportingFacts.length > 0 && (
-          <div className="flex min-w-0 flex-col gap-2 border-t border-rule pt-4">
+          <div className="flex min-w-0 flex-col gap-1.5 border-t border-rule pt-5">
             <p className="text-xs font-medium text-fg-tertiary">Supporting evidence</p>
-            {/* Not cards. Each chip is one fact Patchwork proved, restated at
-                the smallest size that stays legible, so the reader can check
-                the prose above against the record without leaving the module. */}
-            <ul className="flex min-w-0 flex-wrap gap-1.5">
-              {supportingFacts.map((fact) => (
-                <li
-                  key={fact.label}
-                  className={`rounded-chip bg-surface px-2 py-1 leading-4 text-fg-secondary shadow-hairline ${
-                    fact.mono ? 'font-mono text-2xs' : 'text-xs'
-                  }`}
-                >
-                  {fact.label}
+            {/* Not cards: one line of facts Patchwork proved, so the reader can
+                check the prose above against the record without leaving the
+                module. Mono only for a machine value such as a version. */}
+            <ul className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1 text-xs text-fg-secondary">
+              {supportingFacts.map((fact, index) => (
+                <li key={fact.label} className="inline-flex items-baseline gap-x-2">
+                  {index > 0 && (
+                    <span aria-hidden="true" className="text-fg-tertiary">
+                      ·
+                    </span>
+                  )}
+                  <span className={fact.mono ? 'font-mono text-2xs text-fg' : undefined}>
+                    {fact.label}
+                  </span>
                 </li>
               ))}
             </ul>
@@ -347,7 +352,7 @@ function ExplanationModule({
         {conversation}
       </div>
 
-      <p className="border-t border-rule px-4 py-2.5 text-xs leading-5 text-fg-tertiary">
+      <p className="border-t border-rule px-5 py-2.5 text-xs leading-5 text-fg-tertiary">
         Patchwork&rsquo;s deterministic verdict, checks and patch state remain the source of truth.
       </p>
     </ExplanationFrame>
@@ -356,9 +361,9 @@ function ExplanationModule({
 
 function ExplanationSection({ heading, body }: { heading: string; body: string }) {
   return (
-    <div className="flex min-w-0 flex-col gap-0.5">
+    <div className="flex min-w-0 flex-col gap-1.5">
       <p className="text-xs font-bold text-fg">{heading}</p>
-      <p className="text-sm leading-6 break-words text-fg-secondary">{body}</p>
+      <p className="max-w-[70ch] text-sm leading-6 break-words text-fg">{body}</p>
     </div>
   );
 }
@@ -414,7 +419,7 @@ function Conversation({
     // A band of its own, a step darker than the explanation above it, so the
     // place to type reads as distinct from the prose already written -- and
     // the lighter composer inside it reads as a field, not as more panel.
-    <div className="-mx-4 -mb-4 flex min-w-0 flex-col gap-4 border-t border-rule bg-raised px-4 pt-4 pb-4">
+    <div className="-mx-5 -mb-5 flex min-w-0 flex-col gap-4 border-t border-rule bg-raised px-5 pt-5 pb-5">
       <p className="text-xs font-medium text-fg-secondary">Ask a follow-up</p>
       {turns.length > 0 && (
         <ol role="log" aria-label="Follow-up questions" className="flex min-w-0 flex-col gap-4">
@@ -435,7 +440,7 @@ function Conversation({
                 </p>
               )}
               {turn.status === 'answered' && (
-                <p className="text-sm leading-6 break-words whitespace-pre-line text-fg-secondary">
+                <p className="max-w-[70ch] text-sm leading-6 break-words whitespace-pre-line text-fg">
                   <Breakable text={turn.answer} />
                 </p>
               )}
