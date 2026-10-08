@@ -3,6 +3,7 @@ import {
   computeImpactState,
   IMPACT_STATE_PRIORITY,
   isRootWorkspace,
+  reasonText,
   sortAssessments,
   sortFindings,
   totalUsageLabel,
@@ -259,5 +260,21 @@ describe('isRootWorkspace', () => {
     expect(isRootWorkspace('')).toBe(true);
     expect(isRootWorkspace('.')).toBe(true);
     expect(isRootWorkspace('packages/billing')).toBe(false);
+  });
+});
+
+describe('reasonText', () => {
+  it("drops the analyser's leading [workspace] STATUS: prefix and nothing else", () => {
+    expect(
+      reasonText(
+        '[.] UNCERTAIN: Stripe SDK version and explicit apiVersion are both insufficient.',
+      ),
+    ).toBe('Stripe SDK version and explicit apiVersion are both insufficient.');
+    expect(reasonText('[packages/billing] AFFECTED: stripe@18.5.0 is installed.')).toBe(
+      'stripe@18.5.0 is installed.',
+    );
+    expect(reasonText('stripe@18.5.0 is installed; [.] stays.')).toBe(
+      'stripe@18.5.0 is installed; [.] stays.',
+    );
   });
 });

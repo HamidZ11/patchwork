@@ -17,6 +17,7 @@ import {
   formatAbsoluteTime,
   formatRelativeTime,
   isRootWorkspace,
+  reasonText,
   sortAssessments,
   sortFindings,
   totalUsageLabel,
@@ -262,7 +263,7 @@ function ChangeRow({
           <Locations findings={assessment.findings} report={report} />
         ) : (
           <p className="mt-2 max-w-[70ch] text-sm leading-6 [overflow-wrap:anywhere] text-fg-secondary">
-            <TechText text={assessment.reason} />
+            <TechText text={reasonText(assessment.reason)} />
           </p>
         )}
       </div>

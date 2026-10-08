@@ -202,6 +202,17 @@ export function sortAssessments(
   );
 }
 
+/**
+ * The analyser's reason as product copy. The stored string opens with an
+ * internal `[workspace] STATUS: ` disambiguation prefix (`[.] UNCERTAIN: `)
+ * that restates the verdict shown right beside it; the impact report strips
+ * the same prefix. Only a leading prefix is removed -- the reason itself is
+ * never rewritten.
+ */
+export function reasonText(reason: string): string {
+  return reason.replace(/^\[[^\]]*\]\s*(?:AFFECTED|UNCERTAIN|NOT_AFFECTED):\s*/, '');
+}
+
 /** "4 usages in 3 files", or null when there is nothing to count. */
 function countUsages(findings: Finding[]): string | null {
   if (findings.length === 0) return null;
