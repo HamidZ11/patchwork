@@ -270,6 +270,13 @@ export function formatAbsoluteTime(when: Date): string {
   }).format(when);
 }
 
+/** The repository root's workspace. The API derives a workspace path from
+ * its manifest's directory, so the root `package.json` gives `''`; `.` is
+ * accepted too rather than shown as a literal path. */
+export function isRootWorkspace(workspacePath: string): boolean {
+  return workspacePath === '' || workspacePath === '.';
+}
+
 /** The SDK version Patchwork resolved, or the declared range when the
  * lockfile could not pin one -- labelled, so a range never reads as a
  * resolved version. */

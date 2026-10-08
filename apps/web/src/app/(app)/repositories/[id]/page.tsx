@@ -1,4 +1,3 @@
-import { Fragment } from 'react';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { ArrowLeft, ArrowRight, Lock } from 'lucide-react';
@@ -7,6 +6,7 @@ import { ErrorBanner } from '@/components/error-banner';
 import { FormSubmitButton } from '@/components/form-submit-button';
 import { apiFetch } from '@/lib/api';
 import { analyseRepository } from '../actions';
+import { Breakable } from '../breakable';
 import { PatchGlyph } from '../patch-glyph';
 import { buildRepositoryIndex, indexHref, type TrackedChange } from '../repository-index';
 import {
@@ -15,6 +15,7 @@ import {
   computeImpactState,
   formatAbsoluteTime,
   formatRelativeTime,
+  isRootWorkspace,
   sortAssessments,
   sortFindings,
   totalUsageLabel,
@@ -141,18 +142,6 @@ function Verdict({ repo, state }: { repo: Repository; state: ImpactState }) {
       </div>
     </section>
   );
-}
-
-/** Change titles name API paths (`Invoice.parent.subscription_details.
- * subscription`). Offer a line break after each `.` and `_` so a narrow
- * column wraps at a segment, not mid-word. */
-function Breakable({ text }: { text: string }) {
-  return text.split(/(?<=[._])/).map((part, i) => (
-    <Fragment key={i}>
-      {i > 0 && <wbr />}
-      {part}
-    </Fragment>
-  ));
 }
 
 /** At most this many locations per change; the report has the rest. */
@@ -339,8 +328,8 @@ function Snapshot({ analysis }: { analysis: LatestAnalysis | null }) {
       ? [
           {
             label: 'Workspace',
-            value: stripe.workspacePath === '.' ? 'Repository root' : stripe.workspacePath,
-            mono: stripe.workspacePath !== '.',
+            value: isRootWorkspace(stripe.workspacePath) ? 'Repository root' : stripe.workspacePath,
+            mono: !isRootWorkspace(stripe.workspacePath),
           },
         ]
       : []),

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   computeImpactState,
   IMPACT_STATE_PRIORITY,
+  isRootWorkspace,
   sortAssessments,
   sortFindings,
   totalUsageLabel,
@@ -250,5 +251,13 @@ describe('sortFindings', () => {
   it('orders by file, then line', () => {
     const sorted = sortFindings([finding('b.ts', 2), finding('a.ts', 10), finding('a.ts', 9)]);
     expect(sorted.map((f) => `${f.sourceFile}:${f.line}`)).toEqual(['a.ts:9', 'a.ts:10', 'b.ts:2']);
+  });
+});
+
+describe('isRootWorkspace', () => {
+  it('treats the API root path and "." as the repository root, nothing else', () => {
+    expect(isRootWorkspace('')).toBe(true);
+    expect(isRootWorkspace('.')).toBe(true);
+    expect(isRootWorkspace('packages/billing')).toBe(false);
   });
 });
