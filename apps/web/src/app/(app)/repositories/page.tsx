@@ -215,7 +215,7 @@ function AttentionRow({
           <span className={`font-medium ${VERDICT_TONE[row.state.kind]}`}>
             {IMPACT_STATE_LABEL[row.state.kind]}
           </span>{' '}
-          <span className="text-fg-tertiary tabular-nums md:truncate">{verdictDetail(row)}</span>
+          <span className="text-fg-secondary tabular-nums md:truncate">{verdictDetail(row)}</span>
         </p>
         <When row={row} className="mt-0.5 block text-xs text-fg-tertiary md:hidden" />
       </div>
@@ -323,10 +323,13 @@ function TrackedChanges({ changes, filter }: { changes: TrackedChange[]; filter:
                   aria-current={selected ? 'true' : undefined}
                   data-col={c.index}
                   data-legend={c.index}
-                  className="grid grid-cols-[1.5rem_minmax(0,1fr)] gap-x-2 rounded-control px-2 py-2 transition-[opacity,background-color] duration-100 hover:bg-surface-hover focus-visible:ring-2 focus-visible:ring-focus focus-visible:outline-none aria-[current=true]:bg-surface aria-[current=true]:shadow-btn"
+                  // Selected as in the impact report's change list (DESIGN.md
+                  // Amendment B10): a fill one step off the canvas, a thin
+                  // indicator at the left edge, the title at full contrast.
+                  className="group relative grid grid-cols-[1.5rem_minmax(0,1fr)] gap-x-2 rounded-control px-2 py-2.5 transition-[opacity,background-color] duration-100 hover:bg-surface-hover/60 focus-visible:ring-2 focus-visible:ring-focus focus-visible:outline-none aria-[current=true]:bg-surface-hover aria-[current=true]:before:absolute aria-[current=true]:before:inset-y-2.5 aria-[current=true]:before:left-0 aria-[current=true]:before:w-0.5 aria-[current=true]:before:rounded-full aria-[current=true]:before:bg-fg"
                 >
                   <span className="font-mono text-2xs leading-5 text-fg-tertiary">{c.label}</span>
-                  <span className="line-clamp-2 text-ui [overflow-wrap:anywhere] text-fg-secondary">
+                  <span className="line-clamp-2 text-sm [overflow-wrap:anywhere] text-fg-secondary group-aria-[current=true]:text-fg">
                     {c.title}
                   </span>
                   <span className="col-start-2 mt-1 text-xs text-fg-tertiary tabular-nums">

@@ -310,10 +310,12 @@ and B8).
 - **Starter questions** (fixed copy by verdict, never generated) sit above
   the composer until the first follow-up, as `rounded-chip` buttons with
   the lit `shadow-btn` edge.
-- **Composer:** the lightest thing in the band -- an auto-growing textarea
-  (two lines at rest) on `bg-evidence` with the lit `shadow-btn` edge and
-  a 2px focus ring, a near-white send button (dark until there is text),
-  Enter to send and Shift+Enter for a new line. The hint line under
+- **Composer:** the one inset surface in the product -- an auto-growing
+  textarea (two lines at rest) on `bg-field` (#0f1011, below the surface
+  ladder on purpose) with an inner shadow, a lit hairline edge and a 2px
+  focus ring, so it reads as a well to type into rather than more panel;
+  a near-white send button (dark until there is text), Enter to send and
+  Shift+Enter for a new line. The hint line under
   it says answers use only Patchwork's evidence; near 500 characters it
   counts down; at 10 follow-ups it says the limit is reached.
 - The conversation lives in the page: kept across Hide/Show, reset by a
@@ -360,6 +362,22 @@ and B8).
   title at full contrast, not a raised block; titles are `text-sm`. The
   run snapshot is a compact "Analysis details" disclosure (commit, SDK,
   when) under the change list.
+- **Applied beyond the report** (same day):
+  - Section headings on the index and the repository overview (the
+    shared `Section`) use the heading step, 16/24 semibold, with the count
+    at `text-ui` normal.
+  - The repository overview's verdict panel is built like the report
+    header: the verdict as a small label with its 14px glyph, the
+    headline ("3 of 4 tracked changes affect this repository") at
+    `text-display` (`text-title` below `sm`), one relevance line, and the
+    action aligned to its foot. Change reasons there use `TechText` at
+    `text-sm`, capped near 70ch.
+  - The index's tracked-change legend takes the same restrained selection
+    as the report's change list, with `text-sm` titles; a row's verdict
+    detail ("3 changes · 4 usages") is `fg-secondary` -- content, not
+    metadata. Timestamps stay `fg-tertiary`.
+  - AI prose (the explanation and follow-up answers) sets technical names
+    with `TechText` too.
 
 **Still in force from 2026-10-04:**
 

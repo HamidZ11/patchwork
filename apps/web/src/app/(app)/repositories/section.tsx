@@ -21,9 +21,14 @@ export function Section({
 }) {
   return (
     <section aria-labelledby={id}>
-      <h2 id={id} className="mb-3 flex items-baseline gap-2 px-1 text-ui font-medium text-fg">
+      {/* The section-heading step (DESIGN.md Amendment B10): 16/24 semibold,
+          so a section reads above the rows inside it. */}
+      <h2
+        id={id}
+        className="mb-3 flex items-baseline gap-2 px-1 text-heading font-semibold text-fg"
+      >
         {title}
-        <span className="text-fg-tertiary tabular-nums">{count}</span>
+        <span className="text-ui font-normal text-fg-tertiary tabular-nums">{count}</span>
       </h2>
       <div className="overflow-hidden rounded-window bg-panel shadow-card">{children}</div>
     </section>

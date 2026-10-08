@@ -7,6 +7,7 @@ import { FormSubmitButton } from '@/components/form-submit-button';
 import { apiFetch } from '@/lib/api';
 import { analyseRepository } from '../actions';
 import { Breakable } from '../breakable';
+import { TechText } from '../tech-text';
 import { PatchGlyph } from '../patch-glyph';
 import { buildRepositoryIndex, indexHref, type TrackedChange } from '../repository-index';
 import {
@@ -108,8 +109,10 @@ function VerdictAction({ repo, state }: { repo: Repository; state: ImpactState }
   );
 }
 
-/** The strongest object on the page: the verdict word with its glyph, how
- * many tracked changes it rests on, and the action. */
+/** The strongest object on the page, built like the impact report's header
+ * (DESIGN.md Amendment B10): the verdict as a small label with its glyph,
+ * the headline it rests on as the page's largest type, one relevance line,
+ * and the action. */
 function Verdict({ repo, state }: { repo: Repository; state: ImpactState }) {
   const copy = verdictCopy(state);
   const detail = [
@@ -122,19 +125,23 @@ function Verdict({ repo, state }: { repo: Repository; state: ImpactState }) {
   return (
     <section
       aria-labelledby="verdict"
-      className="flex flex-col gap-6 rounded-window bg-panel px-6 py-6 shadow-card sm:flex-row sm:items-center sm:justify-between"
+      className="flex flex-col gap-6 rounded-window bg-panel px-6 py-7 shadow-card sm:flex-row sm:items-end sm:justify-between"
     >
       <div className="min-w-0">
+        <p
+          className={`inline-flex items-center gap-2 text-xs font-medium ${VERDICT_TONE[state.kind]}`}
+        >
+          <PatchGlyph kind={state.kind} className="size-3.5" />
+          {copy.title}
+        </p>
         <h2
           id="verdict"
-          className={`flex items-center gap-3 text-title font-semibold tracking-[-0.02em] ${VERDICT_TONE[state.kind]}`}
+          className="mt-2 max-w-[32ch] text-title font-semibold text-fg sm:text-display sm:tracking-[-0.015em]"
         >
-          <PatchGlyph kind={state.kind} className="size-5" />
-          {copy.title}
+          {copy.headline}
         </h2>
-        <p className="mt-3 text-sm text-fg">{copy.headline}</p>
         {detail.length > 0 && (
-          <p className="mt-1 text-ui text-fg-tertiary tabular-nums">{detail.join(' · ')}</p>
+          <p className="mt-3 text-ui text-fg-secondary tabular-nums">{detail.join(' · ')}</p>
         )}
       </div>
       <div className="shrink-0">
@@ -254,8 +261,8 @@ function ChangeRow({
         {status === 'AFFECTED' && assessment.findings.length > 0 ? (
           <Locations findings={assessment.findings} report={report} />
         ) : (
-          <p className="mt-2 text-ui [overflow-wrap:anywhere] text-fg-secondary">
-            {assessment.reason}
+          <p className="mt-2 max-w-[70ch] text-sm leading-6 [overflow-wrap:anywhere] text-fg-secondary">
+            <TechText text={assessment.reason} />
           </p>
         )}
       </div>
