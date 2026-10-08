@@ -62,8 +62,8 @@ Section 31's OS-driven switch stays removed).
   of the range and read as a template.
 - Cool greys only. **Do not reintroduce warm graphite, ivory, brown or
   warm-paper tones in the app.** The light values stay dormant under
-  `[data-theme='light']`; the landing page keeps its pinned graphite until
-  its own pass.
+  `[data-theme='light']`. The landing page now uses the same charcoal
+  ladder (B11).
 - Text: `fg`, `fg-secondary`, `fg-tertiary` (which `fg-faint` equals in this
   palette), spaced far enough apart to read as tiers; every one clears 4.5:1
   on `evidence`. Beautiful UI's third tier (~3.3:1) is deliberately not
@@ -382,6 +382,30 @@ and B8).
     report, "← Repositories" on the overview) is a primary control, the
     same near-white fill as "View pull request": on a detail page it is a
     key action, not page chrome.
+
+**B11. Landing page** (2026-10-08; supersedes the landing scope's pinned
+graphite palette and `--landing-accent`).
+
+- **Real captures only.** Every product image is a capture of the shipping
+  UI with real data (`HamidZ11/stripe-basil-fixture` at `d2b1ca5`), never
+  the scratch mock. Each has a separate capture taken at phone width
+  (`*-mobile.png`) instead of the desktop image shrunk; `ProductShot`
+  renders one or the other, framed as a product panel (`rounded-window`,
+  `shadow-card`). Recapture them when the UI they show changes.
+- **Five sections after the hero:** 01 the gap, 02 detect (the
+  repositories page; the `#how-it-works` target), 03 understand (the AI
+  explanation with a real follow-up answer), 04 fix and verify (code
+  impact, migration and diff, with the sandbox steps as a short ledger),
+  05 guarantees (five one-line constraints) folded into the closing call
+  to action. The separate pipeline recap and the long guarantees list are
+  gone: each repeated a point a section had already made.
+- **The product palette, no amber decoration.** The `[data-surface=
+'landing']` scope only sets the page ground; colours are the app's
+  charcoal ladder. Section numerals are neutral (`fg-secondary`), because
+  amber means Affected and the landing page is where a reader learns that.
+- Calls to action use the product's button recipes at 44px height
+  (`CTA_PRIMARY`, `CTA_SECONDARY`); the nav's Connect GitHub is the
+  product's primary button. No em dashes in the copy or the page title.
 
 **Still in force from 2026-10-04:**
 

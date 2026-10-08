@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { PatchworkMark } from '@/components/patchwork-mark';
 import { API_URL } from '@/lib/api';
+import { buttonVariantClassName } from '@/components/button-styles';
 import { Container } from './primitives';
 
 export const SIGN_IN = `${API_URL}/auth/github/login`;
@@ -20,7 +21,7 @@ const NAV_LINKS = [
 ];
 
 const QUIET_LINK =
-  'rounded-sm text-sm text-fg-tertiary hover:text-fg focus-visible:ring-2 focus-visible:ring-fg focus-visible:outline-none';
+  'rounded-chip text-sm text-fg-secondary transition-colors duration-100 hover:text-fg focus-visible:ring-2 focus-visible:ring-focus focus-visible:outline-none';
 
 export function PublicNav() {
   return (
@@ -28,7 +29,7 @@ export function PublicNav() {
       <Container className="flex h-16 items-center justify-between gap-6">
         <Link
           href="/"
-          className="inline-flex items-center gap-2.5 rounded-md text-base font-semibold tracking-tight text-fg focus-visible:ring-2 focus-visible:ring-fg focus-visible:outline-none"
+          className="inline-flex items-center gap-2.5 rounded-control text-base font-semibold tracking-tight text-fg focus-visible:ring-2 focus-visible:ring-focus focus-visible:outline-none"
         >
           <PatchworkMark />
           Patchwork
@@ -48,10 +49,7 @@ export function PublicNav() {
           <a href={SIGN_IN} className={`${QUIET_LINK} px-1`}>
             Sign in
           </a>
-          <a
-            href={SIGN_IN}
-            className="inline-flex min-h-9 items-center justify-center rounded-md bg-accent px-3.5 text-xs font-semibold whitespace-nowrap text-accent-fg transition-colors hover:bg-accent-hover focus-visible:ring-2 focus-visible:ring-fg focus-visible:ring-offset-2 focus-visible:ring-offset-canvas focus-visible:outline-none"
-          >
+          <a href={SIGN_IN} className={buttonVariantClassName.primary}>
             Connect GitHub
           </a>
         </div>

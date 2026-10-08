@@ -7,7 +7,7 @@ isolated sandbox, and opens the pull request.
 Current scope is deliberately narrow: GitHub, Stripe, TypeScript, `stripe-node`, one repository at a
 time.
 
-![A Patchwork impact report for a repository at commit d2b1ca5, showing three affected Stripe changes and one uncertain one against Stripe SDK 18.5.0](apps/web/public/product/repository_page-crop.png)
+![A Patchwork impact report for HamidZ11/stripe-basil-fixture at commit d2b1ca5: the change removing Invoice.subscription is Affected, with 2 confirmed usages in 2 files on Stripe SDK 18.5.0, and the next step is to review the prepared fix](apps/web/public/product/report.png)
 
 ## Why Patchwork
 
@@ -126,7 +126,7 @@ opens a pull request. **Patchwork never merges and never deploys.**
 
 > Patchwork proves. AI explains.
 
-![The AI explanation panel inside an impact report, with In plain English, Why it matters here and Next step sections, evidence chips, and a footer stating the deterministic verdict remains the source of truth](apps/web/public/product/AI_Summary-crop.png)
+![The AI explanation inside an impact report: In plain English, Why it matters here and Next step, a line of supporting evidence, a follow-up question answered from the same evidence, and a footer stating the deterministic verdict remains the source of truth](apps/web/public/product/explanation.png)
 
 The verdict, findings, applicability evidence and patch state are all decided before a model is
 involved. The explanation layer receives a small server-built projection of that already-established
@@ -174,7 +174,7 @@ installation token, the App private key, database credentials, the OpenAI key, o
 
 ## Deterministic diff
 
-![A generated deterministic diff replacing invoice.subscription with invoice.parent?.subscription_details?.subscription across two files](apps/web/public/product/code_block-crop.png)
+![Code impact at two file locations, the provider's migration requirement, and a generated deterministic diff replacing invoice.subscription with invoice.parent?.subscription_details?.subscription across two files](apps/web/public/product/fix.png)
 
 ## Tech stack
 
