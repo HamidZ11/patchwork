@@ -7,7 +7,7 @@ import { z } from 'zod';
  * is on the full identity, not just the assessment), so a previous version's
  * generation stays auditable.
  */
-export const EXPLANATION_PROMPT_VERSION = 'impact-explanation-v1';
+export const EXPLANATION_PROMPT_VERSION = 'impact-explanation-v2';
 
 /** Only the two verdicts an explanation is offered for. NOT_AFFECTED is
  * deliberately absent: a proven negative is already fully carried by the
@@ -82,7 +82,7 @@ export type ModelUsage = { inputTokens: number | null; outputTokens: number | nu
  * explanation prompt, though nothing is cached under it today: answers are
  * returned and not stored (the conversation lives in the reader's page).
  */
-export const FOLLOW_UP_PROMPT_VERSION = 'impact-follow-up-v1';
+export const FOLLOW_UP_PROMPT_VERSION = 'impact-follow-up-v2';
 
 /** Bounds on what a caller may send, enforced at the API so cost and prompt
  * size stay bounded however the endpoint is called. */

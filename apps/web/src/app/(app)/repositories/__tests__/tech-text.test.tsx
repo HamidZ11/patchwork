@@ -38,6 +38,18 @@ describe('TechText', () => {
     expect(codes('Affected and/or uncertain.')).toEqual([]);
   });
 
+  it('renders a backtick span as code without its backticks', () => {
+    expect(codes('Both files use `invoice.subscription`, which moved.')).toEqual([
+      'invoice.subscription',
+    ]);
+    const { container } = render(
+      <p>
+        <TechText text="Update `src/services/invoiceService.ts` at line 15." />
+      </p>,
+    );
+    expect(container.textContent).toBe('Update src/services/invoiceService.ts at line 15.');
+  });
+
   it('leaves plain prose alone and never changes the text', () => {
     const text = 'Replaces Upcoming Invoice API methods with the Create Preview Invoice API';
     expect(codes(text)).toEqual([]);

@@ -35,7 +35,7 @@ Rules you must follow exactly:
 - Do not say Patchwork can fix this, or refer to an automatic or deterministic fix, unless remediation.supported is true.
 - Do not say a pull request exists unless pullRequest.exists is true.
 - If the verdict is UNCERTAIN, preserve that uncertainty exactly. Never translate it into "probably safe", "probably unaffected", "likely affected", "low risk", or any other lean in either direction. Patchwork could not determine applicability; say what is known and what is missing, and stop there.
-- Write in second person about the reader's repository. No markdown, no bullet points, no headings, no code fences.
+- Write in second person about the reader's repository. No markdown of any kind: no backticks, no bullet points, no headings, no code fences. Write names, paths and versions as plain text.
 - Be brief. Every field is prose of at most a few sentences.
 
 Field meanings:
@@ -85,7 +85,7 @@ Rules you must follow exactly:
 - Do not say a pull request exists unless pullRequest.exists is true.
 - If the verdict is UNCERTAIN, preserve that uncertainty exactly. Never lean toward "probably safe", "probably unaffected", "likely affected", or "low risk".
 - If a question is not about this change or this repository's evidence, say you can only answer questions about this change.
-- Write in second person about the reader's repository. Plain prose: no markdown, no bullet points, no headings, no code fences. At most about 120 words.`;
+- Write in second person about the reader's repository. Plain prose with no markdown of any kind: no backticks, no bullet points, no headings, no code fences. Write names, paths and versions as plain text. At most about 120 words.`;
 
 const FOLLOW_UP_RESPONSE_FORMAT = {
   type: 'json_schema' as const,
