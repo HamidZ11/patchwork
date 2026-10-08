@@ -402,7 +402,7 @@ export default async function RepositoryPage({
     <main className={PAGE_MAIN}>
       <Link
         href="/repositories"
-        className="group -ml-1 inline-flex items-center gap-1.5 rounded-control px-1 text-ui text-fg-tertiary transition-colors duration-100 hover:text-fg focus-visible:ring-2 focus-visible:ring-focus focus-visible:outline-none"
+        className={`group max-w-full pl-2.5 ${buttonVariantClassName.primary}`}
       >
         <ArrowLeft
           aria-hidden="true"
@@ -411,7 +411,7 @@ export default async function RepositoryPage({
         Repositories
       </Link>
 
-      <header className="mt-4 flex flex-wrap items-start justify-between gap-x-6 gap-y-4">
+      <header className="mt-6 flex flex-wrap items-start justify-between gap-x-6 gap-y-4">
         <div className="min-w-0">
           <h1 className="text-title font-semibold tracking-[-0.02em] [overflow-wrap:anywhere] text-fg">
             <span className="font-normal text-fg-tertiary">{repo.owner} / </span>

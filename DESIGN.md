@@ -378,6 +378,10 @@ and B8).
     metadata. Timestamps stay `fg-tertiary`.
   - AI prose (the explanation and follow-up answers) sets technical names
     with `TechText` too.
+  - The way back from a detail page ("← stripe-basil-fixture" on the
+    report, "← Repositories" on the overview) is a primary control, the
+    same near-white fill as "View pull request": on a detail page it is a
+    key action, not page chrome.
 
 **Still in force from 2026-10-04:**
 

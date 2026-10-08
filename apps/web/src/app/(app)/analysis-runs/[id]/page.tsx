@@ -2626,7 +2626,7 @@ export default async function AnalysisRunPage({ params }: { params: Promise<{ id
     <main className={PAGE_MAIN}>
       <Link
         href={repository ? `/repositories/${encodeURIComponent(repository.id)}` : '/repositories'}
-        className="group -ml-1 inline-flex max-w-full items-center gap-1.5 rounded-control px-1 text-ui text-fg-tertiary transition-colors duration-100 hover:text-fg focus-visible:ring-2 focus-visible:ring-focus focus-visible:outline-none"
+        className={`group max-w-full pl-2.5 ${buttonVariantClassName.primary}`}
       >
         <ArrowLeft
           aria-hidden="true"
@@ -2635,7 +2635,7 @@ export default async function AnalysisRunPage({ params }: { params: Promise<{ id
         <span className="truncate">{repository ? repository.name : 'Repositories'}</span>
       </Link>
 
-      <header className="mt-4">
+      <header className="mt-6">
         <h1 className="text-title font-semibold tracking-[-0.02em] text-fg">Impact report</h1>
         <p className="mt-1.5 flex min-w-0 flex-wrap items-baseline gap-x-1.5 text-sm text-fg-tertiary">
           <span className="[overflow-wrap:anywhere]">{analysisRun.repositoryFullName}</span>
