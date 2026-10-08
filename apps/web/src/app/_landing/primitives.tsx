@@ -66,16 +66,22 @@ export function ProductShot({
   mobile,
   alt,
   priority = false,
+  framed = true,
   className = '',
 }: {
   desktop: Capture;
   mobile?: Capture;
   alt: string;
   priority?: boolean;
+  /** False for a capture that is itself one whole product panel: its own
+   * edge is the frame, and a second one around it would box it in. */
+  framed?: boolean;
   className?: string;
 }) {
   return (
-    <div className={`overflow-hidden rounded-window bg-canvas shadow-card ${className}`}>
+    <div
+      className={`overflow-hidden rounded-window ${framed ? 'bg-canvas shadow-card' : ''} ${className}`}
+    >
       <Image
         src={desktop.src}
         width={desktop.width}

@@ -392,13 +392,24 @@ graphite palette and `--landing-accent`).
   (`*-mobile.png`) instead of the desktop image shrunk; `ProductShot`
   renders one or the other, framed as a product panel (`rounded-window`,
   `shadow-card`). Recapture them when the UI they show changes.
-- **Five sections after the hero:** 01 the gap, 02 detect (the
-  repositories page; the `#how-it-works` target), 03 understand (the AI
-  explanation with a real follow-up answer), 04 fix and verify (code
-  impact, migration and diff, with the sandbox steps as a short ledger),
-  05 guarantees (five one-line constraints) folded into the closing call
-  to action. The separate pipeline recap and the long guarantees list are
-  gone: each repeated a point a section had already made.
+- **Product-led hero:** headline, one sentence and the calls to action
+  on the left; the report's opening on the right, captured as one whole
+  panel (the numbered stages hidden for the capture) and shown without a
+  frame, because its own edge is one. Below `lg` the image follows the
+  copy.
+- **Five sections after the hero, on alternating grounds** (`bg-chrome`
+  and `bg-canvas` bands, so the page has a rhythm rather than one grey):
+  01 the gap (the changelog quote large, the unanswerable questions
+  beside it), 02 detect (the repositories page; the `#how-it-works`
+  target), 03 understand (the AI explanation with a real follow-up answer,
+  image right), 04 fix and verify (diff, image left, with the sandbox
+  steps as a four-row ledger), 05 guarantees, then a closing call to
+  action. One short paragraph per section; section headings at
+  `text-3xl`/`text-4xl`. The pipeline recap and the long guarantees list
+  are gone: each repeated a point a section had already made.
+- Capture filenames change when their content does (`report-opening.png`):
+  the image optimiser caches by URL, so reusing a name serves the old
+  image.
 - **The product palette, no amber decoration.** The `[data-surface=
 'landing']` scope only sets the page ground; colours are the app's
   charcoal ladder. Section numerals are neutral (`fg-secondary`), because
@@ -406,6 +417,18 @@ graphite palette and `--landing-accent`).
 - Calls to action use the product's button recipes at 44px height
   (`CTA_PRIMARY`, `CTA_SECONDARY`); the nav's Connect GitHub is the
   product's primary button. No em dashes in the copy or the page title.
+
+**B12. Not found** (2026-10-08).
+
+- One message for every 404: the Patchwork mark with its blocks pulled
+  apart (the failed-analysis geometry, neutral tone), `404` in mono,
+  "Page not found" at `text-display`, and one line that is true for both
+  cases the API makes indistinguishable: the page doesn't exist, or it
+  belongs to an account you aren't signed in to. The requested address
+  is shown as a mono value, then one primary action back.
+- `app/not-found.tsx` handles unknown addresses with a minimal bar (the
+  mark, home); `app/(app)/not-found.tsx` handles a repository or report
+  that `notFound()`s inside the app shell, with "Back to repositories".
 
 **Still in force from 2026-10-04:**
 

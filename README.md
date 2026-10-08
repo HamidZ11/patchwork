@@ -7,7 +7,7 @@ isolated sandbox, and opens the pull request.
 Current scope is deliberately narrow: GitHub, Stripe, TypeScript, `stripe-node`, one repository at a
 time.
 
-![A Patchwork impact report for HamidZ11/stripe-basil-fixture at commit d2b1ca5: the change removing Invoice.subscription is Affected, with 2 confirmed usages in 2 files on Stripe SDK 18.5.0, and the next step is to review the prepared fix](apps/web/public/product/report.png)
+![A Patchwork impact report for HamidZ11/stripe-basil-fixture at commit d2b1ca5: the change removing Invoice.subscription is Affected, with 2 confirmed usages in 2 files on Stripe SDK 18.5.0, and the next step is to review the prepared fix](apps/web/public/product/report-opening.png)
 
 ## Why Patchwork
 
