@@ -3,7 +3,7 @@
 import { useActionState, useEffect, useId, useRef, useState } from 'react';
 import { ArrowUp } from 'lucide-react';
 import { buttonVariantClassName } from '@/components/button-styles';
-import { Breakable } from '../../repositories/breakable';
+import { TechText } from '../../repositories/tech-text';
 
 export interface Explanation {
   summary: string;
@@ -363,7 +363,9 @@ function ExplanationSection({ heading, body }: { heading: string; body: string }
   return (
     <div className="flex min-w-0 flex-col gap-1.5">
       <p className="text-xs font-bold text-fg">{heading}</p>
-      <p className="max-w-[70ch] text-sm leading-6 break-words text-fg">{body}</p>
+      <p className="max-w-[70ch] text-sm leading-6 break-words text-fg">
+        <TechText text={body} />
+      </p>
     </div>
   );
 }
@@ -441,7 +443,7 @@ function Conversation({
               )}
               {turn.status === 'answered' && (
                 <p className="max-w-[70ch] text-sm leading-6 break-words whitespace-pre-line text-fg">
-                  <Breakable text={turn.answer} />
+                  <TechText text={turn.answer} />
                 </p>
               )}
               {turn.status === 'failed' && (
@@ -483,7 +485,10 @@ function Conversation({
           event.preventDefault();
           send(draft);
         }}
-        className="flex min-w-0 flex-col gap-2 rounded-card bg-evidence p-2 shadow-btn transition-shadow duration-150 focus-within:ring-2 focus-within:ring-focus"
+        // The one inset surface in the product (`bg-field`, near-black): a
+        // well to type into, set below the band rather than raised off it,
+        // with a lit hairline so its edge holds on the dark band.
+        className="flex min-w-0 flex-col gap-2 rounded-card bg-field p-2 shadow-[inset_0_1px_3px_rgb(0_0_0/0.5),0_0_0_1px_rgb(255_255_255/0.1)] transition-shadow duration-150 focus-within:shadow-[inset_0_1px_3px_rgb(0_0_0/0.5),0_0_0_2px_var(--focus)]"
       >
         <label htmlFor={inputId} className="sr-only">
           Ask a follow-up about this change
@@ -519,7 +524,7 @@ function Conversation({
             type="submit"
             aria-label="Send"
             disabled={!canSend}
-            className="grid size-7 shrink-0 place-items-center rounded-control bg-fg text-canvas transition-[background-color,color,scale] duration-150 ease-out-strong focus-visible:ring-2 focus-visible:ring-focus focus-visible:outline-none enabled:active:scale-[0.96] disabled:bg-surface-hover disabled:text-fg-tertiary motion-reduce:enabled:active:scale-100"
+            className="grid size-7 shrink-0 place-items-center rounded-control bg-fg text-canvas transition-[background-color,color,scale] duration-150 ease-out-strong focus-visible:ring-2 focus-visible:ring-focus focus-visible:outline-none enabled:active:scale-[0.96] disabled:bg-surface disabled:text-fg-tertiary motion-reduce:enabled:active:scale-100"
           >
             <ArrowUp aria-hidden="true" className="size-4" />
           </button>

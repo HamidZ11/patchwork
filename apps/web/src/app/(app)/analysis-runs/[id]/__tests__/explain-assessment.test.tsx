@@ -224,7 +224,16 @@ describe('ExplainAssessment follow-ups', () => {
     expect(screen.getByRole('button', { name: 'Send' }).hasAttribute('disabled')).toBe(true);
 
     gate.resolve({ ok: true, answer: 'src/billing.ts line 5.' });
-    await waitFor(() => expect(within(log).getByText('src/billing.ts line 5.')).toBeDefined());
+    // Matched on the paragraph's full text: technical names inside an answer
+    // are set in their own mono element, so the string spans two nodes.
+    await waitFor(() =>
+      expect(
+        within(log).getByText(
+          (_, element) =>
+            element?.tagName === 'P' && element.textContent === 'src/billing.ts line 5.',
+        ),
+      ).toBeDefined(),
+    );
     expect(within(log).queryByText('Thinking from verified evidence…')).toBeNull();
   });
 

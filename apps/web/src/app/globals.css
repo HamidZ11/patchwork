@@ -66,6 +66,10 @@
 
   --chrome: #17181a;
   --canvas: #1b1c1e;
+  /* Below the ladder on purpose: the one inset surface, for a field the
+     reader types into (the follow-up composer). Darker than every ground
+     it sits on, so it reads as a well rather than as more panel. */
+  --field: #0f1011;
   --panel: #1f2022;
   --raised: #232427;
   --surface-hover: #25262a;
@@ -135,6 +139,7 @@
   color-scheme: light;
 
   --chrome: #f4f2ed;
+  --field: #ffffff;
   --panel: #fbf9f4;
   --raised: #f7f5f0;
   --raised-hover: #f1efea;
@@ -303,6 +308,7 @@
 @theme inline {
   --color-canvas: var(--canvas);
   --color-chrome: var(--chrome);
+  --color-field: var(--field);
   --color-panel: var(--panel);
   --color-raised: var(--raised);
   --color-raised-hover: var(--raised-hover);
