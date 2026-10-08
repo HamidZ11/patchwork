@@ -411,7 +411,11 @@ function Conversation({
   }
 
   return (
-    <div className="flex min-w-0 flex-col gap-4 border-t border-rule pt-4">
+    // A band of its own, a step darker than the explanation above it, so the
+    // place to type reads as distinct from the prose already written -- and
+    // the lighter composer inside it reads as a field, not as more panel.
+    <div className="-mx-4 -mb-4 flex min-w-0 flex-col gap-4 border-t border-rule bg-raised px-4 pt-4 pb-4">
+      <p className="text-xs font-medium text-fg-secondary">Ask a follow-up</p>
       {turns.length > 0 && (
         <ol role="log" aria-label="Follow-up questions" className="flex min-w-0 flex-col gap-4">
           {turns.map((turn, index) => (
@@ -420,7 +424,7 @@ function Conversation({
               ref={index === turns.length - 1 ? lastTurn : undefined}
               className="flex min-w-0 flex-col gap-2"
             >
-              <p className="max-w-[85%] self-end rounded-card bg-surface px-3 py-2 text-ui break-words whitespace-pre-line text-fg shadow-hairline">
+              <p className="max-w-[85%] self-end rounded-card bg-evidence px-3 py-2 text-ui break-words whitespace-pre-line text-fg shadow-btn">
                 <span className="sr-only">You asked: </span>
                 {turn.question}
               </p>
@@ -460,7 +464,7 @@ function Conversation({
               <button
                 type="button"
                 onClick={() => send(suggestion)}
-                className="rounded-chip bg-surface px-2.5 py-1 text-xs text-fg-secondary shadow-hairline transition-[background-color,color,scale] duration-150 ease-out-strong hover:bg-evidence hover:text-fg focus-visible:ring-2 focus-visible:ring-focus focus-visible:outline-none active:scale-[0.97] motion-reduce:active:scale-100"
+                className="rounded-chip bg-surface px-2.5 py-1 text-xs text-fg-secondary shadow-btn transition-[background-color,color,scale] duration-150 ease-out-strong hover:bg-evidence hover:text-fg focus-visible:ring-2 focus-visible:ring-focus focus-visible:outline-none active:scale-[0.97] motion-reduce:active:scale-100"
               >
                 {suggestion}
               </button>
@@ -474,7 +478,7 @@ function Conversation({
           event.preventDefault();
           send(draft);
         }}
-        className="flex min-w-0 flex-col gap-2 rounded-card bg-surface p-2 shadow-hairline transition-shadow duration-150 focus-within:ring-1 focus-within:ring-focus"
+        className="flex min-w-0 flex-col gap-2 rounded-card bg-evidence p-2 shadow-btn transition-shadow duration-150 focus-within:ring-2 focus-within:ring-focus"
       >
         <label htmlFor={inputId} className="sr-only">
           Ask a follow-up about this change
@@ -496,7 +500,7 @@ function Conversation({
               send(draft);
             }
           }}
-          className="block max-h-40 min-h-6 w-full resize-none bg-transparent px-1.5 py-1 text-ui text-fg [field-sizing:content] outline-none placeholder:text-fg-tertiary disabled:cursor-not-allowed"
+          className="block max-h-40 min-h-11 w-full resize-none bg-transparent px-1.5 py-1 text-ui text-fg [field-sizing:content] outline-none placeholder:text-fg-tertiary disabled:cursor-not-allowed"
         />
         <div className="flex items-center justify-between gap-3 pl-1.5">
           <p id={hintId} className="min-w-0 text-xs text-fg-tertiary">
@@ -510,7 +514,7 @@ function Conversation({
             type="submit"
             aria-label="Send"
             disabled={!canSend}
-            className="grid size-7 shrink-0 place-items-center rounded-control bg-fg text-canvas transition-[background-color,color,scale] duration-150 ease-out-strong focus-visible:ring-2 focus-visible:ring-focus focus-visible:outline-none enabled:active:scale-[0.96] disabled:bg-evidence disabled:text-fg-tertiary motion-reduce:enabled:active:scale-100"
+            className="grid size-7 shrink-0 place-items-center rounded-control bg-fg text-canvas transition-[background-color,color,scale] duration-150 ease-out-strong focus-visible:ring-2 focus-visible:ring-focus focus-visible:outline-none enabled:active:scale-[0.96] disabled:bg-surface-hover disabled:text-fg-tertiary motion-reduce:enabled:active:scale-100"
           >
             <ArrowUp aria-hidden="true" className="size-4" />
           </button>

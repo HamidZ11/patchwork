@@ -295,8 +295,12 @@ and B8).
 - The explanation stays the opening: the three headed sections and the
   supporting-evidence chips, unchanged in substance. Beneath them, the
   reader can ask follow-up questions in the same module.
-- **Thread:** the reader's questions are right-aligned `bg-surface`
-  bubbles (`rounded-card`, `shadow-hairline`); answers are plain prose in
+- **Its own band:** the follow-up area ("Ask a follow-up") is a
+  full-width `bg-raised` band under a rule, a step darker than the
+  explanation, so the place to type reads as distinct from prose already
+  written.
+- **Thread:** the reader's questions are right-aligned `bg-evidence`
+  bubbles (`rounded-card`, `shadow-btn`); answers are plain prose in
   the explanation's own voice (`text-sm`, `fg-secondary`), never a
   bubble, so generated text reads the same wherever it appears. The list
   is a `log`, so answers are announced. One question in flight at a time;
@@ -304,10 +308,12 @@ and B8).
   indeterminate dot (still under reduced motion). A failed answer keeps
   its place with its own "Try again"; nothing else in the module changes.
 - **Starter questions** (fixed copy by verdict, never generated) sit above
-  the composer until the first follow-up, as `rounded-chip` buttons.
-- **Composer:** an auto-growing textarea on `bg-surface` with a hairline
-  edge and a focus ring, a near-white send button (disabled until there is
-  text), Enter to send and Shift+Enter for a new line. The hint line under
+  the composer until the first follow-up, as `rounded-chip` buttons with
+  the lit `shadow-btn` edge.
+- **Composer:** the lightest thing in the band -- an auto-growing textarea
+  (two lines at rest) on `bg-evidence` with the lit `shadow-btn` edge and
+  a 2px focus ring, a near-white send button (dark until there is text),
+  Enter to send and Shift+Enter for a new line. The hint line under
   it says answers use only Patchwork's evidence; near 500 characters it
   counts down; at 10 follow-ups it says the limit is reached.
 - The conversation lives in the page: kept across Hide/Show, reset by a
