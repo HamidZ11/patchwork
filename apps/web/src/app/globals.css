@@ -386,6 +386,12 @@
   --font-mono: var(--font-geist-mono);
 }
 
+/* `dark:` follows the app's theme, not the OS. Patchwork is dark-only
+   (Amendment B2) with the light values dormant under `[data-theme='light']`,
+   so the variant matches whenever that attribute is absent -- otherwise a
+   `dark:` class would render differently on a light-mode machine. */
+@custom-variant dark (&:where(:root:not([data-theme='light']) *));
+
 /* The repository index's change matrix (DESIGN.md Amendment B5): hovering a
    tracked-change column -- its header, its legend entry, or any cell --
    outlines that column across every repository, and dims the other legend

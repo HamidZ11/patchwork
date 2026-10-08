@@ -1,6 +1,7 @@
 import { Fragment } from 'react';
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
+import { ArrowLeft, ChevronRight, ExternalLink } from 'lucide-react';
 import { apiFetch } from '@/lib/api';
 import { FormSubmitButton } from '@/components/form-submit-button';
 import {
@@ -11,6 +12,14 @@ import {
 } from './explain-assessment';
 import { buttonVariantClassName } from '@/components/button-styles';
 import { AssessmentSelector, type AssessmentTab } from './assessment-selector';
+import { buildRepositoryIndex } from '../../repositories/repository-index';
+import {
+  formatAbsoluteTime,
+  formatRelativeTime,
+  type Repository,
+} from '../../repositories/repository-state';
+import { Breakable } from '../../repositories/breakable';
+import { PAGE_MAIN } from '../../repositories/section';
 
 interface InstalledSdk {
   packageName: string;
@@ -244,34 +253,15 @@ async function createPullRequest(verificationRunId: string, analysisRunId: strin
 }
 
 function ExternalLinkIcon() {
-  return (
-    <svg
-      viewBox="0 0 16 16"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.5"
-      className="h-3 w-3"
-      aria-hidden="true"
-    >
-      <path d="M6 3H3.5A1.5 1.5 0 0 0 2 4.5v8A1.5 1.5 0 0 0 3.5 14h8a1.5 1.5 0 0 0 1.5-1.5V10" />
-      <path d="M9 2h5v5" />
-      <path d="M14 2 7 9" />
-    </svg>
-  );
+  return <ExternalLink aria-hidden="true" className="size-3" />;
 }
 
 function ChevronIcon() {
   return (
-    <svg
-      viewBox="0 0 16 16"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.5"
-      className="h-3 w-3 shrink-0 transition-transform group-open:rotate-90"
+    <ChevronRight
       aria-hidden="true"
-    >
-      <path d="M6 3.5 10.5 8 6 12.5" />
-    </svg>
+      className="size-3.5 shrink-0 transition-transform duration-150 ease-out-strong group-open:rotate-90 motion-reduce:transition-none"
+    />
   );
 }
 
@@ -389,7 +379,7 @@ function ApplicabilityLedger({
     <dl className="grid min-w-0 gap-x-6 gap-y-3 sm:grid-cols-[minmax(0,12rem)_minmax(0,1fr)]">
       {rows.map((row, index) => (
         <Fragment key={`${row.label}-${index}`}>
-          <dt className="min-w-0 text-xs text-fg-tertiary">{row.label}</dt>
+          <dt className="min-w-0 text-ui text-fg-tertiary">{row.label}</dt>
           <dd className="flex min-w-0 flex-wrap items-baseline gap-x-2.5 gap-y-1">
             <span className="font-mono text-xs break-all text-fg">{row.value}</span>
             {row.note && (
@@ -538,8 +528,8 @@ const DIFF_MARKER: Record<DiffLine['type'], string> = { add: '+', del: '-', cont
 
 function DiffFileView({ file }: { file: DiffFile }) {
   return (
-    <div className="min-w-0 overflow-hidden rounded-md border border-rule">
-      <div className="flex items-center justify-between border-b border-rule bg-evidence px-3 py-1.5">
+    <div className="min-w-0 overflow-hidden rounded-control bg-raised shadow-hairline">
+      <div className="flex items-center justify-between gap-3 border-b border-rule px-3 py-2">
         <span className="font-mono text-xs font-medium text-fg-secondary">{file.path}</span>
         <span className="font-mono text-xs">
           <span className="text-success">+{file.additions}</span>{' '}
@@ -644,22 +634,6 @@ function withNotRunSteps(steps: VerificationStep[]): VerificationStep[] {
 
 function formatDuration(ms: number): string {
   return ms < 1000 ? `${ms}ms` : `${(ms / 1000).toFixed(1)}s`;
-}
-
-/** Prefers `completedAt` (when the run actually finished) over `startedAt`;
- * both `completed` and `failed` runs are terminal writes carrying a real
- * `completedAt`, so `startedAt` is a defensive fallback only. Intentionally
- * a local copy of `/repositories`' identical helper rather than a shared
- * import: two small formatters across two pages don't yet justify a shared
- * module, and that page is out of scope for this slice. */
-function formatRelativeTime(startedAt: string, completedAt: string | null): string {
-  const when = new Date(completedAt ?? startedAt).getTime();
-  const diffMinutes = Math.round((when - Date.now()) / 60_000);
-  const rtf = new Intl.RelativeTimeFormat('en', { numeric: 'auto' });
-  if (Math.abs(diffMinutes) < 60) return rtf.format(diffMinutes, 'minute');
-  const diffHours = Math.round(diffMinutes / 60);
-  if (Math.abs(diffHours) < 24) return rtf.format(diffHours, 'hour');
-  return rtf.format(Math.round(diffHours / 24), 'day');
 }
 
 const VERIFICATION_STATUS_STYLE: Record<VerificationRunStatus, { dot: string; text: string }> = {
@@ -781,29 +755,26 @@ function ChainSection({
   children: React.ReactNode;
 }) {
   return (
-    <section
-      aria-label={label}
-      className="grid gap-x-5 gap-y-3 border-t border-rule pt-5 first:border-t-0 first:pt-0 sm:grid-cols-[2.5rem_minmax(0,1fr)]"
-    >
-      <span aria-hidden="true" className="font-mono text-2xs tabular-nums text-fg-faint sm:pt-0.5">
-        {number}
-      </span>
-      <div className="min-w-0">
-        {/* An eyebrow, deliberately not a heading: the assessment's provider-change
-            title inside section 01 is the article's only `h2`, so promoting these
-            seven labels to `h3` would put an `h3` before it in document order.
-            `aria-label` on the section above already gives the region its name. */}
-        <p className="flex items-center gap-1.5 text-2xs font-semibold tracking-wide uppercase">
-          {tone && (
-            <span
-              className={`h-1.5 w-1.5 shrink-0 rounded-full ${muted ? 'bg-mark-neutral' : STAGE_DOT_COLOR[tone]}`}
-              aria-hidden="true"
-            />
-          )}
-          <span className={muted ? 'text-fg-faint' : 'text-fg-tertiary'}>{label}</span>
-        </p>
-        <div className="mt-3 min-w-0">{children}</div>
-      </div>
+    <section aria-label={label} className="border-t border-rule px-5 py-5 sm:px-6">
+      {/* An eyebrow, deliberately not a heading: the assessment's provider-change
+          title in the opening is the article's only `h2`, so promoting these
+          labels to `h3` would put an `h3` before it in document order.
+          `aria-label` on the section above already gives the region its name. */}
+      <p className="flex items-center gap-2">
+        <span aria-hidden="true" className="w-6 font-mono text-2xs text-fg-tertiary tabular-nums">
+          {number}
+        </span>
+        {tone && (
+          <span
+            className={`size-1.5 shrink-0 rounded-full ${muted ? 'bg-mark-neutral' : STAGE_DOT_COLOR[tone]}`}
+            aria-hidden="true"
+          />
+        )}
+        <span className={`text-ui font-medium ${muted ? 'text-fg-tertiary' : 'text-fg'}`}>
+          {label}
+        </span>
+      </p>
+      <div className="mt-3 min-w-0 sm:pl-8">{children}</div>
     </section>
   );
 }
@@ -1115,7 +1086,7 @@ function StepOutputBlock({ label, text }: { label: string; text: string | null }
   return (
     <div className="flex flex-col gap-0.5">
       <span className="font-medium text-fg-tertiary">{label}</span>
-      <pre className="overflow-x-auto rounded-md border border-rule bg-evidence px-2 py-1.5 font-mono text-2xs leading-relaxed text-fg-tertiary">
+      <pre className="overflow-x-auto rounded-chip bg-chrome px-2 py-1.5 font-mono text-2xs leading-relaxed text-fg-tertiary shadow-hairline">
         {text}
       </pre>
     </div>
@@ -1472,9 +1443,7 @@ function StaticValidation({ checks }: { checks: PostconditionCheck[] }) {
           className={`h-1.5 w-1.5 shrink-0 rounded-full ${passed ? 'bg-mark-success' : 'bg-mark-attention'}`}
           aria-hidden="true"
         />
-        <span className="text-2xs font-semibold tracking-wide text-fg-tertiary uppercase">
-          Static validation
-        </span>
+        <span className="text-xs font-medium text-fg-tertiary">Static validation</span>
       </div>
       <div className="flex min-w-0 flex-col gap-1">
         <span className={`text-sm font-semibold ${passed ? 'text-success' : 'text-attention'}`}>
@@ -1645,19 +1614,17 @@ function FindingsEvidence({ findings }: { findings: Finding[] }) {
   if (findings.length === 0) return null;
 
   return (
-    <ol className="flex min-w-0 flex-col divide-y divide-rule overflow-hidden rounded-md border border-rule bg-evidence">
+    <ol className="min-w-0 divide-y divide-rule overflow-hidden rounded-control bg-raised shadow-hairline">
       {findings.map((finding) => (
         <li
           key={`${finding.workspacePath}:${finding.sourceFile}:${finding.line}:${finding.matchedSymbol}`}
-          className="flex min-w-0 flex-col gap-1 px-3 py-2.5"
+          className="flex min-w-0 flex-wrap items-baseline justify-between gap-x-6 gap-y-0.5 px-3 py-2 font-mono text-xs"
         >
-          <span className="min-w-0 font-mono text-2xs break-all text-fg-tertiary">
+          <span className="min-w-0 break-all text-fg-secondary">
             {finding.sourceFile}
-            <span className="text-fg-faint">:{finding.line}</span>
+            <span className="text-fg-tertiary">:{finding.line}</span>
           </span>
-          <code className="min-w-0 font-mono text-xs break-all text-fg">
-            {finding.matchedSymbol}
-          </code>
+          <code className="min-w-0 break-all text-fg">{finding.matchedSymbol}</code>
         </li>
       ))}
     </ol>
@@ -1892,29 +1859,23 @@ function AssessmentOpening({
         : 'Why this repository is not affected';
 
   return (
-    <div className="flex min-w-0 flex-col gap-4">
-      <div className="flex min-w-0 flex-col gap-2.5">
-        <span
-          className={`inline-flex w-fit items-center gap-1.5 text-xs font-semibold ${style.text}`}
-        >
-          <span className={`h-2 w-2 shrink-0 rounded-full ${style.dot}`} aria-hidden="true" />
+    <div className="flex min-w-0 flex-col gap-5">
+      <div className="flex min-w-0 flex-col gap-2">
+        <span className={`inline-flex w-fit items-center gap-2 text-ui font-medium ${style.text}`}>
+          <span className={`size-2 shrink-0 rounded-full ${style.dot}`} aria-hidden="true" />
           {STATUS_LABEL[assessment.status]}
         </span>
         <h2
-          className={`min-w-0 text-fg ${
-            isAffected
-              ? 'text-xl leading-7 font-semibold tracking-tight'
-              : 'text-base leading-6 font-semibold tracking-tight'
+          className={`min-w-0 font-semibold [overflow-wrap:anywhere] text-fg ${
+            isAffected ? 'text-xl leading-7 tracking-[-0.01em]' : 'text-base leading-6'
           }`}
         >
-          {assessment.providerChangeTitle}
+          <Breakable text={assessment.providerChangeTitle} />
         </h2>
       </div>
 
       <div className="flex min-w-0 flex-col gap-1.5">
-        <p className="text-2xs font-semibold tracking-wide text-fg-tertiary uppercase">
-          {whyHeading}
-        </p>
+        <p className="text-xs font-medium text-fg-tertiary">{whyHeading}</p>
         {/* `summary.reason` is the existing safe reconstruction of the
             per-workspace applicability evidence -- never the raw analyzer
             `reason` string. */}
@@ -1946,7 +1907,7 @@ function AssessmentOpening({
         href={assessment.providerChangeSourceUrl}
         target="_blank"
         rel="noreferrer"
-        className="inline-flex w-fit items-center gap-1 text-sm text-fg-secondary hover:text-fg"
+        className="inline-flex w-fit items-center gap-1.5 rounded-chip text-ui text-fg-secondary transition-colors duration-100 hover:text-fg focus-visible:ring-2 focus-visible:ring-focus focus-visible:outline-none"
       >
         Provider changelog
         <ExternalLinkIcon />
@@ -2080,19 +2041,19 @@ function AssessmentReport({
   const summary = summarizeAssessment(assessment);
 
   return (
-    <article
-      className={`flex min-w-0 flex-col gap-5 ${
-        isAffected ? 'rounded-md bg-surface p-5 sm:p-6' : 'py-1'
-      }`}
-    >
-      <AssessmentOpening
-        assessment={assessment}
-        analysisRunId={analysisRunId}
-        latestAttempt={latestAttempt}
-        publishedPullRequest={publishedForAssessment}
-        evidence={evidence}
-        summary={summary}
-      />
+    // One panel per report, whatever the verdict (DESIGN.md Amendment B8):
+    // the opening, then the numbered chain as ruled sections inside it.
+    <article className="min-w-0 overflow-hidden rounded-window bg-panel shadow-card">
+      <div className="px-5 py-6 sm:px-6">
+        <AssessmentOpening
+          assessment={assessment}
+          analysisRunId={analysisRunId}
+          latestAttempt={latestAttempt}
+          publishedPullRequest={publishedForAssessment}
+          evidence={evidence}
+          summary={summary}
+        />
+      </div>
 
       {/* Stage 01 is not rendered as its own block: the opening above already
           carries every part of it -- the change's verdict, headline and source
@@ -2220,63 +2181,38 @@ function countByStatus(
   return counts;
 }
 
-function impactHeadline(counts: Record<AssessmentDetail['status'], number>): string {
-  if (counts.AFFECTED > 0) {
-    return `${counts.AFFECTED} change${counts.AFFECTED === 1 ? '' : 's'} affect${counts.AFFECTED === 1 ? 's' : ''} this repository`;
-  }
-  if (counts.UNCERTAIN > 0) {
-    return `${counts.UNCERTAIN} change${counts.UNCERTAIN === 1 ? '' : 's'} could not be confirmed`;
-  }
-  return 'No changes affect this repository';
-}
-
-/** The status whose colour the run-level conclusion takes -- the same
- * precedence `impactHeadline` already uses to choose its sentence, so the
- * headline's wording and its colour can never disagree. */
-function headlineStatus(
-  counts: Record<AssessmentDetail['status'], number>,
-): AssessmentDetail['status'] {
-  if (counts.AFFECTED > 0) return 'AFFECTED';
-  if (counts.UNCERTAIN > 0) return 'UNCERTAIN';
-  return 'NOT_AFFECTED';
-}
-
-function ImpactSummary({ assessments }: { assessments: AssessmentDetail[] }) {
+/** The run's verdicts at a glance, above the change list: the counts
+ * behind each status, never a sentence that ranks them. */
+function ChangeListHeading({ assessments }: { assessments: AssessmentDetail[] }) {
   const counts = countByStatus(assessments);
-  const tone = STATUS_STYLE[headlineStatus(counts)];
   return (
-    <div className="flex flex-col gap-2">
-      <span className="inline-flex items-center gap-2">
-        <span className={`h-2 w-2 shrink-0 rounded-full ${tone.dot}`} aria-hidden="true" />
-        <span className="text-xl leading-7 font-semibold tracking-tight text-fg">
-          {impactHeadline(counts)}
-        </span>
-      </span>
-      <div className="flex flex-wrap items-center gap-4 text-xs">
+    <div>
+      <h2 className="flex items-center gap-2 text-ui font-medium text-fg">
+        Changes
+        <span className="text-fg-tertiary tabular-nums">{assessments.length}</span>
+      </h2>
+      <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-fg-tertiary tabular-nums">
         {(['AFFECTED', 'UNCERTAIN', 'NOT_AFFECTED'] as const)
           .filter((status) => counts[status] > 0)
           .map((status) => (
-            <span
-              key={status}
-              className={`inline-flex items-center gap-1.5 ${STATUS_STYLE[status].text}`}
-            >
+            <span key={status} className="inline-flex items-center gap-1.5">
               <span
-                className={`h-1.5 w-1.5 rounded-full ${STATUS_STYLE[status].dot}`}
+                className={`size-1.5 rounded-full ${STATUS_STYLE[status].dot}`}
                 aria-hidden="true"
               />
               {counts[status]} {STATUS_LABEL[status].toLowerCase()}
             </span>
           ))}
-      </div>
+      </p>
     </div>
   );
 }
 
-/** Mirrors `/repositories`' snapshot strip so an analysis reads as the same
- * product one level deeper: a label/value row of the exact code state the
- * conclusions above refer to. Every value is real; entries with no backing
- * data are omitted rather than rendered empty. */
-function RunMetadata({
+/** The snapshot every verdict on this page is true about, as on the
+ * repository overview: a label/value list of the exact code state. Every
+ * value is real; entries with no backing data are omitted rather than
+ * rendered empty. */
+function RunSnapshot({
   analysisRun,
   installedSdks,
 }: {
@@ -2284,52 +2220,77 @@ function RunMetadata({
   installedSdks: InstalledSdk[];
 }) {
   const singleSdk = installedSdks.length === 1 ? installedSdks[0] : null;
-  const items = [
-    { label: 'Snapshot', value: analysisRun.commitSha.slice(0, 7) },
+  const when = new Date(analysisRun.completedAt ?? analysisRun.startedAt);
+  const facts: { label: string; value: React.ReactNode; mono?: boolean }[] = [
     ...(singleSdk
       ? [
           {
             label: `${singleSdk.packageName === 'stripe' ? 'Stripe' : singleSdk.packageName} SDK`,
-            value: singleSdk.resolvedVersion ?? singleSdk.declaredRange,
+            value: (
+              <>
+                {singleSdk.resolvedVersion ?? singleSdk.declaredRange}
+                {singleSdk.resolvedVersion === null && (
+                  <span className="font-sans text-fg-tertiary"> declared</span>
+                )}
+              </>
+            ),
+            mono: true,
           },
         ]
       : []),
-    { label: 'Analysis', value: analysisRun.status },
+    {
+      label: 'Commit',
+      value: <span title={analysisRun.commitSha}>{analysisRun.commitSha.slice(0, 7)}</span>,
+      mono: true,
+    },
+    {
+      label: 'Analysis',
+      value: analysisRun.status.charAt(0).toUpperCase() + analysisRun.status.slice(1),
+    },
     {
       label: 'Analysed',
-      value: formatRelativeTime(analysisRun.startedAt, analysisRun.completedAt),
+      value: (
+        <time dateTime={when.toISOString()} title={formatAbsoluteTime(when)}>
+          {formatRelativeTime(when)}
+        </time>
+      ),
     },
   ];
 
   return (
-    <div className="flex flex-col gap-4">
-      <dl className="grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-4 sm:gap-y-0">
-        {items.map((item) => (
-          <div key={item.label} className="min-w-0">
-            <dt className="text-2xs font-semibold text-fg-tertiary">{item.label}</dt>
-            <dd className="mt-1 truncate font-mono text-xs text-fg-secondary" title={item.value}>
-              {item.value}
+    <section aria-labelledby="snapshot">
+      <h2 id="snapshot" className="text-ui font-medium text-fg">
+        Snapshot
+      </h2>
+      <dl className="mt-3 divide-y divide-rule border-y border-rule">
+        {facts.map((fact) => (
+          <div key={fact.label} className="grid grid-cols-[6rem_minmax(0,1fr)] gap-x-3 py-2.5">
+            <dt className="text-ui text-fg-tertiary">{fact.label}</dt>
+            <dd
+              className={`min-w-0 truncate text-fg ${fact.mono ? 'font-mono text-xs leading-5' : 'text-ui'}`}
+            >
+              {fact.value}
             </dd>
           </div>
         ))}
       </dl>
 
-      {/* Preserved from the previous revision: with more than one installed SDK
-          there is no single "the" version, so each workspace's evidence is listed
-          in full rather than collapsed into one misleading strip value. */}
+      {/* With more than one installed SDK there is no single "the" version,
+          so each workspace's evidence is listed in full rather than collapsed
+          into one misleading value. */}
       {installedSdks.length > 1 && (
-        <div className="flex flex-col gap-0.5">
+        <ul className="mt-3 flex flex-col gap-1">
           {installedSdks.map((sdk) => (
-            <span
+            <li
               key={`${sdk.workspacePath}:${sdk.packageName}`}
-              className="font-mono text-xs text-fg-tertiary"
+              className="font-mono text-xs break-all text-fg-tertiary"
             >
               {formatSdkEvidence(sdk)}
-            </span>
+            </li>
           ))}
-        </div>
+        </ul>
       )}
-    </div>
+    </section>
   );
 }
 
@@ -2368,19 +2329,37 @@ function defaultSelectedAssessment(assessments: AssessmentDetail[]): AssessmentD
 export default async function AnalysisRunPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
 
-  const runResponse = await apiFetch(`/analysis-runs/${id}`);
+  const [runResponse, repositoriesResponse] = await Promise.all([
+    apiFetch(`/analysis-runs/${id}`),
+    apiFetch('/repositories'),
+  ]);
   if (runResponse.status === 404) notFound();
   if (!runResponse.ok) {
     throw new Error(`Failed to load analysis run (${runResponse.status})`);
   }
   const { analysisRun } = (await runResponse.json()) as { analysisRun: AnalysisRunDetail };
 
+  // The repository list is context only, from the same ownership-scoped
+  // endpoint the other pages read: the way back to this repository's
+  // overview, and the estate-wide change numbers, so `02` here is `02` on
+  // the index. If it cannot be read the report still renders in full, with
+  // a link to the index and positional numbers.
+  const repositories = repositoriesResponse.ok
+    ? ((await repositoriesResponse.json()) as { repositories: Repository[] }).repositories
+    : [];
+  const repository = repositories.find((repo) => repo.fullName === analysisRun.repositoryFullName);
+  const changeLabel = new Map(
+    buildRepositoryIndex(repositories).changes.map((change) => [change.title, change.label]),
+  );
+  const labelOrder = (assessment: AssessmentDetail) =>
+    changeLabel.get(assessment.providerChangeTitle) ?? '99';
+
   // The pre-existing product ordering rule, unchanged: AFFECTED first, then
-  // UNCERTAIN, then NOT_AFFECTED. Every assessment is now a selector row --
-  // NOT_AFFECTED changes are no longer split into a separate collapsed
-  // group, since the selector's whole job is showing every tracked change.
+  // UNCERTAIN, then NOT_AFFECTED -- within a status, in the index's change
+  // order, the same order the repository overview lists them in.
   const assessments = [...analysisRun.assessments].sort(
-    (a, b) => STATUS_ORDER[a.status] - STATUS_ORDER[b.status],
+    (a, b) =>
+      STATUS_ORDER[a.status] - STATUS_ORDER[b.status] || labelOrder(a).localeCompare(labelOrder(b)),
   );
   const installedSdks = analysisRun.evidence?.installedSdks ?? [];
 
@@ -2391,6 +2370,7 @@ export default async function AnalysisRunPage({ params }: { params: Promise<{ id
   // element occupies the panel.
   const assessmentTabs: AssessmentTab[] = assessments.map((assessment) => ({
     id: assessment.id,
+    label: changeLabel.get(assessment.providerChangeTitle),
     title: assessment.providerChangeTitle,
     statusLabel: STATUS_LABEL[assessment.status],
     statusDotClassName: STATUS_STYLE[assessment.status].dot,
@@ -2406,37 +2386,47 @@ export default async function AnalysisRunPage({ params }: { params: Promise<{ id
     ),
   }));
   const defaultSelectedId = defaultSelectedAssessment(assessments)?.id ?? '';
+  const snapshot = <RunSnapshot analysisRun={analysisRun} installedSdks={installedSdks} />;
 
   return (
-    <main className="mx-auto flex w-full min-w-0 max-w-6xl flex-1 flex-col gap-8 px-4 pt-10 pb-16 sm:px-6 lg:pt-12">
-      <div className="flex flex-col gap-6 border-b border-rule pb-7">
-        <nav aria-label="Breadcrumb">
-          <ol className="flex flex-wrap items-center gap-1.5 text-xs text-fg-tertiary">
-            <li>
-              <Link href="/repositories" className="hover:text-fg">
-                Repositories
-              </Link>
-            </li>
-            <li aria-hidden="true">/</li>
-            <li className="font-mono text-fg-secondary">{analysisRun.repositoryFullName}</li>
-          </ol>
-        </nav>
+    <main className={PAGE_MAIN}>
+      <Link
+        href={repository ? `/repositories/${encodeURIComponent(repository.id)}` : '/repositories'}
+        className="group -ml-1 inline-flex max-w-full items-center gap-1.5 rounded-control px-1 text-ui text-fg-tertiary transition-colors duration-100 hover:text-fg focus-visible:ring-2 focus-visible:ring-focus focus-visible:outline-none"
+      >
+        <ArrowLeft
+          aria-hidden="true"
+          className="size-3.5 shrink-0 transition-[translate] duration-150 ease-out-strong group-hover:-translate-x-0.5 motion-reduce:group-hover:translate-x-0"
+        />
+        <span className="truncate">{repository ? repository.name : 'Repositories'}</span>
+      </Link>
 
-        <div className="flex flex-col gap-3">
-          <h1 className="text-2xl font-semibold tracking-tight text-fg">
-            {analysisRun.repositoryFullName}
-          </h1>
-          {assessments.length > 0 && <ImpactSummary assessments={assessments} />}
-        </div>
+      <header className="mt-4">
+        <h1 className="text-title font-semibold tracking-[-0.02em] text-fg">Impact report</h1>
+        <p className="mt-1.5 flex min-w-0 flex-wrap items-baseline gap-x-1.5 text-sm text-fg-tertiary">
+          <span className="[overflow-wrap:anywhere]">{analysisRun.repositoryFullName}</span>
+          <span aria-hidden="true">·</span>
+          <span className="font-mono text-xs">{analysisRun.commitSha.slice(0, 7)}</span>
+        </p>
+      </header>
 
-        <RunMetadata analysisRun={analysisRun} installedSdks={installedSdks} />
+      <div className="mt-10">
+        {assessments.length === 0 ? (
+          <div className="flex min-w-0 flex-col gap-8 lg:grid lg:grid-cols-[minmax(0,1fr)_17rem] lg:items-start lg:gap-x-12 xl:grid-cols-[minmax(0,1fr)_18.5rem]">
+            <p className="rounded-window bg-panel px-6 py-10 text-center text-ui text-fg-secondary shadow-card">
+              No impact assessments yet for this analysis run.
+            </p>
+            {snapshot}
+          </div>
+        ) : (
+          <AssessmentSelector
+            items={assessmentTabs}
+            defaultSelectedId={defaultSelectedId}
+            heading={<ChangeListHeading assessments={assessments} />}
+            aside={snapshot}
+          />
+        )}
       </div>
-
-      {assessments.length === 0 ? (
-        <p className="text-sm text-fg-tertiary">No impact assessments yet for this analysis run.</p>
-      ) : (
-        <AssessmentSelector items={assessmentTabs} defaultSelectedId={defaultSelectedId} />
-      )}
     </main>
   );
 }

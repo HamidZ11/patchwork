@@ -247,6 +247,48 @@ A7).
 - Responsive: below `lg` the snapshot follows the changes; below `sm` the
   verdict's action drops under its copy.
 
+**B8. Impact report at `/analysis-runs/[id]`** (restyle, 2026-10-08;
+amends Sections 9, 12 and 32 for this route).
+
+- **The same composition as the repository pages.** A back link to the
+  repository's overview (to the index when the repository cannot be found
+  in the list), "Impact report" as the title, the repository and commit
+  beneath; then the selected change's report in the main column and a
+  sticky sidebar holding the change list and the run's **Snapshot**
+  (SDK, commit, analysis, analysed).
+- **The change list is the index's legend, as tabs.** The ARIA vertical
+  tabs keep their behaviour; each tab is a legend row -- estate-wide `01`
+  label, two-line title, tone dot and verdict, confirmed usages for
+  AFFECTED only -- selected as `bg-surface` + `shadow-btn`, instantly (no
+  transition, so two rows never look selected). Above it, "Changes" with
+  the count behind each status. Within a status, changes follow the
+  index's order, so the overview and the report list them alike.
+- **Below `lg` the list comes first, the report next, the snapshot
+  last:** the sidebar wrapper is `display: contents` there, so a reader
+  on a phone picks a change before scrolling through one.
+- **One report panel per change, whatever the verdict** (`bg-panel`,
+  `rounded-window`, `shadow-card`): the opening (tone word with dot, the
+  change title -- `text-xl` for AFFECTED, `text-base` otherwise -- why,
+  provider changelog, Explain, Prepare fix), then the numbered chain as
+  ruled sections inside the same panel.
+- **Stage labels are sentence case:** mono `02` at `text-2xs`, the
+  stage's tone dot, then the label at `text-ui` medium. This replaces the
+  uppercase tracked micro-label (Sections 9 and 32); uppercase eyebrows
+  are no longer used anywhere in the app, including "Why this repository
+  is affected", "Static validation" and the AI explanation's labels.
+- Evidence surfaces match the overview: findings are the overview's
+  location rows; the diff, step output, chips and the AI explanation sit
+  on raised or evidence grounds with `shadow-hairline` instead of a grey
+  border. The AI explanation keeps its own frame and footer (Section 15)
+  -- it is still secondary to the deterministic verdict.
+- `dark:` now follows the app's theme, not the OS (`@custom-variant` in
+  `globals.css`): the app is dark-only, so a light-mode machine no longer
+  gets a different explanation surface.
+- Data: `GET /analysis-runs/:id` as before, plus the ownership-scoped
+  `GET /repositories` for context only (the back link and change
+  numbers). If the list cannot be read, the report still renders in full.
+  No API change.
+
 **Still in force from 2026-10-04:**
 
 **A6. `not_assessed` repository state** (extends Sections 11 and 32).

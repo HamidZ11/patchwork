@@ -29,8 +29,8 @@ export interface SupportingFact {
  *
  * Its whole visual job is to be recognisable at a glance as *generated copy
  * about the evidence*, and never mistakable for the evidence itself. It
- * uses existing neutral surfaces, with a subtly darker expanded panel in
- * dark mode. No gradient, no glow, no glyph -- DESIGN.md Section 15 is
+ * uses existing neutral surfaces with a hairline edge, and a subtly
+ * darker expanded panel. No gradient, no glow, no glyph -- DESIGN.md Section 15 is
  * explicit that a label which already says the thing does not get an icon,
  * and "AI explanation" says it completely.
  */
@@ -132,12 +132,10 @@ function ExplanationFrame({
     <section
       id={panelId}
       aria-label="AI explanation"
-      className={`min-w-0 overflow-hidden rounded-md border border-rule ${surfaceClassName}`}
+      className={`min-w-0 overflow-hidden rounded-card shadow-hairline ${surfaceClassName}`}
     >
       <div className="flex min-w-0 flex-wrap items-center justify-between gap-x-4 gap-y-1 border-b border-rule px-4 py-2.5">
-        <p className="text-2xs font-semibold tracking-wide text-fg-tertiary uppercase">
-          AI explanation
-        </p>
+        <p className="text-xs font-medium text-fg-secondary">AI explanation</p>
         {control}
       </div>
       {children}
@@ -203,7 +201,7 @@ function ExplanationModule({
           onClick={onHide}
           aria-expanded
           aria-controls={panelId}
-          className="rounded-sm text-xs font-medium text-fg-tertiary hover:text-fg focus-visible:ring-2 focus-visible:ring-fg focus-visible:outline-none"
+          className="rounded-chip text-xs font-medium text-fg-tertiary transition-colors duration-100 hover:text-fg focus-visible:ring-2 focus-visible:ring-focus focus-visible:outline-none"
         >
           Hide
         </button>
@@ -216,9 +214,7 @@ function ExplanationModule({
 
         {supportingFacts.length > 0 && (
           <div className="flex min-w-0 flex-col gap-2 border-t border-rule pt-4">
-            <p className="text-2xs font-semibold tracking-wide text-fg-tertiary uppercase">
-              Supporting evidence
-            </p>
+            <p className="text-xs font-medium text-fg-tertiary">Supporting evidence</p>
             {/* Not cards. Each chip is one fact Patchwork proved, restated at
                 the smallest size that stays legible, so the reader can check
                 the prose above against the record without leaving the module. */}
@@ -226,8 +222,8 @@ function ExplanationModule({
               {supportingFacts.map((fact) => (
                 <li
                   key={fact.label}
-                  className={`rounded-sm border border-rule px-2 py-1 text-2xs leading-4 text-fg-secondary ${
-                    fact.mono ? 'font-mono' : ''
+                  className={`rounded-chip bg-surface px-2 py-1 leading-4 text-fg-secondary shadow-hairline ${
+                    fact.mono ? 'font-mono text-2xs' : 'text-xs'
                   }`}
                 >
                   {fact.label}
@@ -248,7 +244,7 @@ function ExplanationModule({
 function ExplanationSection({ heading, body }: { heading: string; body: string }) {
   return (
     <div className="flex min-w-0 flex-col gap-0.5">
-      <p className="text-2xs font-bold tracking-normal text-fg">{heading}</p>
+      <p className="text-xs font-bold text-fg">{heading}</p>
       <p className="text-sm leading-6 break-words text-fg-secondary">{body}</p>
     </div>
   );

@@ -1,6 +1,7 @@
 'use client';
 
 import { useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
+import { Breakable } from '../../repositories/breakable';
 
 /**
  * One selectable provider change. Everything except `report` is plain
@@ -15,6 +16,9 @@ import { useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
  */
 export interface AssessmentTab {
   id: string;
+  /** The change's estate-wide number (`02`), the same one the repository
+   * index and overview use. Falls back to list position when absent. */
+  label?: string;
   title: string;
   statusLabel: string;
   statusDotClassName: string;
@@ -32,13 +36,25 @@ export interface AssessmentTab {
  * selection and focus together, which the APG permits because every panel
  * is already present in the page payload -- there is nothing to fetch, so
  * moving through them cannot cause a slow or surprising load.
+ *
+ * Laid out like the repository index (DESIGN.md Amendment B8): the selected
+ * report in the main column, the change list in a sticky sidebar with
+ * `aside` beneath it. Below `lg` the sidebar wrapper dissolves (`contents`)
+ * so the list comes before the report and `aside` after it -- a reader on a
+ * phone picks a change before scrolling through one.
  */
 export function AssessmentSelector({
   items,
   defaultSelectedId,
+  heading,
+  aside,
 }: {
   items: AssessmentTab[];
   defaultSelectedId: string;
+  /** Shown above the change list. */
+  heading?: ReactNode;
+  /** Context below the change list; after the report below `lg`. */
+  aside?: ReactNode;
 }) {
   const [selectedId, setSelectedId] = useState(defaultSelectedId);
   const tabRefs = useRef<Record<string, HTMLButtonElement | null>>({});
@@ -66,82 +82,79 @@ export function AssessmentSelector({
   }
 
   return (
-    <div className="flex min-w-0 flex-col gap-8">
-      <div
-        role="tablist"
-        aria-orientation="vertical"
-        aria-label="Provider changes in this analysis"
-        className="flex flex-col divide-y divide-rule overflow-hidden rounded-md border border-rule"
-      >
-        {items.map((item, index) => {
-          const isSelected = item.id === selected.id;
-          return (
-            <button
-              key={item.id}
-              ref={(element) => {
-                tabRefs.current[item.id] = element;
-              }}
-              type="button"
-              role="tab"
-              id={`assessment-tab-${item.id}`}
-              aria-selected={isSelected}
-              aria-controls={`assessment-panel-${item.id}`}
-              tabIndex={isSelected ? 0 : -1}
-              onClick={() => setSelectedId(item.id)}
-              onKeyDown={onKeyDown}
-              // Deliberately no `transition-colors`. The selected state is carried by
-              // `border-left-color` and `background-color`, both animatable, while
-              // `font-weight` is not -- so transitioning them made the outgoing row
-              // keep a visible rail and tint for the transition's duration while the
-              // title weight had already snapped to the new row. Two rows appeared
-              // selected at once, by different signals. Selection is a discrete
-              // change of which record you are reading, not a movement; it applies
-              // instantly, and hover applies instantly with it.
-              className={`flex min-w-0 items-start gap-3 border-l-2 px-4 py-3 text-left focus-visible:ring-2 focus-visible:ring-fg focus-visible:ring-inset focus-visible:outline-none sm:px-5 ${
-                isSelected
-                  ? 'border-l-fg bg-surface'
-                  : 'border-l-transparent hover:bg-surface-hover'
-              }`}
-            >
-              <span
-                aria-hidden="true"
-                className="pt-0.5 font-mono text-2xs tabular-nums text-fg-faint"
-              >
-                {String(index + 1).padStart(2, '0')}
-              </span>
-              <span className="flex min-w-0 flex-col gap-1">
-                <span
-                  className={`text-sm leading-5 ${
-                    isSelected ? 'font-semibold text-fg' : 'font-medium text-fg-secondary'
+    <div className="flex min-w-0 flex-col gap-8 lg:grid lg:grid-cols-[minmax(0,1fr)_17rem] lg:items-start lg:gap-x-12 xl:grid-cols-[minmax(0,1fr)_18.5rem]">
+      <div className="contents lg:sticky lg:top-24 lg:col-start-2 lg:row-start-1 lg:flex lg:flex-col lg:gap-10">
+        <div className="order-1 min-w-0">
+          {heading}
+          <div
+            role="tablist"
+            aria-orientation="vertical"
+            aria-label="Provider changes in this analysis"
+            className={`-mx-2 flex flex-col gap-0.5 ${heading ? 'mt-3' : ''}`}
+          >
+            {items.map((item, index) => {
+              const isSelected = item.id === selected.id;
+              return (
+                <button
+                  key={item.id}
+                  ref={(element) => {
+                    tabRefs.current[item.id] = element;
+                  }}
+                  type="button"
+                  role="tab"
+                  id={`assessment-tab-${item.id}`}
+                  aria-selected={isSelected}
+                  aria-controls={`assessment-panel-${item.id}`}
+                  tabIndex={isSelected ? 0 : -1}
+                  onClick={() => setSelectedId(item.id)}
+                  onKeyDown={onKeyDown}
+                  // Deliberately no transition. Selection is a discrete change of
+                  // which record you are reading, not a movement: a fading surface
+                  // left the outgoing row looking selected while the incoming one
+                  // already was -- two rows selected at once. It applies
+                  // instantly, and hover applies instantly with it.
+                  className={`grid min-w-0 grid-cols-[1.5rem_minmax(0,1fr)] gap-x-2 rounded-control px-2 py-2 text-left focus-visible:ring-2 focus-visible:ring-focus focus-visible:outline-none ${
+                    isSelected ? 'bg-surface shadow-btn' : 'hover:bg-surface-hover'
                   }`}
                 >
-                  {item.title}
-                </span>
-                <span className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs">
                   <span
-                    className={`inline-flex items-center gap-1.5 font-medium ${item.statusTextClassName}`}
+                    aria-hidden="true"
+                    className="font-mono text-2xs leading-5 text-fg-tertiary tabular-nums"
                   >
-                    <span
-                      className={`h-1.5 w-1.5 shrink-0 rounded-full ${item.statusDotClassName}`}
-                      aria-hidden="true"
-                    />
-                    {item.statusLabel}
+                    {item.label ?? String(index + 1).padStart(2, '0')}
                   </span>
-                  {item.evidenceLabel && (
-                    <>
-                      <span aria-hidden="true" className="text-fg-faint">
-                        ·
-                      </span>
-                      <span className="font-mono text-2xs text-fg-tertiary">
-                        {item.evidenceLabel}
-                      </span>
-                    </>
-                  )}
-                </span>
-              </span>
-            </button>
-          );
-        })}
+                  <span
+                    className={`line-clamp-2 text-ui [overflow-wrap:anywhere] ${
+                      isSelected ? 'text-fg' : 'text-fg-secondary'
+                    }`}
+                  >
+                    <Breakable text={item.title} />
+                  </span>
+                  <span className="col-start-2 mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs">
+                    <span
+                      className={`inline-flex items-center gap-1.5 font-medium ${item.statusTextClassName}`}
+                    >
+                      <span
+                        className={`size-1.5 shrink-0 rounded-full ${item.statusDotClassName}`}
+                        aria-hidden="true"
+                      />
+                      {item.statusLabel}
+                    </span>
+                    {item.evidenceLabel && (
+                      <>
+                        <span aria-hidden="true" className="text-fg-tertiary">
+                          ·
+                        </span>
+                        <span className="text-fg-tertiary tabular-nums">{item.evidenceLabel}</span>
+                      </>
+                    )}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+        {aside && <div className="order-3 min-w-0">{aside}</div>}
       </div>
 
       {/* `key` is load-bearing, not a lint appeasement: it makes the panel the
@@ -171,7 +184,7 @@ export function AssessmentSelector({
         role="tabpanel"
         id={`assessment-panel-${selected.id}`}
         aria-labelledby={`assessment-tab-${selected.id}`}
-        className="min-w-0"
+        className="order-2 min-w-0 lg:col-start-1 lg:row-start-1"
       >
         {selected.report}
       </div>
