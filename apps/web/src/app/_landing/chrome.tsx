@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { PatchworkMark } from '@/components/patchwork-mark';
 import { API_URL } from '@/lib/api';
 import { buttonVariantClassName } from '@/components/button-styles';
+import { AgentBriefButton } from './agent-brief-button';
 import { Container } from './primitives';
 
 export const SIGN_IN = `${API_URL}/auth/github/login`;
@@ -36,6 +37,7 @@ export function PublicNav() {
         </Link>
 
         <div className="flex items-center gap-2 sm:gap-5">
+          <AgentBriefButton />
           {/* Two links, both to real destinations. No Pricing, Blog, Customers or Docs:
               none exist, and a nav item that resolves to nothing is the first
               thing that makes a portfolio page read as a template. */}
@@ -46,7 +48,10 @@ export function PublicNav() {
               </Link>
             ))}
           </nav>
-          <a href={SIGN_IN} className={`${QUIET_LINK} px-1`}>
+          {/* Same destination as the button beside it, so it is the one that
+              gives way below `sm`, where the header has no room for both and
+              the agent.md control. */}
+          <a href={SIGN_IN} className={`${QUIET_LINK} px-1 max-sm:hidden`}>
             Sign in
           </a>
           <a href={SIGN_IN} className={buttonVariantClassName.primary}>
